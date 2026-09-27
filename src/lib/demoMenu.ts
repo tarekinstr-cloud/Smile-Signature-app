@@ -31,10 +31,10 @@ export function demoMenu() {
 
   data.forEach(([name, color, its], ci) => {
     const category_id = crypto.randomUUID()
-    categories.push({ id: category_id, name, color, sort_order: ci })
+    categories.push({ id: category_id, name, color, sort_order: ci, active: true })
     its.forEach(([itemName, price, gs = []], ii) => {
       const item_id = crypto.randomUUID()
-      items.push({ id: item_id, category_id, name: itemName, price, sort_order: ii })
+      items.push({ id: item_id, category_id, name: itemName, price, sort_order: ii, active: true })
       gs.forEach(([gName, min_select, max_select, opts], gi) => {
         const group_id = crypto.randomUUID()
         groups.push({ id: group_id, item_id, name: gName, min_select, max_select, sort_order: gi })

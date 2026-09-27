@@ -156,7 +156,7 @@ export default function OrderScreen({ table, hall, onBack }: Props) {
             </nav>
             {menu && menu.categories.length === 0 ? (
               <div className="card empty">
-                <p>القائمة فارغة. أضف الفئات والأصناف في Supabase (Table Editor) أولاً.</p>
+                <p>القائمة فارغة. أضف الفئات والأصناف من زر «القائمة» في الشاشة الرئيسية.</p>
               </div>
             ) : (
               <div className="items-grid">

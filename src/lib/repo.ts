@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type {
-  Category, DiningTable, Hall, HallPatch, ItemOption, Menu, MenuItem, NewOrderLine, NewTable, OptionGroup, Order,
+  Category, CategoryPatch, DiningTable, Hall, HallPatch, ItemOption, ItemOptionPatch, Menu, MenuItem, MenuItemPatch, MenuTable,
+  NewCategory, NewItemOption, NewMenuItem, NewOptionGroup, NewOrderLine, NewTable, OptionGroup, OptionGroupPatch, Order,
   OrderLine, OrderLinePatch, TablePatch,
 } from './types'
 import { demoMenu } from './demoMenu'
@@ -19,8 +20,21 @@ export interface Repo {
   /** Calls onChange whenever halls or tables change elsewhere. Returns an unsubscribe function. */
   subscribe(onChange: () => void): () => void
 
-  /** Active categories and items, with each item's option groups. */
-  getMenu(): Promise<Menu>
+  /** Active categories and items, with each item's option groups. `includeHidden` also returns hidden ones (admin screen). */
+  getMenu(opts?: { includeHidden?: boolean }): Promise<Menu>
+  createCategory(c: NewCategory): Promise<Category>
+  updateCategory(id: string, patch: CategoryPatch): Promise<void>
+  /** Deletes the category with its items and their options. Past orders keep their copied names and prices. */
+  deleteCategory(id: string): Promise<void>
+  createItem(i: NewMenuItem): Promise<MenuItem>
+  updateItem(id: string, patch: MenuItemPatch): Promise<void>
+  deleteItem(id: string): Promise<void>
+  createOptionGroup(g: NewOptionGroup): Promise<OptionGroup>
+  updateOptionGroup(id: string, patch: OptionGroupPatch): Promise<void>
+  deleteOptionGroup(id: string): Promise<void>
+  createOption(o: NewItemOption): Promise<ItemOption>
+  updateOption(id: string, patch: ItemOptionPatch): Promise<void>
+  deleteOption(id: string): Promise<void>
   /** The table's open order and its lines, or null when the table has none. */
   getOpenOrder(tableId: string): Promise<{ order: Order; lines: OrderLine[] } | null>
   /** Opens an order on the table (marking it occupied), or returns the one already open. */
@@ -45,6 +59,15 @@ function check<T>(res: { data: T; error: { message: string } | null }): T {
 }
 
 function supabaseRepo(sb: SupabaseClient): Repo {
+  const insertRow = async (table: MenuTable, row: object) => check(await sb.from(table).insert(row).select().single()) as unknown
+  const updateRow = async (table: MenuTable, id: string, patch: object) => {
+    check(await sb.from(table).update(patch).eq('id', id))
+  }
+  // Foreign keys cascade: a category takes its items, an item its option groups, a group its options.
+  const deleteRow = async (table: MenuTable, id: string) => {
+    check(await sb.from(table).delete().eq('id', id))
+  }
+
   return {
     mode: 'supabase',
     async listHalls() {
@@ -84,20 +107,49 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       }
     },
 
-    async getMenu() {
-      const [cats, items, groups, options] = await Promise.all([
-        sb.from('categories').select('id, name, color, sort_order').eq('active', true).order('sort_order').order('created_at'),
-        sb.from('items').select('id, category_id, name, price, sort_order').eq('active', true).order('sort_order').order('created_at'),
+    async getMenu(opts) {
+      let cats = sb.from('categories').select('id, name, color, sort_order, active')
+      let items = sb.from('items').select('id, category_id, name, price, sort_order, active')
+      if (!opts?.includeHidden) {
+        cats = cats.eq('active', true)
+        items = items.eq('active', true)
+      }
+      const [c, i, groups, options] = await Promise.all([
+        cats.order('sort_order').order('created_at'),
+        items.order('sort_order').order('created_at'),
         sb.from('option_groups').select('*').order('sort_order'),
         sb.from('options').select('*').order('sort_order'),
       ])
       return buildMenu(
-        check(cats) as Category[],
-        (check(items) as MenuItem[]).map((i) => ({ ...i, price: Number(i.price) })),
+        check(c) as Category[],
+        (check(i) as MenuItem[]).map((i) => ({ ...i, price: Number(i.price) })),
         check(groups) as Omit<OptionGroup, 'options'>[],
         (check(options) as ItemOption[]).map((o) => ({ ...o, price_delta: Number(o.price_delta) })),
       )
     },
+    async createCategory(c) {
+      return insertRow('categories', c) as Promise<Category>
+    },
+    updateCategory: (id, patch) => updateRow('categories', id, patch),
+    deleteCategory: (id) => deleteRow('categories', id),
+    async createItem(i) {
+      const row = (await insertRow('items', i)) as MenuItem
+      return { ...row, price: Number(row.price) }
+    },
+    updateItem: (id, patch) => updateRow('items', id, patch),
+    deleteItem: (id) => deleteRow('items', id),
+    async createOptionGroup(g) {
+      return { ...((await insertRow('option_groups', g)) as Omit<OptionGroup, 'options'>), options: [] }
+    },
+    updateOptionGroup: (id, patch) => updateRow('option_groups', id, patch),
+    deleteOptionGroup: (id) => deleteRow('option_groups', id),
+    async createOption(o) {
+      const row = (await insertRow('options', o)) as ItemOption
+      return { ...row, price_delta: Number(row.price_delta) }
+    },
+    updateOption: (id, patch) => updateRow('options', id, patch),
+    deleteOption: (id) => deleteRow('options', id),
+
     async getOpenOrder(tableId) {
       const order = check(
         await sb.from('orders').select('id, table_id, status, note, created_at').eq('table_id', tableId).eq('status', 'open').maybeSingle(),
@@ -257,6 +309,21 @@ function localRepo(): Repo {
   window.addEventListener('storage', (e) => {
     if (e.key === ORDERS_KEY) orderListeners.forEach((l) => l())
   })
+  const editMenu = (fn: (db: LocalOrdersDb) => unknown) => {
+    const db = loadOrders()
+    fn(db)
+    commitOrders(db)
+  }
+  // Mirror the database's cascading deletes; order lines keep their copy but lose the link to the item.
+  const removeGroup = (db: LocalOrdersDb, id: string) => {
+    db.options = db.options.filter((o) => o.group_id !== id)
+    db.groups = db.groups.filter((g) => g.id !== id)
+  }
+  const removeItem = (db: LocalOrdersDb, id: string) => {
+    db.groups.filter((g) => g.item_id === id).forEach((g) => removeGroup(db, g.id))
+    db.items = db.items.filter((i) => i.id !== id)
+    db.lines = db.lines.map((l) => (l.item_id === id ? { ...l, item_id: null } : l))
+  }
   // Mirrors the database trigger: an open order occupies its table, closing it frees the table.
   const setTableStatus = (tableId: string | null, status: DiningTable['status']) => {
     if (!tableId) return
@@ -323,9 +390,62 @@ function localRepo(): Repo {
       }
     },
 
-    async getMenu() {
+    async getMenu(opts) {
       const db = loadOrders()
-      return buildMenu(db.categories, db.items, db.groups, db.options)
+      // Menus saved before categories and items could be hidden have no `active` field.
+      const cats = db.categories.map((c) => ({ ...c, active: c.active ?? true }))
+      const items = db.items.map((i) => ({ ...i, active: i.active ?? true }))
+      const shown = new Set(cats.filter((c) => c.active).map((c) => c.id))
+      return opts?.includeHidden
+        ? buildMenu(cats, items, db.groups, db.options)
+        : buildMenu(cats.filter((c) => c.active), items.filter((i) => i.active && shown.has(i.category_id)), db.groups, db.options)
+    },
+    async createCategory(c) {
+      const row: Category = { ...c, id: crypto.randomUUID() }
+      editMenu((db) => db.categories.push(row))
+      return row
+    },
+    async updateCategory(id, patch) {
+      editMenu((db) => (db.categories = db.categories.map((c) => (c.id === id ? { ...c, ...patch } : c))))
+    },
+    async deleteCategory(id) {
+      editMenu((db) => {
+        db.items.filter((i) => i.category_id === id).forEach((i) => removeItem(db, i.id))
+        db.categories = db.categories.filter((c) => c.id !== id)
+      })
+    },
+    async createItem(i) {
+      const row: MenuItem = { ...i, id: crypto.randomUUID() }
+      editMenu((db) => db.items.push(row))
+      return row
+    },
+    async updateItem(id, patch) {
+      editMenu((db) => (db.items = db.items.map((i) => (i.id === id ? { ...i, ...patch } : i))))
+    },
+    async deleteItem(id) {
+      editMenu((db) => removeItem(db, id))
+    },
+    async createOptionGroup(g) {
+      const row = { ...g, id: crypto.randomUUID() }
+      editMenu((db) => db.groups.push(row))
+      return { ...row, options: [] }
+    },
+    async updateOptionGroup(id, patch) {
+      editMenu((db) => (db.groups = db.groups.map((g) => (g.id === id ? { ...g, ...patch } : g))))
+    },
+    async deleteOptionGroup(id) {
+      editMenu((db) => removeGroup(db, id))
+    },
+    async createOption(o) {
+      const row: ItemOption = { ...o, id: crypto.randomUUID() }
+      editMenu((db) => db.options.push(row))
+      return row
+    },
+    async updateOption(id, patch) {
+      editMenu((db) => (db.options = db.options.map((o) => (o.id === id ? { ...o, ...patch } : o))))
+    },
+    async deleteOption(id) {
+      editMenu((db) => (db.options = db.options.filter((o) => o.id !== id)))
     },
     async getOpenOrder(tableId) {
       const db = loadOrders()
