@@ -21,14 +21,68 @@ const sameOptions = (a: ChosenOption[], b: ChosenOption[]) =>
 
 const chosen = (g: OptionGroup, o: ItemOption): ChosenOption => ({ group: g.name, name: o.name, price_delta: o.price_delta })
 
-/** Choices on an item card before they are added: selected option ids and a quantity per size. */
+/** Choices on an item card before they are added: picked option ids, a quantity per size and per supplement. */
 interface Draft {
   picked: string[]
   qty: Record<string, number>
+  supp: Record<string, number>
+}
+
+/** One order line to add: its options and how many. */
+interface Part {
+  options: ChosenOption[]
+  quantity: number
 }
 
 /** The item's first required pick-one group (Taille…): each of its options is a row with its price and a quantity. */
 const mainGroup = (groups: OptionGroup[]) => groups.find((g) => g.min_select >= 1 && g.max_select === 1 && g.options.length > 0)
+
+/** Optional groups (Gratiné, Garniture…): each option gets its own quantity, one per portion of the item. */
+const isSupplement = (g: OptionGroup, main?: OptionGroup) => g !== main && g.min_select === 0
+
+const selectedSize = (d: Draft, main?: OptionGroup) => main?.options.find((o) => d.picked.includes(o.id))
+const draftQuantity = (d: Draft, main?: OptionGroup) => d.qty[selectedSize(d, main)?.id ?? ''] ?? 1
+const suppTotal = (d: Draft) => Object.values(d.supp).reduce((s, n) => s + n, 0)
+
+/** Lowers supplement quantities (last ones first) so they never exceed the item's quantity. */
+function fitSupplements(d: Draft, main?: OptionGroup): Draft {
+  let over = suppTotal(d) - draftQuantity(d, main)
+  if (over <= 0) return d
+  const supp = { ...d.supp }
+  for (const id of Object.keys(supp).reverse()) {
+    const cut = Math.min(over, supp[id])
+    supp[id] -= cut
+    over -= cut
+    if (!supp[id]) delete supp[id]
+  }
+  return { ...d, supp }
+}
+
+/**
+ * Splits the card's choices into order lines: one line per supplement with its quantity,
+ * and the portions left without a supplement on a plain line. E.g. 3× M with Gratiné ×2
+ * gives "M + Gratiné" ×2 and "M" ×1.
+ */
+function planDraft(item: MenuItem, groups: OptionGroup[], main: OptionGroup | undefined, d: Draft) {
+  const quantity = draftQuantity(d, main)
+  const base = groups
+    .filter((g) => !isSupplement(g, main))
+    .flatMap((g) => g.options.filter((o) => d.picked.includes(o.id)).map((o) => chosen(g, o)))
+  const parts: Part[] = []
+  let left = quantity
+  for (const g of groups) {
+    if (!isSupplement(g, main)) continue
+    for (const o of g.options) {
+      const n = Math.min(d.supp[o.id] ?? 0, left)
+      if (n <= 0) continue
+      parts.push({ options: groups.flatMap((h) => (h === g ? [chosen(g, o)] : base.filter((c) => c.group === h.name))), quantity: n })
+      left -= n
+    }
+  }
+  if (left > 0) parts.unshift({ options: base, quantity: left })
+  const total = parts.reduce((s, p) => s + (item.price + p.options.reduce((x, c) => x + c.price_delta, 0)) * p.quantity, 0)
+  return { size: selectedSize(d, main), quantity, parts, total }
+}
 
 export default function OrderScreen({ table, hall, startCheckout, onBack }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null)
@@ -103,19 +157,22 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
     return o
   }
 
-  /** Adds the item with these options, merged into an identical line when there is one. */
-  async function addToOrder(item: MenuItem, options: ChosenOption[], quantity = 1, label = item.name) {
+  /** Adds the item as these lines, each merged into an identical line when there is one. */
+  async function addToOrder(item: MenuItem, parts: Part[], label = item.name) {
     setBusy(true)
     await run(async () => {
       const o = await ensureOrder()
-      const same = lines.find((l) => l.item_id === item.id && !l.note && sameOptions(l.options, options))
-      if (same) {
-        await repo.updateLine(same.id, { quantity: same.quantity + quantity })
-      } else {
-        const unit_price = item.price + options.reduce((s, x) => s + x.price_delta, 0)
-        await repo.addLine(o.id, { item_id: item.id, name: item.name, unit_price, quantity, options, note: null })
+      for (const { options, quantity } of parts) {
+        const same = lines.find((l) => l.item_id === item.id && !l.note && sameOptions(l.options, options))
+        if (same) {
+          await repo.updateLine(same.id, { quantity: same.quantity + quantity })
+        } else {
+          const unit_price = item.price + options.reduce((s, x) => s + x.price_delta, 0)
+          await repo.addLine(o.id, { item_id: item.id, name: item.name, unit_price, quantity, options, note: null })
+        }
       }
       await reloadOrder()
+      const quantity = parts.reduce((s, p) => s + p.quantity, 0)
       setLastAdded({ text: t.added(quantity > 1 ? `${quantity}× ${label}` : label), key: Date.now() })
     })
     setBusy(false)
@@ -123,14 +180,21 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
 
   /** A card starts on the first size and the first option of every other required pick-one group, quantity 1. */
   function draftOf(item: MenuItem, groups: OptionGroup[]): Draft {
-    return drafts[item.id] ?? { picked: groups.flatMap((g) => (g.min_select >= 1 && g.max_select === 1 && g.options[0] ? [g.options[0].id] : [])), qty: {} }
+    return (
+      drafts[item.id] ?? {
+        picked: groups.flatMap((g) => (g.min_select >= 1 && g.max_select === 1 && g.options[0] ? [g.options[0].id] : [])),
+        qty: {},
+        supp: {},
+      }
+    )
   }
 
   function setDraft(item: MenuItem, groups: OptionGroup[], change: (d: Draft) => Draft) {
-    setDrafts((ds) => ({ ...ds, [item.id]: change(ds[item.id] ?? draftOf(item, groups)) }))
+    const main = mainGroup(groups)
+    setDrafts((ds) => ({ ...ds, [item.id]: fitSupplements(change(ds[item.id] ?? draftOf(item, groups)), main) }))
   }
 
-  /** Picks an option on the card: pick-one groups switch, others toggle within their limit. */
+  /** Picks an option of a required group on the card: pick-one groups switch, others toggle within their limit. */
   function pick(item: MenuItem, groups: OptionGroup[], g: OptionGroup, opt: ItemOption) {
     setDraft(item, groups, (d) => {
       const inGroup = d.picked.filter((id) => g.options.some((o) => o.id === id))
@@ -146,14 +210,21 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
     setDraft(item, groups, (d) => ({ ...d, qty: { ...d.qty, [sizeId]: Math.max(1, (d.qty[sizeId] ?? 1) + delta) } }))
   }
 
-  /** Adds the card's choices in one go, then puts the card back to its start. */
+  /** Changes a supplement's quantity; all supplements together stay within the item's quantity. */
+  function stepSupp(item: MenuItem, groups: OptionGroup[], optionId: string, delta: number) {
+    setDraft(item, groups, (d) => {
+      const n = (d.supp[optionId] ?? 0) + delta
+      if (n < 0 || (delta > 0 && suppTotal(d) >= draftQuantity(d, mainGroup(groups)))) return d
+      const { [optionId]: _, ...rest } = d.supp
+      return { ...d, supp: n > 0 ? { ...rest, [optionId]: n } : rest }
+    })
+  }
+
+  /** Adds the card's choices in one go, split into lines per supplement, then puts the card back to its start. */
   async function addDraft(item: MenuItem, groups: OptionGroup[], main?: OptionGroup) {
-    const d = draftOf(item, groups)
-    const options = groups.flatMap((g) => g.options.filter((o) => d.picked.includes(o.id)).map((o) => chosen(g, o)))
-    const size = main?.options.find((o) => d.picked.includes(o.id))
-    const quantity = d.qty[size?.id ?? ''] ?? 1
+    const { parts, size } = planDraft(item, groups, main, draftOf(item, groups))
     setDrafts(({ [item.id]: _, ...rest }) => rest)
-    await addToOrder(item, options, quantity, size ? `${item.name} ${size.name}` : item.name)
+    await addToOrder(item, parts, size ? `${item.name} ${size.name}` : item.name)
   }
 
   async function changeQty(line: OrderLine, delta: number) {
@@ -245,7 +316,7 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
                   const groups = menu?.groups[i.id] ?? []
                   if (groups.length === 0) {
                     return (
-                      <button key={i.id} className="item-card" onClick={() => addToOrder(i, [])} disabled={busy}>
+                      <button key={i.id} className="item-card" onClick={() => addToOrder(i, [{ options: [], quantity: 1 }])} disabled={busy}>
                         <span className="item-name">{i.name}</span>
                         <span className="item-price">{money(i.price)}</span>
                       </button>
@@ -253,9 +324,8 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
                   }
                   const main = mainGroup(groups)
                   const d = draftOf(i, groups)
-                  const optionsPrice = groups.reduce((s, g) => s + g.options.filter((o) => d.picked.includes(o.id)).reduce((x, o) => x + o.price_delta, 0), 0)
-                  const size = main?.options.find((o) => d.picked.includes(o.id))
-                  const quantity = d.qty[size?.id ?? ''] ?? 1
+                  const { size, quantity, total } = planDraft(i, groups, main, d)
+                  const suppFull = suppTotal(d) >= quantity
                   return (
                     <div key={i.id} className="item-card with-options">
                       <span className="item-name">{i.name}</span>
@@ -292,21 +362,42 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
                       {groups.filter((g) => g !== main).map((g) => (
                         <div key={g.id} className="supp-group">
                           <span className="supp-label">{g.name}</span>
-                          <div className="supp-btns">
-                            {g.options.map((o) => {
-                              const on = d.picked.includes(o.id)
-                              return (
-                                <button key={o.id} className={on ? 'supp-btn on' : 'supp-btn'} aria-pressed={on} onClick={() => pick(i, groups, g, o)}>
-                                  {o.name}
-                                  {o.price_delta !== 0 && <span className="small"> <bdi dir="ltr">{o.price_delta > 0 ? '+' : ''}{money(o.price_delta)}</bdi></span>}
-                                </button>
-                              )
-                            })}
-                          </div>
+                          {isSupplement(g, main) ? (
+                            <div className="supp-rows">
+                              {g.options.map((o) => {
+                                const n = d.supp[o.id] ?? 0
+                                return (
+                                  <div key={o.id} className={n > 0 ? 'supp-row on' : 'supp-row'}>
+                                    <span className="supp-name">
+                                      <bdi>{o.name}</bdi>
+                                      {o.price_delta !== 0 && <span className="small"> <bdi dir="ltr">{o.price_delta > 0 ? '+' : ''}{money(o.price_delta)}</bdi></span>}
+                                    </span>
+                                    <div className="stepper">
+                                      <button onClick={() => stepSupp(i, groups, o.id, -1)} disabled={n <= 0} aria-label={t.decrease}>−</button>
+                                      <span>{n}</span>
+                                      <button onClick={() => stepSupp(i, groups, o.id, 1)} disabled={suppFull} aria-label={t.increase}>+</button>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <div className="supp-btns">
+                              {g.options.map((o) => {
+                                const on = d.picked.includes(o.id)
+                                return (
+                                  <button key={o.id} className={on ? 'supp-btn on' : 'supp-btn'} aria-pressed={on} onClick={() => pick(i, groups, g, o)}>
+                                    {o.name}
+                                    {o.price_delta !== 0 && <span className="small"> <bdi dir="ltr">{o.price_delta > 0 ? '+' : ''}{money(o.price_delta)}</bdi></span>}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
                         </div>
                       ))}
                       <button className="primary add-draft" disabled={busy || (!!main && !size)} onClick={() => addDraft(i, groups, main)}>
-                        {t.add} {quantity}×{size && <> <bdi>{size.name}</bdi></>} · <bdi dir="ltr">{money((i.price + optionsPrice) * quantity)}</bdi>
+                        {t.add} {quantity}×{size && <> <bdi>{size.name}</bdi></>} · <bdi dir="ltr">{money(total)}</bdi>
                       </button>
                     </div>
                   )
