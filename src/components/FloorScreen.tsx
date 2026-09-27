@@ -7,6 +7,7 @@ import HallPanel from './HallPanel'
 import OrderScreen from './OrderScreen'
 import MenuAdmin from './MenuAdmin'
 import { useDialog } from './Dialog'
+import { money } from '../lib/format'
 import LangToggle from './LangToggle'
 import { useI18n } from '../lib/i18n'
 
@@ -19,6 +20,9 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   const [mode, setMode] = useState<Mode>('service')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [orderTableId, setOrderTableId] = useState<string | null>(null)
+  const [checkoutFirst, setCheckoutFirst] = useState(false)
+  /** Occupied table tapped in service mode: choose between its order and checkout. */
+  const [actions, setActions] = useState<{ table: DiningTable; total: number; count: number } | null>(null)
   const [menuAdmin, setMenuAdmin] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -80,6 +84,26 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   }
 
 
+  async function tapTable(table: DiningTable) {
+    if (table.status !== 'occupied') return openOrder(table.id, false)
+    await run(async () => {
+      const current = await repo.getOpenOrder(table.id)
+      const lines = current?.lines ?? []
+      if (!lines.length) return openOrder(table.id, false)
+      setActions({
+        table,
+        total: lines.reduce((s, l) => s + l.unit_price * l.quantity, 0),
+        count: lines.reduce((s, l) => s + l.quantity, 0),
+      })
+    })
+  }
+
+  function openOrder(id: string, checkout: boolean) {
+    setActions(null)
+    setCheckoutFirst(checkout)
+    setOrderTableId(id)
+  }
+
   async function addHall() {
     const name = await dialog.askText(t.newHallName)
     if (!name) return
@@ -128,7 +152,10 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
 
   const orderTable = tables.find((t) => t.id === orderTableId)
   if (orderTable && hall) {
-    return <OrderScreen key={orderTable.id} table={orderTable} hall={hall} onBack={() => { setOrderTableId(null); reload() }} />
+    return (
+      <OrderScreen key={orderTable.id} table={orderTable} hall={hall} startCheckout={checkoutFirst}
+        onBack={() => { setOrderTableId(null); reload() }} />
+    )
   }
 
   return (
@@ -188,7 +215,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
                 editable={mode === 'edit'}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
-                onTap={(x) => setOrderTableId(x.id)}
+                onTap={tapTable}
                 onMove={(id, x, y) => updateTable(id, { x, y })}
               />
             </section>
@@ -216,6 +243,20 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
           </>
         )}
       </main>
+      {actions && (
+        <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setActions(null)}>
+          <div className="dialog table-actions" role="dialog" aria-modal="true" aria-labelledby="table-actions-title"
+            onKeyDown={(e) => e.key === 'Escape' && setActions(null)}>
+            <div className="panel-head">
+              <h2 id="table-actions-title">{t.tableActions(actions.table.label)}</h2>
+              <button className="ghost" onClick={() => setActions(null)} aria-label={t.close}>✕</button>
+            </div>
+            <p className="muted small">{t.itemCount(actions.count)} · {money(actions.total)}</p>
+            <button className="primary big" autoFocus onClick={() => openOrder(actions.table.id, true)}>{t.checkoutAmount(money(actions.total))}</button>
+            <button className="big" onClick={() => openOrder(actions.table.id, false)}>{t.viewOrder}</button>
+          </div>
+        </div>
+      )}
       {dialog.element}
     </div>
   )

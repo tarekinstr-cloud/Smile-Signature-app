@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type {
   Category, CategoryPatch, DiningTable, Hall, HallPatch, ItemOption, ItemOptionPatch, Menu, MenuItem, MenuItemPatch, MenuTable,
   NewCategory, NewItemOption, NewMenuItem, NewOptionGroup, NewOrderLine, NewTable, OptionGroup, OptionGroupPatch, Order,
-  OrderLine, OrderLinePatch, TablePatch,
+  OrderLine, OrderLinePatch, PaidOrder, PaymentMethod, ReceiptSettings, TablePatch,
 } from './types'
 import { demoMenu } from './demoMenu'
 import { tr } from './i18n'
@@ -47,6 +47,31 @@ export interface Repo {
   deleteLine(id: string): Promise<void>
   /** Calls onChange whenever orders or order lines change elsewhere. */
   subscribeOrders(onChange: () => void): () => void
+
+  /**
+   * Closes an open order as paid, frees its table and gives it the next receipt number.
+   * The total is computed from the order's lines; `received` is the cash handed over (cash only).
+   */
+  checkoutOrder(orderId: string, method: PaymentMethod, received: number | null): Promise<PaidOrder>
+  getReceiptSettings(): Promise<ReceiptSettings>
+  updateReceiptSettings(patch: Partial<ReceiptSettings>): Promise<void>
+}
+
+export const defaultReceiptSettings = (): ReceiptSettings => ({
+  name: 'Smile Signature',
+  header: '',
+  footer: 'Merci de votre visite — Bon Appétit !',
+})
+
+const lineTotal = (lines: Pick<OrderLine, 'unit_price' | 'quantity'>[]) =>
+  Math.round(lines.reduce((s, l) => s + l.unit_price * l.quantity, 0) * 100) / 100
+
+function checkoutError(code: string): Error {
+  const t = tr()
+  if (code.includes('order_not_open') || code.includes('order_not_found')) return new Error(t.errOrderClosed)
+  if (code.includes('order_empty')) return new Error(t.errOrderEmpty)
+  if (code.includes('amount_too_low')) return new Error(t.errAmountTooLow)
+  return new Error(code)
 }
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
@@ -190,6 +215,23 @@ function supabaseRepo(sb: SupabaseClient): Repo {
         sb.removeChannel(channel)
       }
     },
+
+    async checkoutOrder(orderId, method, received) {
+      const res = await sb.rpc('checkout_order', { p_order_id: orderId, p_method: method, p_received: received })
+      if (res.error) throw checkoutError(res.error.message)
+      const o = res.data as PaidOrder
+      return {
+        id: o.id, table_id: o.table_id, status: o.status, note: o.note, created_at: o.created_at, closed_at: o.closed_at,
+        ticket_no: Number(o.ticket_no), total: Number(o.total), payment_method: o.payment_method, amount_received: Number(o.amount_received),
+      }
+    },
+    async getReceiptSettings() {
+      const row = check(await sb.from('receipt_settings').select('name, header, footer').eq('id', 1).maybeSingle()) as ReceiptSettings | null
+      return row ?? defaultReceiptSettings()
+    },
+    async updateReceiptSettings(patch) {
+      check(await sb.from('receipt_settings').upsert({ id: 1, ...patch }))
+    },
   }
 }
 
@@ -253,6 +295,9 @@ interface LocalOrdersDb {
   options: ItemOption[]
   orders: Order[]
   lines: OrderLine[]
+  /** Last receipt number handed out. */
+  lastTicket?: number
+  receipt?: ReceiptSettings
 }
 
 function localRepo(): Repo {
@@ -495,6 +540,34 @@ function localRepo(): Repo {
       return () => {
         orderListeners.delete(onChange)
       }
+    },
+
+    async checkoutOrder(orderId, method, received) {
+      const db = loadOrders()
+      const i = db.orders.findIndex((o) => o.id === orderId)
+      if (i < 0 || db.orders[i].status !== 'open') throw checkoutError('order_not_open')
+      const lines = db.lines.filter((l) => l.order_id === orderId)
+      if (!lines.length) throw checkoutError('order_empty')
+      const total = lineTotal(lines)
+      if (method === 'cash' && received !== null && received < total) throw checkoutError('amount_too_low')
+      const ticket_no = (db.lastTicket ?? 0) + 1
+      const paid: PaidOrder = {
+        ...db.orders[i], status: 'paid', closed_at: new Date().toISOString(), ticket_no, total, payment_method: method,
+        amount_received: method === 'cash' ? received ?? total : total,
+      }
+      db.orders[i] = paid
+      db.lastTicket = ticket_no
+      commitOrders(db)
+      setTableStatus(paid.table_id, 'free')
+      return paid
+    },
+    async getReceiptSettings() {
+      return { ...defaultReceiptSettings(), ...loadOrders().receipt }
+    },
+    async updateReceiptSettings(patch) {
+      const db = loadOrders()
+      db.receipt = { ...defaultReceiptSettings(), ...db.receipt, ...patch }
+      commitOrders(db)
     },
   }
 }

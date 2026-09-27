@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { repo } from '../lib/repo'
-import type { ChosenOption, DiningTable, Hall, Menu, MenuItem, Order, OrderLine } from '../lib/types'
+import type { ChosenOption, DiningTable, Hall, Menu, MenuItem, Order, OrderLine, PaidOrder, PaymentMethod } from '../lib/types'
 import { money } from '../lib/format'
 import ItemOptionsDialog from './ItemOptionsDialog'
+import CheckoutDialog from './CheckoutDialog'
+import ReceiptDialog from './ReceiptDialog'
 import { useDialog } from './Dialog'
 import LangToggle from './LangToggle'
 import { useI18n } from '../lib/i18n'
@@ -10,13 +12,15 @@ import { useI18n } from '../lib/i18n'
 interface Props {
   table: DiningTable
   hall: Hall
+  /** Opens the checkout as soon as the order is loaded (checkout started from the floor plan). */
+  startCheckout?: boolean
   onBack(): void
 }
 
 const sameOptions = (a: ChosenOption[], b: ChosenOption[]) =>
   a.length === b.length && a.every((o, i) => o.group === b[i].group && o.name === b[i].name)
 
-export default function OrderScreen({ table, hall, onBack }: Props) {
+export default function OrderScreen({ table, hall, startCheckout, onBack }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null)
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const [order, setOrder] = useState<Order | null>(null)
@@ -25,6 +29,8 @@ export default function OrderScreen({ table, hall, onBack }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [paying, setPaying] = useState(false)
+  const [paid, setPaid] = useState<{ order: PaidOrder; lines: OrderLine[] } | null>(null)
   const opening = useRef<Promise<Order> | null>(null)
   const ticketRef = useRef<HTMLElement>(null)
   const dialog = useDialog()
@@ -56,8 +62,10 @@ export default function OrderScreen({ table, hall, onBack }: Props) {
       })
       await reloadOrder()
       setLoading(false)
+      if (startCheckout) setPaying(true)
     })()
-  }, [run, reloadOrder])
+    // Only on first load: a different table remounts this screen (keyed by table id).
+  }, [])
 
   useEffect(() => repo.subscribeOrders(() => reloadOrder()), [reloadOrder])
 
@@ -118,6 +126,18 @@ export default function OrderScreen({ table, hall, onBack }: Props) {
       await repo.cancelOrder(order.id)
       onBack()
     })
+  }
+
+  async function pay(method: PaymentMethod, received: number | null) {
+    if (!order) return
+    const snapshot = lines
+    setBusy(true)
+    await run(async () => {
+      const done = await repo.checkoutOrder(order.id, method, received)
+      setPaying(false)
+      setPaid({ order: done, lines: snapshot })
+    })
+    setBusy(false)
   }
 
   async function back() {
@@ -212,8 +232,11 @@ export default function OrderScreen({ table, hall, onBack }: Props) {
                 <span>{t.total}</span>
                 <strong>{money(total)}</strong>
               </div>
+              {lines.length > 0 && (
+                <button className="primary checkout-btn" onClick={() => setPaying(true)}>{t.checkoutAmount(money(total))}</button>
+              )}
+              <button onClick={back}>{t.doneBack}</button>
               {order && <button className="danger" onClick={cancelOrder}>{t.cancelOrder}</button>}
-              <button className="primary" onClick={back}>{t.doneBack}</button>
             </div>
           </aside>
 
@@ -236,6 +259,12 @@ export default function OrderScreen({ table, hall, onBack }: Props) {
             addToOrder(item, options, quantity, note)
           }}
         />
+      )}
+      {paying && order && lines.length > 0 && (
+        <CheckoutDialog tableLabel={table.label} total={total} busy={busy} onCancel={() => setPaying(false)} onPay={pay} />
+      )}
+      {paid && (
+        <ReceiptDialog order={paid.order} lines={paid.lines} tableLabel={table.label} hallName={hall.name} onDone={onBack} />
       )}
       {dialog.element}
     </div>
