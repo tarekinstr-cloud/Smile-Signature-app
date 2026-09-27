@@ -6,16 +6,26 @@ import { useI18n } from '../lib/i18n'
 interface Props {
   item: MenuItem
   groups: OptionGroup[]
+  /** Options to start from (adding a variant of a line already in the order). */
+  initial?: ChosenOption[]
   onCancel(): void
   onAdd(options: ChosenOption[], quantity: number, note: string | null): void
 }
 
 /** Picks an item's options (size, extras…), quantity and note before adding it to the order. */
-export default function ItemOptionsDialog({ item, groups, onCancel, onAdd }: Props) {
+export default function ItemOptionsDialog({ item, groups, initial, onCancel, onAdd }: Props) {
   const { t } = useI18n()
   // Required single-choice groups start on their first option so the common case is one tap.
   const [picked, setPicked] = useState<Record<string, string[]>>(() =>
-    Object.fromEntries(groups.map((g) => [g.id, g.min_select >= 1 && g.max_select === 1 && g.options[0] ? [g.options[0].id] : []])),
+    Object.fromEntries(
+      groups.map((g) => {
+        if (initial) {
+          const ids = g.options.filter((o) => initial.some((c) => c.group === g.name && c.name === o.name)).map((o) => o.id)
+          if (ids.length || g.min_select === 0) return [g.id, ids]
+        }
+        return [g.id, g.min_select >= 1 && g.max_select === 1 && g.options[0] ? [g.options[0].id] : []]
+      }),
+    ),
   )
   const [quantity, setQuantity] = useState(1)
   const [note, setNote] = useState('')

@@ -146,6 +146,7 @@ button.danger.solid { background: var(--occ); border-color: var(--occ); color: #
 .stepper { display: flex; align-items: center; gap: 10px; }
 .stepper button { width: 34px; height: 34px; padding: 0; font-size: 18px; line-height: 1; }
 .stepper > span:not(.muted) { min-width: 20px; text-align: center; font-weight: 700; }
+.stepper .variant-btn { width: auto; height: 34px; padding: 0 10px; font-size: 13px; font-weight: 600; margin-inline-start: auto; }
 .stepper.big { justify-content: center; }
 .stepper.big button { width: 44px; height: 44px; }
 .ticket-total { display: flex; justify-content: space-between; font-size: 18px; padding-top: 4px; }

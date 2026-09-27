@@ -25,7 +25,7 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const [order, setOrder] = useState<Order | null>(null)
   const [lines, setLines] = useState<OrderLine[]>([])
-  const [configuring, setConfiguring] = useState<MenuItem | null>(null)
+  const [configuring, setConfiguring] = useState<{ item: MenuItem; initial?: ChosenOption[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -104,15 +104,20 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
         await repo.addLine(o.id, { item_id: item.id, name: item.name, unit_price, quantity, options, note })
       }
       await reloadOrder()
-      setView('menu')
       setLastAdded({ name: item.name, key: Date.now() })
     })
     setBusy(false)
   }
 
   function tapItem(item: MenuItem) {
-    if (menu?.groups[item.id]?.length) setConfiguring(item)
+    if (menu?.groups[item.id]?.length) setConfiguring({ item })
     else addToOrder(item, [], 1, null)
+  }
+
+  /** Opens the options of a line's item again, to add the same item with other options (another size…). */
+  function addVariant(line: OrderLine) {
+    const item = menu?.items.find((i) => i.id === line.item_id)
+    if (item) setConfiguring({ item, initial: line.options })
   }
 
   async function changeQty(line: OrderLine, delta: number) {
@@ -240,6 +245,9 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
                         <span>{l.quantity}</span>
                         <button onClick={() => changeQty(l, 1)} aria-label={t.increase}>+</button>
                         <span className="muted small">× {money(l.unit_price)}</span>
+                        {l.item_id && menu?.groups[l.item_id]?.length ? (
+                          <button className="variant-btn" onClick={() => addVariant(l)}>{t.addVariant}</button>
+                        ) : null}
                       </div>
                     </li>
                   ))}
@@ -269,11 +277,12 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
 
       {configuring && menu && (
         <ItemOptionsDialog
-          item={configuring}
-          groups={menu.groups[configuring.id] ?? []}
+          item={configuring.item}
+          groups={menu.groups[configuring.item.id] ?? []}
+          initial={configuring.initial}
           onCancel={() => setConfiguring(null)}
           onAdd={(options, quantity, note) => {
-            const item = configuring
+            const { item } = configuring
             setConfiguring(null)
             addToOrder(item, options, quantity, note)
           }}
