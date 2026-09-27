@@ -1,7 +1,11 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import type { DiningTable, Hall, HallPatch, NewTable, TablePatch } from './types'
+import type {
+  Category, DiningTable, Hall, HallPatch, ItemOption, Menu, MenuItem, NewOrderLine, NewTable, OptionGroup, Order,
+  OrderLine, OrderLinePatch, TablePatch,
+} from './types'
+import { demoMenu } from './demoMenu'
 
-/** Data access for halls and tables. Backed by Supabase when configured, localStorage otherwise. */
+/** Data access for halls, tables, menu and orders. Backed by Supabase when configured, localStorage otherwise. */
 export interface Repo {
   mode: 'supabase' | 'local'
   listHalls(): Promise<Hall[]>
@@ -14,6 +18,20 @@ export interface Repo {
   deleteTable(id: string): Promise<void>
   /** Calls onChange whenever halls or tables change elsewhere. Returns an unsubscribe function. */
   subscribe(onChange: () => void): () => void
+
+  /** Active categories and items, with each item's option groups. */
+  getMenu(): Promise<Menu>
+  /** The table's open order and its lines, or null when the table has none. */
+  getOpenOrder(tableId: string): Promise<{ order: Order; lines: OrderLine[] } | null>
+  /** Opens an order on the table (marking it occupied), or returns the one already open. */
+  openOrder(tableId: string): Promise<Order>
+  /** Cancels an open order and frees its table. */
+  cancelOrder(orderId: string): Promise<void>
+  addLine(orderId: string, line: NewOrderLine): Promise<OrderLine>
+  updateLine(id: string, patch: OrderLinePatch): Promise<void>
+  deleteLine(id: string): Promise<void>
+  /** Calls onChange whenever orders or order lines change elsewhere. */
+  subscribeOrders(onChange: () => void): () => void
 }
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
@@ -65,6 +83,81 @@ function supabaseRepo(sb: SupabaseClient): Repo {
         sb.removeChannel(channel)
       }
     },
+
+    async getMenu() {
+      const [cats, items, groups, options] = await Promise.all([
+        sb.from('categories').select('id, name, color, sort_order').eq('active', true).order('sort_order').order('created_at'),
+        sb.from('items').select('id, category_id, name, price, sort_order').eq('active', true).order('sort_order').order('created_at'),
+        sb.from('option_groups').select('*').order('sort_order'),
+        sb.from('options').select('*').order('sort_order'),
+      ])
+      return buildMenu(
+        check(cats) as Category[],
+        (check(items) as MenuItem[]).map((i) => ({ ...i, price: Number(i.price) })),
+        check(groups) as Omit<OptionGroup, 'options'>[],
+        (check(options) as ItemOption[]).map((o) => ({ ...o, price_delta: Number(o.price_delta) })),
+      )
+    },
+    async getOpenOrder(tableId) {
+      const order = check(
+        await sb.from('orders').select('id, table_id, status, note, created_at').eq('table_id', tableId).eq('status', 'open').maybeSingle(),
+      ) as Order | null
+      if (!order) return null
+      const lines = check(await sb.from('order_items').select('*').eq('order_id', order.id).order('created_at')) as OrderLine[]
+      return { order, lines: lines.map(normalizeLine) }
+    },
+    async openOrder(tableId) {
+      const res = await sb.from('orders').insert({ table_id: tableId }).select('id, table_id, status, note, created_at').single()
+      // 23505: another device opened an order on this table first.
+      if (res.error?.code === '23505') {
+        const existing = await this.getOpenOrder(tableId)
+        if (existing) return existing.order
+      }
+      return check(res) as Order
+    },
+    async cancelOrder(orderId) {
+      check(await sb.from('orders').update({ status: 'cancelled' }).eq('id', orderId).eq('status', 'open'))
+    },
+    async addLine(orderId, line) {
+      return normalizeLine(check(await sb.from('order_items').insert({ ...line, order_id: orderId }).select().single()) as OrderLine)
+    },
+    async updateLine(id, patch) {
+      check(await sb.from('order_items').update(patch).eq('id', id))
+    },
+    async deleteLine(id) {
+      check(await sb.from('order_items').delete().eq('id', id))
+    },
+    subscribeOrders(onChange) {
+      const channel = sb
+        .channel('orders')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, onChange)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, onChange)
+        .subscribe()
+      return () => {
+        sb.removeChannel(channel)
+      }
+    },
+  }
+}
+
+function normalizeLine(l: OrderLine): OrderLine {
+  return {
+    ...l,
+    unit_price: Number(l.unit_price),
+    options: (l.options ?? []).map((o) => ({ ...o, price_delta: Number(o.price_delta) })),
+  }
+}
+
+function buildMenu(categories: Category[], items: MenuItem[], groups: Omit<OptionGroup, 'options'>[], options: ItemOption[]): Menu {
+  const byItem: Record<string, OptionGroup[]> = {}
+  for (const g of [...groups].sort((a, b) => a.sort_order - b.sort_order)) {
+    const opts = options.filter((o) => o.group_id === g.id).sort((a, b) => a.sort_order - b.sort_order)
+    ;(byItem[g.item_id] ??= []).push({ ...g, options: opts })
+  }
+  return {
+    categories: [...categories].sort((a, b) => a.sort_order - b.sort_order),
+    items: [...items].sort((a, b) => a.sort_order - b.sort_order),
+    groups: byItem,
   }
 }
 
@@ -98,6 +191,17 @@ function seed(): LocalDb {
   }
 }
 
+const ORDERS_KEY = 'smile.orders.v1'
+
+interface LocalOrdersDb {
+  categories: Category[]
+  items: MenuItem[]
+  groups: Omit<OptionGroup, 'options'>[]
+  options: ItemOption[]
+  orders: Order[]
+  lines: OrderLine[]
+}
+
 function localRepo(): Repo {
   const load = (): LocalDb => {
     try {
@@ -126,6 +230,40 @@ function localRepo(): Repo {
   window.addEventListener('storage', (e) => {
     if (e.key === KEY) listeners.forEach((l) => l())
   })
+
+  const loadOrders = (): LocalOrdersDb => {
+    try {
+      const raw = localStorage.getItem(ORDERS_KEY)
+      if (raw) return JSON.parse(raw) as LocalOrdersDb
+    } catch {
+      /* fall through to seed */
+    }
+    const db: LocalOrdersDb = { ...demoMenu(), orders: [], lines: [] }
+    saveOrders(db)
+    return db
+  }
+  const saveOrders = (db: LocalOrdersDb) => {
+    try {
+      localStorage.setItem(ORDERS_KEY, JSON.stringify(db))
+    } catch {
+      /* storage unavailable */
+    }
+  }
+  const orderListeners = new Set<() => void>()
+  const commitOrders = (db: LocalOrdersDb) => {
+    saveOrders(db)
+    orderListeners.forEach((l) => l())
+  }
+  window.addEventListener('storage', (e) => {
+    if (e.key === ORDERS_KEY) orderListeners.forEach((l) => l())
+  })
+  // Mirrors the database trigger: an open order occupies its table, closing it frees the table.
+  const setTableStatus = (tableId: string | null, status: DiningTable['status']) => {
+    if (!tableId) return
+    const db = load()
+    db.tables = db.tables.map((t) => (t.id === tableId ? { ...t, status } : t))
+    commit(db)
+  }
 
   return {
     mode: 'local',
@@ -182,6 +320,59 @@ function localRepo(): Repo {
       listeners.add(onChange)
       return () => {
         listeners.delete(onChange)
+      }
+    },
+
+    async getMenu() {
+      const db = loadOrders()
+      return buildMenu(db.categories, db.items, db.groups, db.options)
+    },
+    async getOpenOrder(tableId) {
+      const db = loadOrders()
+      const order = db.orders.find((o) => o.table_id === tableId && o.status === 'open')
+      if (!order) return null
+      return { order, lines: db.lines.filter((l) => l.order_id === order.id) }
+    },
+    async openOrder(tableId) {
+      const db = loadOrders()
+      let order = db.orders.find((o) => o.table_id === tableId && o.status === 'open')
+      if (!order) {
+        order = { id: crypto.randomUUID(), table_id: tableId, status: 'open', note: null, created_at: new Date().toISOString() }
+        db.orders.push(order)
+        commitOrders(db)
+      }
+      setTableStatus(tableId, 'occupied')
+      return order
+    },
+    async cancelOrder(orderId) {
+      const db = loadOrders()
+      const order = db.orders.find((o) => o.id === orderId && o.status === 'open')
+      if (!order) return
+      order.status = 'cancelled'
+      commitOrders(db)
+      setTableStatus(order.table_id, 'free')
+    },
+    async addLine(orderId, line) {
+      const db = loadOrders()
+      const row: OrderLine = { ...line, id: crypto.randomUUID(), order_id: orderId, created_at: new Date().toISOString() }
+      db.lines.push(row)
+      commitOrders(db)
+      return row
+    },
+    async updateLine(id, patch) {
+      const db = loadOrders()
+      db.lines = db.lines.map((l) => (l.id === id ? { ...l, ...patch } : l))
+      commitOrders(db)
+    },
+    async deleteLine(id) {
+      const db = loadOrders()
+      db.lines = db.lines.filter((l) => l.id !== id)
+      commitOrders(db)
+    },
+    subscribeOrders(onChange) {
+      orderListeners.add(onChange)
+      return () => {
+        orderListeners.delete(onChange)
       }
     },
   }

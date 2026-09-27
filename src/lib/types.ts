@@ -25,3 +25,78 @@ export interface DiningTable {
 export type NewTable = Omit<DiningTable, 'id'>
 export type TablePatch = Partial<Omit<DiningTable, 'id' | 'hall_id'>>
 export type HallPatch = Partial<Omit<Hall, 'id'>>
+
+export interface Category {
+  id: string
+  name: string
+  color: string
+  sort_order: number
+}
+
+export interface MenuItem {
+  id: string
+  category_id: string
+  name: string
+  price: number
+  sort_order: number
+}
+
+export interface ItemOption {
+  id: string
+  group_id: string
+  name: string
+  price_delta: number
+  sort_order: number
+}
+
+export interface OptionGroup {
+  id: string
+  item_id: string
+  name: string
+  /** 1 = required. */
+  min_select: number
+  /** 1 = pick one (radio), more = pick several (checkboxes). */
+  max_select: number
+  sort_order: number
+  options: ItemOption[]
+}
+
+export interface Menu {
+  categories: Category[]
+  items: MenuItem[]
+  /** Option groups keyed by item id. */
+  groups: Record<string, OptionGroup[]>
+}
+
+export type OrderStatus = 'open' | 'paid' | 'cancelled'
+
+export interface Order {
+  id: string
+  table_id: string | null
+  status: OrderStatus
+  note: string | null
+  created_at: string
+}
+
+/** Snapshot of a chosen option, copied onto the order line. */
+export interface ChosenOption {
+  group: string
+  name: string
+  price_delta: number
+}
+
+export interface OrderLine {
+  id: string
+  order_id: string
+  item_id: string | null
+  name: string
+  /** Price of one unit, options included. */
+  unit_price: number
+  quantity: number
+  options: ChosenOption[]
+  note: string | null
+  created_at: string
+}
+
+export type NewOrderLine = Pick<OrderLine, 'item_id' | 'name' | 'unit_price' | 'quantity' | 'options' | 'note'>
+export type OrderLinePatch = Partial<Pick<OrderLine, 'quantity' | 'note'>>
