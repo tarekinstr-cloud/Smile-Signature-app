@@ -92,8 +92,6 @@ const fr = {
   showOrder: 'Voir la commande',
   backToMenu: '← Ajouter des articles',
   added: (name: string) => `${name} ajouté`,
-  supplementAdded: (option: string, item: string) => `${item} + ${option}`,
-  supplementRemoved: (option: string, item: string) => `${option} retiré de ${item}`,
   noteFor: (name: string) => `Note pour « ${name} »`,
   confirmCancelOrder: (label: string) => `Annuler la commande de la table ${label} ? La table redeviendra libre.`,
 
@@ -266,8 +264,6 @@ const ar: Dict = {
   showOrder: 'عرض الطلب',
   backToMenu: '→ إضافة أصناف',
   added: (name) => `تمت إضافة ${name}`,
-  supplementAdded: (option, item) => `${item} + ${option}`,
-  supplementRemoved: (option, item) => `حُذف ${option} من ${item}`,
   noteFor: (name) => `ملاحظة على "${name}"`,
   confirmCancelOrder: (label) => `إلغاء طلب الطاولة ${label}؟ ستصبح الطاولة حرة.`,
 
