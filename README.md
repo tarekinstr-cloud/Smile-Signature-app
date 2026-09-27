@@ -10,6 +10,13 @@ React + TypeScript + Vite + Supabase.
 - **وضع تعديل المخطط**: سحب وإفلات الطاولات (فأرة أو لمس، مع شبكة 10)، إضافة/حذف/تعديل الطاولات والصالات.
 - تحديث مباشر (Realtime) بين كل الأجهزة عند ربط Supabase.
 
+## المرحلة 1 — الجزء 2: الطلبات
+- في **وضع الخدمة**، الضغط على طاولة يفتح شاشة طلبها: الفئات في الأعلى، والأصناف تحتها، والطلب الحالي على الجانب (أو أسفل الشاشة في الهاتف).
+- صنف بدون خيارات يُضاف بضغطة واحدة؛ صنف له خيارات (الحجم، إضافات…) يفتح نافذة لاختيارها مع الكمية وملاحظة.
+- تعديل الكمية (+ / −)، ملاحظة على كل سطر (بالضغط على اسمه)، والمجموع بالدرهم.
+- أول صنف يفتح طلباً ويجعل الطاولة **مشغولة**؛ إلغاء الطلب يحرّرها. طلب مفتوح واحد فقط لكل طاولة.
+- الاسم والسعر والخيارات تُنسخ في سطر الطلب، فلا يتغيّر طلب قديم إذا تغيّرت القائمة.
+
 ## التشغيل
 ```bash
 npm install
@@ -20,7 +27,10 @@ npm run build      # نسخة الإنتاج في dist/ (مع Service Worker و 
 
 ## ربط Supabase
 1. أنشئ مشروعاً في https://supabase.com/dashboard باسم `smile-signature-app`.
-2. في **SQL Editor** نفّذ محتوى `supabase/migrations/20260927000000_halls_tables.sql`، ثم (اختياري) `supabase/seed.sql` لبيانات تجريبية.
+2. في **SQL Editor** نفّذ بالترتيب:
+   - `supabase/migrations/20260927000000_halls_tables.sql`
+   - `supabase/migrations/20260927010000_menu_orders.sql` (الفئات، الأصناف، الخيارات، الطلبات + قائمة تجريبية)
+   - (اختياري) `supabase/seed.sql` لطاولات تجريبية.
 3. في **Authentication → Users** أضف مستخدماً للطاقم (بريد + كلمة سر).
 4. انسخ `.env.example` إلى `.env` وضع فيه `Project URL` و `anon public key` من **Project Settings → API**.
 
@@ -36,5 +46,7 @@ src/components/FloorPlan   المخطط + السحب والإفلات
 src/components/FloorScreen الشاشة الرئيسية (الصالات، الأوضاع)
 src/components/TablePanel  تعديل طاولة
 src/components/HallPanel   تعديل صالة
+src/components/OrderScreen شاشة الطلب (الفئات، الأصناف، الطلب الحالي)
+src/components/ItemOptionsDialog اختيار خيارات الصنف
 supabase/migrations        مخطط قاعدة البيانات
 ```

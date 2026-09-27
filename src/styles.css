@@ -117,3 +117,47 @@ label, .field { display: flex; flex-direction: column; gap: 6px; font-size: 14px
 .dialog h2 { margin: 0; font-size: 18px; }
 .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; }
 button.danger.solid { background: var(--occ); border-color: var(--occ); color: #fff; }
+
+/* ───────────── شاشة الطلب ───────────── */
+.order-title { display: flex; flex-direction: column; line-height: 1.2; }
+.order-title span { font-size: 13px; color: #d6d3d1; }
+.topbar .back { font-weight: 600; }
+.menu-area { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.categories { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.category { white-space: nowrap; border: 2px solid var(--cat); color: var(--ink); font-weight: 600; padding: 10px 16px; }
+.category.on { background: var(--cat); color: #fff; }
+.items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.item-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-height: 92px; padding: 12px; text-align: start; border-radius: var(--radius); }
+.item-card:active { transform: scale(0.97); }
+.item-name { font-weight: 600; }
+.item-price { color: var(--muted); font-size: 14px; margin-top: auto; }
+.item-has-options { font-size: 11px; background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 999px; }
+
+.ticket { width: 320px; flex-shrink: 0; position: sticky; top: 16px; }
+.lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-height: 50vh; overflow-y: auto; }
+.line { border-bottom: 1px solid var(--line); padding-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
+.line-main { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.line-name { padding: 0; font-weight: 600; text-align: start; }
+.line-total { font-weight: 600; white-space: nowrap; }
+.line-details { font-size: 13px; color: var(--muted); }
+.stepper { display: flex; align-items: center; gap: 10px; }
+.stepper button { width: 34px; height: 34px; padding: 0; font-size: 18px; line-height: 1; }
+.stepper > span:not(.muted) { min-width: 20px; text-align: center; font-weight: 700; }
+.stepper.big { justify-content: center; }
+.stepper.big button { width: 44px; height: 44px; }
+.ticket-total { display: flex; justify-content: space-between; font-size: 18px; padding-top: 4px; }
+.ticket-bar { display: none; }
+
+.options-dialog { width: min(440px, 100%); max-height: 90vh; overflow-y: auto; }
+.opt-group { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.opt-group legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
+.opt-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.opt { padding: 10px 14px; }
+.opt.on { background: var(--accent); border-color: var(--accent); font-weight: 600; }
+
+@media (max-width: 800px) {
+  .ticket { width: 100%; position: static; }
+  .lines { max-height: none; }
+  .ticket-bar { display: block; position: sticky; bottom: 12px; width: 100%; padding: 14px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,0,0,0.2); }
+  .items-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+}

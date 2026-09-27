@@ -4,6 +4,7 @@ import type { DiningTable, Hall, TablePatch } from '../lib/types'
 import FloorPlan from './FloorPlan'
 import TablePanel from './TablePanel'
 import HallPanel from './HallPanel'
+import OrderScreen from './OrderScreen'
 import { useDialog } from './Dialog'
 
 type Mode = 'service' | 'edit'
@@ -14,6 +15,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   const [tables, setTables] = useState<DiningTable[]>([])
   const [mode, setMode] = useState<Mode>('service')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [orderTableId, setOrderTableId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const dialog = useDialog()
@@ -72,9 +74,6 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
     }
   }
 
-  function toggleStatus(t: DiningTable) {
-    updateTable(t.id, { status: t.status === 'free' ? 'occupied' : 'free' })
-  }
 
   async function addHall() {
     const name = await dialog.askText('اسم الصالة الجديدة')
@@ -118,6 +117,11 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
       await repo.deleteHall(h.id)
       setHallId(null)
     })
+  }
+
+  const orderTable = tables.find((t) => t.id === orderTableId)
+  if (orderTable && hall) {
+    return <OrderScreen key={orderTable.id} table={orderTable} hall={hall} onBack={() => { setOrderTableId(null); reload() }} />
   }
 
   return (
@@ -165,7 +169,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
                 <span className="pill free">حرة: {counts.free}</span>
                 <span className="pill occupied">مشغولة: {counts.occupied}</span>
                 <span className="hint">
-                  {mode === 'service' ? 'اضغط على طاولة لتغيير حالتها' : 'اسحب الطاولات لتحريكها، واضغط على طاولة لتعديلها'}
+                  {mode === 'service' ? 'اضغط على طاولة لفتح طلبها' : 'اسحب الطاولات لتحريكها، واضغط على طاولة لتعديلها'}
                 </span>
                 {mode === 'edit' && <button className="primary" onClick={addTable}>+ طاولة</button>}
               </div>
@@ -175,7 +179,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
                 editable={mode === 'edit'}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
-                onTap={toggleStatus}
+                onTap={(t) => setOrderTableId(t.id)}
                 onMove={(id, x, y) => updateTable(id, { x, y })}
               />
             </section>
