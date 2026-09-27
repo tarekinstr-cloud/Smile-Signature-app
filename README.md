@@ -25,6 +25,16 @@ React + TypeScript + Vite + Supabase.
 - تغيير سعر أو حذف صنف لا يغيّر الطلبات السابقة (الاسم والسعر منسوخان في سطر الطلب).
 - حالياً كل مستخدم مسجّل من الطاقم يستطيع تعديل القائمة؛ تحديد ذلك للمدير يأتي مع الأدوار.
 
+## المرحلة 1 — الجزء 3: الكاسيير (Caisse)
+- **التحصيل** من شاشة الطلب (زر «Encaisser · المجموع»)، أو من المخطط: الضغط على طاولة مشغولة يعرض «Encaisser» أو «Voir la commande».
+- **طريقة الدفع**: نقدي (Espèces) مع المبلغ المستلم وأزرار سريعة (المبلغ بالضبط، 200، 500، 1000…) وحساب الباقي، أو بطاقة (Carte).
+- المجموع يُحسب في قاعدة البيانات من سطور الطلب (الدالة `checkout_order`)، والطلب يأخذ **رقم تذكرة** متسلسل.
+- بعد التحصيل الطلب يصبح `paid` والطاولة ترجع **حرة** تلقائياً (نفس التريغر ديال الجزء 2).
+- **التذكرة**: الشعار والاسم، العنوان/الهاتف، رقم التذكرة والتاريخ، الطاولة، الأصناف مع خياراتها، المجموع، طريقة الدفع (والمستلم والباقي في النقدي)، ورسالة شكر.
+- زر **Imprimer** يطبع التذكرة وحدها بعرض 80 مم (طابعة تذاكر حرارية أو أي طابعة).
+- زر **Personnaliser** يعدّل الاسم، الأسطر تحت الاسم ورسالة الختام (محفوظة في جدول `receipt_settings`).
+- الشعار حالياً هو `public/icon.svg`؛ لتغييره يكفي استبدال هذا الملف.
+
 ## التشغيل
 ```bash
 npm install
@@ -38,6 +48,7 @@ npm run build      # نسخة الإنتاج في dist/ (مع Service Worker و 
 2. في **SQL Editor** نفّذ بالترتيب:
    - `supabase/migrations/20260927000000_halls_tables.sql`
    - `supabase/migrations/20260927010000_menu_orders.sql` (الفئات، الأصناف، الخيارات، الطلبات + قائمة تجريبية)
+   - `supabase/migrations/20260927020000_checkout.sql` (التحصيل، رقم التذكرة، إعدادات التذكرة)
    - (اختياري) `supabase/seed.sql` لطاولات تجريبية.
 3. في **Authentication → Users** أضف مستخدماً للطاقم (بريد + كلمة سر).
 4. انسخ `.env.example` إلى `.env` وضع فيه `Project URL` و `anon public key` من **Project Settings → API**.
@@ -56,6 +67,9 @@ src/components/TablePanel  تعديل طاولة
 src/components/HallPanel   تعديل صالة
 src/components/OrderScreen شاشة الطلب (الفئات، الأصناف، الطلب الحالي)
 src/components/ItemOptionsDialog اختيار خيارات الصنف
+src/components/CheckoutDialog التحصيل (نقدي / بطاقة، الباقي)
+src/components/Receipt     التذكرة (للشاشة والطباعة)
+src/components/ReceiptDialog عرض التذكرة، الطباعة والتخصيص
 src/components/MenuAdmin   إدارة القائمة (الفئات والأصناف)
 src/components/ItemEditor  تعديل صنف وسعره وخياراته
 supabase/migrations        مخطط قاعدة البيانات

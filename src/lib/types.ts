@@ -114,3 +114,25 @@ export type NewItemOption = Omit<ItemOption, 'id'>
 export type ItemOptionPatch = Partial<Omit<NewItemOption, 'group_id'>>
 /** Tables of the menu that the admin screen edits. */
 export type MenuTable = 'categories' | 'items' | 'option_groups' | 'options'
+
+export type PaymentMethod = 'cash' | 'card'
+
+/** An order after checkout: what the receipt prints. */
+export interface PaidOrder extends Order {
+  /** Sequential receipt number, assigned at checkout. */
+  ticket_no: number
+  total: number
+  payment_method: PaymentMethod
+  /** Cash handed over by the customer (equals the total for card payments). */
+  amount_received: number
+  closed_at: string
+}
+
+/** Editable text printed on every receipt. */
+export interface ReceiptSettings {
+  name: string
+  /** Lines under the name: address, phone… */
+  header: string
+  /** Closing message, e.g. "Merci de votre visite — Bon Appétit !". */
+  footer: string
+}

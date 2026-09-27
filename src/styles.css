@@ -19,13 +19,13 @@
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; }
 body { background: var(--bg); -webkit-tap-highlight-color: transparent; }
-button, input { font: inherit; color: inherit; }
+button, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 8px 14px; }
 button:disabled { opacity: 0.6; cursor: default; }
 button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
 button.danger { background: var(--surface); border-color: #fecaca; color: var(--occ); }
 button.ghost { border-color: transparent; background: transparent; }
-input { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+input, textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 label, .field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--muted); }
 
 .center { min-height: 100%; display: grid; place-items: center; padding: 24px; }
@@ -210,3 +210,47 @@ label input, label select { color: var(--ink); }
 
 .lang-toggle { font-weight: 600; }
 .login .lang-toggle { align-self: center; }
+
+/* ───────────── التحصيل والتذكرة ───────────── */
+textarea { resize: vertical; color: var(--ink); }
+button.big { padding: 14px; font-size: 16px; font-weight: 600; }
+.checkout-btn { padding: 14px; font-size: 16px; font-weight: 700; }
+.table-actions { gap: 10px; }
+.checkout-dialog { width: min(420px, 100%); max-height: 92vh; overflow-y: auto; }
+.due { display: flex; justify-content: space-between; align-items: baseline; background: var(--bg); border-radius: 8px; padding: 12px 14px; }
+.due strong { font-size: 26px; }
+.pay-methods { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pay-method { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px; font-size: 16px; font-weight: 600; color: var(--ink); border-width: 2px; }
+.pay-method span { font-size: 26px; }
+.pay-method.on { border-color: var(--accent); background: #fef3c7; }
+.quick-amounts { display: flex; flex-wrap: wrap; gap: 8px; }
+.quick-amounts button { flex: 1; white-space: nowrap; }
+.change { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 14px; border-radius: 8px; background: var(--free-bg); color: #14532d; }
+.change strong { font-size: 22px; }
+.change.short { background: var(--occ-bg); color: var(--occ); }
+
+.receipt-dialog { width: min(420px, 100%); max-height: 94vh; overflow-y: auto; }
+.receipt-dialog .dialog-actions { align-items: center; flex-wrap: wrap; }
+.receipt-form { display: flex; flex-direction: column; gap: 10px; }
+.receipt-paper { background: #fafaf9; border: 1px dashed var(--line); border-radius: 8px; padding: 16px 8px; display: flex; justify-content: center; }
+
+.receipt { width: 72mm; max-width: 100%; background: #fff; color: #000; padding: 10px 8px; font-size: 13px; line-height: 1.35; font-variant-numeric: tabular-nums; }
+.receipt-logo { display: block; margin: 0 auto 4px; }
+.receipt-name { text-align: center; font-size: 18px; font-weight: 700; }
+.receipt-header, .receipt-footer { text-align: center; }
+.receipt-footer { font-weight: 700; margin-top: 4px; }
+.receipt-sep { border-top: 1px dashed #000; margin: 8px 0; }
+.receipt-meta, .receipt-row { display: flex; justify-content: space-between; gap: 8px; }
+.receipt-row > span:last-child, .receipt-meta > * { white-space: nowrap; }
+.receipt-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.receipt-sub { font-size: 11px; padding-inline-start: 14px; }
+.receipt-total { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+
+.print-area { display: none; }
+@media print {
+  @page { size: 80mm auto; margin: 0; }
+  html, body { height: auto; background: #fff; }
+  #root { display: none !important; }
+  .print-area { display: block; }
+  .print-area .receipt { width: 72mm; margin: 0 auto; padding: 4mm 0; }
+}
