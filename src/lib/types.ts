@@ -102,7 +102,7 @@ export interface OrderLine {
 }
 
 export type NewOrderLine = Pick<OrderLine, 'item_id' | 'name' | 'unit_price' | 'quantity' | 'options' | 'note'>
-export type OrderLinePatch = Partial<Pick<OrderLine, 'quantity' | 'note'>>
+export type OrderLinePatch = Partial<Pick<OrderLine, 'quantity' | 'note' | 'options' | 'unit_price'>>
 
 export type NewCategory = Omit<Category, 'id'>
 export type CategoryPatch = Partial<NewCategory>

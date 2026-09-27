@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { repo } from '../lib/repo'
-import type { ChosenOption, DiningTable, Hall, Menu, MenuItem, Order, OrderLine, PaidOrder, PaymentMethod } from '../lib/types'
+import type { ChosenOption, DiningTable, Hall, ItemOption, Menu, MenuItem, OptionGroup, Order, OrderLine, PaidOrder, PaymentMethod } from '../lib/types'
 import { money } from '../lib/format'
-import ItemOptionsDialog from './ItemOptionsDialog'
 import CheckoutDialog from './CheckoutDialog'
 import ReceiptDialog from './ReceiptDialog'
 import { useDialog } from './Dialog'
@@ -20,12 +19,35 @@ interface Props {
 const sameOptions = (a: ChosenOption[], b: ChosenOption[]) =>
   a.length === b.length && a.every((o, i) => o.group === b[i].group && o.name === b[i].name)
 
+const chosen = (g: OptionGroup, o: ItemOption): ChosenOption => ({ group: g.name, name: o.name, price_delta: o.price_delta })
+const isChosen = (options: ChosenOption[], g: OptionGroup, o: ItemOption) => options.some((c) => c.group === g.name && c.name === o.name)
+
+/** Keeps a line's options in menu order (group, then option), so equal choices compare equal. */
+function menuOrder(groups: OptionGroup[], options: ChosenOption[]): ChosenOption[] {
+  const rank = (c: ChosenOption) => {
+    const gi = groups.findIndex((g) => g.name === c.group)
+    const oi = gi < 0 ? -1 : groups[gi].options.findIndex((o) => o.name === c.name)
+    return gi < 0 ? Infinity : gi * 1000 + oi
+  }
+  return [...options].sort((a, b) => rank(a) - rank(b))
+}
+
+/** The item's first required pick-one group (Taille…): each of its options is a button that adds the item. */
+const mainGroup = (groups: OptionGroup[]) => groups.find((g) => g.min_select >= 1 && g.max_select === 1 && g.options.length > 0)
+
+/** Options of a new line: the tapped size, and the first option of any other required pick-one group. */
+function defaultOptions(groups: OptionGroup[], main?: OptionGroup, picked?: ItemOption): ChosenOption[] {
+  return groups.flatMap((g) => {
+    if (g === main && picked) return [chosen(g, picked)]
+    return g.min_select >= 1 && g.max_select === 1 && g.options[0] ? [chosen(g, g.options[0])] : []
+  })
+}
+
 export default function OrderScreen({ table, hall, startCheckout, onBack }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null)
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const [order, setOrder] = useState<Order | null>(null)
   const [lines, setLines] = useState<OrderLine[]>([])
-  const [configuring, setConfiguring] = useState<{ item: MenuItem; initial?: ChosenOption[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -33,8 +55,10 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
   const [paid, setPaid] = useState<{ order: PaidOrder; lines: OrderLine[] } | null>(null)
   // The order summary is its own view: after adding an item the waiter stays on the menu to keep adding.
   const [view, setView] = useState<'menu' | 'order'>(startCheckout ? 'order' : 'menu')
-  const [lastAdded, setLastAdded] = useState<{ name: string; key: number } | null>(null)
+  const [lastAdded, setLastAdded] = useState<{ text: string; key: number } | null>(null)
   const opening = useRef<Promise<Order> | null>(null)
+  // Line each item was last added to: supplements tapped on the item's card apply to it.
+  const lastLineOf = useRef<Record<string, string>>({})
   const dialog = useDialog()
   const { t } = useI18n()
 
@@ -92,32 +116,65 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
     return o
   }
 
-  async function addToOrder(item: MenuItem, options: ChosenOption[], quantity: number, note: string | null) {
+  /** Adds one portion of the item (with its size…) as a new line, or one more on an identical line. */
+  async function addToOrder(item: MenuItem, options: ChosenOption[], label = item.name) {
     setBusy(true)
     await run(async () => {
       const o = await ensureOrder()
-      const same = !note && lines.find((l) => l.item_id === item.id && !l.note && sameOptions(l.options, options))
+      const same = lines.find((l) => l.item_id === item.id && !l.note && sameOptions(l.options, options))
       if (same) {
-        await repo.updateLine(same.id, { quantity: same.quantity + quantity })
+        await repo.updateLine(same.id, { quantity: same.quantity + 1 })
+        lastLineOf.current[item.id] = same.id
       } else {
         const unit_price = item.price + options.reduce((s, x) => s + x.price_delta, 0)
-        await repo.addLine(o.id, { item_id: item.id, name: item.name, unit_price, quantity, options, note })
+        const line = await repo.addLine(o.id, { item_id: item.id, name: item.name, unit_price, quantity: 1, options, note: null })
+        lastLineOf.current[item.id] = line.id
       }
       await reloadOrder()
-      setLastAdded({ name: item.name, key: Date.now() })
+      setLastAdded({ text: t.added(label), key: Date.now() })
     })
     setBusy(false)
   }
 
-  function tapItem(item: MenuItem) {
-    if (menu?.groups[item.id]?.length) setConfiguring({ item })
-    else addToOrder(item, [], 1, null)
+  /** Line a supplement tapped on this item's card applies to: the one last added, else the item's latest line. */
+  function targetLine(itemId: string): OrderLine | undefined {
+    const id = lastLineOf.current[itemId]
+    return lines.find((l) => l.id === id) ?? lines.filter((l) => l.item_id === itemId).at(-1)
   }
 
-  /** Opens the options of a line's item again, to add the same item with other options (another size…). */
-  function addVariant(line: OrderLine) {
-    const item = menu?.items.find((i) => i.id === line.item_id)
-    if (item) setConfiguring({ item, initial: line.options })
+  /** Switches a supplement (Gratiné, Garniture…) on or off on the item's last line, or adds the item with it. */
+  async function toggleSupplement(item: MenuItem, groups: OptionGroup[], g: OptionGroup, opt: ItemOption) {
+    const line = targetLine(item.id)
+    if (!line) return addToOrder(item, menuOrder(groups, [...defaultOptions(groups), chosen(g, opt)]), `${item.name} + ${opt.name}`)
+    const on = isChosen(line.options, g, opt)
+    const inGroup = line.options.filter((c) => c.group === g.name)
+    let options: ChosenOption[]
+    if (on) {
+      if (inGroup.length <= g.min_select) return
+      options = line.options.filter((c) => !(c.group === g.name && c.name === opt.name))
+    } else if (g.max_select === 1) {
+      options = [...line.options.filter((c) => c.group !== g.name), chosen(g, opt)]
+    } else {
+      if (inGroup.length >= g.max_select) return
+      options = [...line.options, chosen(g, opt)]
+    }
+    options = menuOrder(groups, options)
+    const delta = (xs: ChosenOption[]) => xs.reduce((s, x) => s + x.price_delta, 0)
+    const unit_price = line.unit_price - delta(line.options) + delta(options)
+    setBusy(true)
+    await run(async () => {
+      if (line.quantity > 1) {
+        // Only one of the portions changes: it becomes its own line.
+        await repo.updateLine(line.id, { quantity: line.quantity - 1 })
+        const added = await repo.addLine(line.order_id, { item_id: item.id, name: line.name, unit_price, quantity: 1, options, note: line.note })
+        lastLineOf.current[item.id] = added.id
+      } else {
+        await repo.updateLine(line.id, { options, unit_price })
+      }
+      await reloadOrder()
+      setLastAdded({ text: on ? t.supplementRemoved(opt.name, item.name) : t.supplementAdded(opt.name, item.name), key: Date.now() })
+    })
+    setBusy(false)
   }
 
   async function changeQty(line: OrderLine, delta: number) {
@@ -205,13 +262,59 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
               </div>
             ) : (
               <div className="items-grid">
-                {items.map((i) => (
-                  <button key={i.id} className="item-card" onClick={() => tapItem(i)} disabled={busy}>
-                    <span className="item-name">{i.name}</span>
-                    {menu?.groups[i.id]?.length ? <span className="item-has-options">{t.hasOptions}</span> : null}
-                    <span className="item-price">{money(i.price)}</span>
-                  </button>
-                ))}
+                {items.map((i) => {
+                  const groups = menu?.groups[i.id] ?? []
+                  if (groups.length === 0) {
+                    return (
+                      <button key={i.id} className="item-card" onClick={() => addToOrder(i, [])} disabled={busy}>
+                        <span className="item-name">{i.name}</span>
+                        <span className="item-price">{money(i.price)}</span>
+                      </button>
+                    )
+                  }
+                  const main = mainGroup(groups)
+                  const target = targetLine(i.id)
+                  return (
+                    <div key={i.id} className="item-card with-options">
+                      {main ? (
+                        <>
+                          <span className="item-name">{i.name}</span>
+                          <div className="size-btns">
+                            {main.options.map((o) => (
+                              <button key={o.id} className="size-btn" disabled={busy}
+                                onClick={() => addToOrder(i, defaultOptions(groups, main, o), `${i.name} ${o.name}`)}>
+                                <span className="size-name">{o.name}</span>
+                                <span className="size-price">{money(i.price + o.price_delta)}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      ) : (
+                        <button className="size-btn item-base" disabled={busy} onClick={() => addToOrder(i, defaultOptions(groups))}>
+                          <span className="size-name">{i.name}</span>
+                          <span className="size-price">{money(i.price)}</span>
+                        </button>
+                      )}
+                      {groups.filter((g) => g !== main).map((g) => (
+                        <div key={g.id} className="supp-group">
+                          <span className="supp-label">{g.name}</span>
+                          <div className="supp-btns">
+                            {g.options.map((o) => {
+                              const on = !!target && isChosen(target.options, g, o)
+                              return (
+                                <button key={o.id} className={on ? 'supp-btn on' : 'supp-btn'} aria-pressed={on} disabled={busy}
+                                  onClick={() => toggleSupplement(i, groups, g, o)}>
+                                  {o.name}
+                                  {o.price_delta !== 0 && <span className="small"> <bdi dir="ltr">{o.price_delta > 0 ? '+' : ''}{money(o.price_delta)}</bdi></span>}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })}
                 {items.length === 0 && <p className="muted">{t.noItemsInCategory}</p>}
               </div>
             )}
@@ -245,9 +348,6 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
                         <span>{l.quantity}</span>
                         <button onClick={() => changeQty(l, 1)} aria-label={t.increase}>+</button>
                         <span className="muted small">× {money(l.unit_price)}</span>
-                        {l.item_id && menu?.groups[l.item_id]?.length ? (
-                          <button className="variant-btn" onClick={() => addVariant(l)}>{t.addVariant}</button>
-                        ) : null}
                       </div>
                     </li>
                   ))}
@@ -268,26 +368,13 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
 
           {view === 'menu' && lines.length > 0 && (
             <button className="ticket-bar primary" onClick={() => openView('order')}>
-              {lastAdded && <span key={lastAdded.key} className="added-flash">✓ {t.added(lastAdded.name)}</span>}
+              {lastAdded && <span key={lastAdded.key} className="added-flash">✓ {lastAdded.text}</span>}
               <span>{t.showOrder} · {t.itemCount(count)} · {money(total)}</span>
             </button>
           )}
         </main>
       )}
 
-      {configuring && menu && (
-        <ItemOptionsDialog
-          item={configuring.item}
-          groups={menu.groups[configuring.item.id] ?? []}
-          initial={configuring.initial}
-          onCancel={() => setConfiguring(null)}
-          onAdd={(options, quantity, note) => {
-            const { item } = configuring
-            setConfiguring(null)
-            addToOrder(item, options, quantity, note)
-          }}
-        />
-      )}
       {paying && order && lines.length > 0 && (
         <CheckoutDialog tableLabel={table.label} total={total} busy={busy} onCancel={() => setPaying(false)} onPay={pay} />
       )}
