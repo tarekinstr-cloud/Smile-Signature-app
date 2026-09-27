@@ -126,15 +126,28 @@ button.danger.solid { background: var(--occ); border-color: var(--occ); color: #
 .categories { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 .category { white-space: nowrap; border: 2px solid var(--cat); color: var(--ink); font-weight: 600; padding: 10px 16px; }
 .category.on { background: var(--cat); color: #fff; }
-.items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.items-grid { display: grid; grid-auto-flow: dense; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
 .item-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-height: 92px; padding: 12px; text-align: start; border-radius: var(--radius); }
 .item-card:active { transform: scale(0.97); }
 .item-name { font-weight: 600; }
 .item-price { color: var(--muted); font-size: 14px; margin-top: auto; }
-.item-has-options { font-size: 11px; background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 999px; }
+.item-card.with-options { grid-column: span 2; background: var(--surface); border: 1px solid var(--line); cursor: default; }
+.item-card.with-options:active { transform: none; }
+.size-btns, .supp-btns { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+.size-btn { flex: 1 1 70px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 8px; font-weight: 700; }
+.size-btn:active, .supp-btn:active { transform: scale(0.96); }
+.size-btn.item-base { width: 100%; flex: none; }
+.size-price { font-size: 13px; font-weight: 500; color: var(--muted); }
+.supp-group { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.supp-label { font-size: 12px; color: var(--muted); }
+.supp-btn { padding: 8px 10px; font-size: 13px; }
+.supp-btn.on { background: var(--accent); border-color: var(--accent); font-weight: 600; }
 
-.ticket { width: 320px; flex-shrink: 0; position: sticky; top: 16px; }
-.lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-height: 50vh; overflow-y: auto; }
+.order-content { flex-direction: column; align-items: stretch; }
+.menu-area { width: 100%; }
+.ticket { width: min(560px, 100%); align-self: center; }
+.back-to-menu { font-weight: 600; padding: 12px; }
+.lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .line { border-bottom: 1px solid var(--line); padding-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
 .line-main { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .line-name { padding: 0; font-weight: 600; text-align: start; }
@@ -146,19 +159,10 @@ button.danger.solid { background: var(--occ); border-color: var(--occ); color: #
 .stepper.big { justify-content: center; }
 .stepper.big button { width: 44px; height: 44px; }
 .ticket-total { display: flex; justify-content: space-between; font-size: 18px; padding-top: 4px; }
-.ticket-bar { display: none; }
-
-.options-dialog { width: min(440px, 100%); max-height: 90vh; overflow-y: auto; }
-.opt-group { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
-.opt-group legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
-.opt-list { display: flex; flex-wrap: wrap; gap: 8px; }
-.opt { padding: 10px 14px; }
-.opt.on { background: var(--accent); border-color: var(--accent); font-weight: 600; }
+.ticket-bar { position: sticky; bottom: 12px; width: min(560px, 100%); align-self: center; margin-top: auto; padding: 14px; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,0,0,0.2); display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.added-flash { font-size: 13px; font-weight: 500; }
 
 @media (max-width: 800px) {
-  .ticket { width: 100%; position: static; }
-  .lines { max-height: none; }
-  .ticket-bar { display: block; position: sticky; bottom: 12px; width: 100%; padding: 14px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,0,0,0.2); }
   .items-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 }
 
