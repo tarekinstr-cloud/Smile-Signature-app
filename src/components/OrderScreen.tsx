@@ -31,8 +31,10 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
   const [busy, setBusy] = useState(false)
   const [paying, setPaying] = useState(false)
   const [paid, setPaid] = useState<{ order: PaidOrder; lines: OrderLine[] } | null>(null)
+  // The order summary is its own view: after adding an item the waiter stays on the menu to keep adding.
+  const [view, setView] = useState<'menu' | 'order'>(startCheckout ? 'order' : 'menu')
+  const [lastAdded, setLastAdded] = useState<{ name: string; key: number } | null>(null)
   const opening = useRef<Promise<Order> | null>(null)
-  const ticketRef = useRef<HTMLElement>(null)
   const dialog = useDialog()
   const { t } = useI18n()
 
@@ -69,6 +71,12 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
 
   useEffect(() => repo.subscribeOrders(() => reloadOrder()), [reloadOrder])
 
+  useEffect(() => {
+    if (!lastAdded) return
+    const timer = setTimeout(() => setLastAdded(null), 2000)
+    return () => clearTimeout(timer)
+  }, [lastAdded])
+
   const items = useMemo(() => menu?.items.filter((i) => i.category_id === categoryId) ?? [], [menu, categoryId])
   const total = lines.reduce((s, l) => s + l.unit_price * l.quantity, 0)
   const count = lines.reduce((s, l) => s + l.quantity, 0)
@@ -96,6 +104,8 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
         await repo.addLine(o.id, { item_id: item.id, name: item.name, unit_price, quantity, options, note })
       }
       await reloadOrder()
+      setView('menu')
+      setLastAdded({ name: item.name, key: Date.now() })
     })
     setBusy(false)
   }
@@ -140,6 +150,11 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
     setBusy(false)
   }
 
+  function openView(v: 'menu' | 'order') {
+    setView(v)
+    window.scrollTo({ top: 0 })
+  }
+
   async function back() {
     // An order that was opened but never got an item should not keep the table occupied.
     if (order && lines.length === 0) await run(() => repo.cancelOrder(order.id))
@@ -165,6 +180,7 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
         <div className="center muted">{t.loading}</div>
       ) : (
         <main className="content order-content">
+          {view === 'menu' ? (
           <section className="menu-area">
             <nav className="categories" aria-label={t.categories}>
               {menu?.categories.map((c) => (
@@ -195,9 +211,10 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
               </div>
             )}
           </section>
-
-          <aside className="ticket" ref={ticketRef}>
+          ) : (
+          <aside className="ticket">
             <div className="panel">
+              <button className="back-to-menu" onClick={() => openView('menu')}>{t.backToMenu}</button>
               <div className="panel-head">
                 <h2>{t.order}</h2>
                 <span className="muted small">{t.itemCount(count)}</span>
@@ -239,10 +256,12 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
               {order && <button className="danger" onClick={cancelOrder}>{t.cancelOrder}</button>}
             </div>
           </aside>
+          )}
 
-          {lines.length > 0 && (
-            <button className="ticket-bar primary" onClick={() => ticketRef.current?.scrollIntoView({ behavior: 'smooth' })}>
-              {t.showOrder} · {t.itemCount(count)} · {money(total)}
+          {view === 'menu' && lines.length > 0 && (
+            <button className="ticket-bar primary" onClick={() => openView('order')}>
+              {lastAdded && <span key={lastAdded.key} className="added-flash">✓ {t.added(lastAdded.name)}</span>}
+              <span>{t.showOrder} · {t.itemCount(count)} · {money(total)}</span>
             </button>
           )}
         </main>

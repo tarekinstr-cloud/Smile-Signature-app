@@ -133,8 +133,11 @@ button.danger.solid { background: var(--occ); border-color: var(--occ); color: #
 .item-price { color: var(--muted); font-size: 14px; margin-top: auto; }
 .item-has-options { font-size: 11px; background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 999px; }
 
-.ticket { width: 320px; flex-shrink: 0; position: sticky; top: 16px; }
-.lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-height: 50vh; overflow-y: auto; }
+.order-content { flex-direction: column; align-items: stretch; }
+.menu-area { width: 100%; }
+.ticket { width: min(560px, 100%); align-self: center; }
+.back-to-menu { font-weight: 600; padding: 12px; }
+.lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .line { border-bottom: 1px solid var(--line); padding-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
 .line-main { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .line-name { padding: 0; font-weight: 600; text-align: start; }
@@ -146,7 +149,8 @@ button.danger.solid { background: var(--occ); border-color: var(--occ); color: #
 .stepper.big { justify-content: center; }
 .stepper.big button { width: 44px; height: 44px; }
 .ticket-total { display: flex; justify-content: space-between; font-size: 18px; padding-top: 4px; }
-.ticket-bar { display: none; }
+.ticket-bar { position: sticky; bottom: 12px; width: min(560px, 100%); align-self: center; margin-top: auto; padding: 14px; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,0,0,0.2); display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.added-flash { font-size: 13px; font-weight: 500; }
 
 .options-dialog { width: min(440px, 100%); max-height: 90vh; overflow-y: auto; }
 .opt-group { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -156,9 +160,6 @@ button.danger.solid { background: var(--occ); border-color: var(--occ); color: #
 .opt.on { background: var(--accent); border-color: var(--accent); font-weight: 600; }
 
 @media (max-width: 800px) {
-  .ticket { width: 100%; position: static; }
-  .lines { max-height: none; }
-  .ticket-bar { display: block; position: sticky; bottom: 12px; width: 100%; padding: 14px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,0,0,0.2); }
   .items-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 }
 

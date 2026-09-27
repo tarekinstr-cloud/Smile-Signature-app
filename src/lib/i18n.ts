@@ -91,6 +91,8 @@ const fr = {
   cancelOrder: 'Annuler la commande',
   doneBack: 'Terminé, retour au plan',
   showOrder: 'Voir la commande',
+  backToMenu: '← Ajouter des articles',
+  added: (name: string) => `${name} ajouté`,
   noteFor: (name: string) => `Note pour « ${name} »`,
   confirmCancelOrder: (label: string) => `Annuler la commande de la table ${label} ? La table redeviendra libre.`,
 
@@ -268,6 +270,8 @@ const ar: Dict = {
   cancelOrder: 'إلغاء الطلب',
   doneBack: 'تم، الرجوع للمخطط',
   showOrder: 'عرض الطلب',
+  backToMenu: '→ إضافة أصناف',
+  added: (name) => `تمت إضافة ${name}`,
   noteFor: (name) => `ملاحظة على "${name}"`,
   confirmCancelOrder: (label) => `إلغاء طلب الطاولة ${label}؟ ستصبح الطاولة حرة.`,
 
