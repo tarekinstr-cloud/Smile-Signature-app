@@ -31,6 +31,8 @@ export interface Category {
   name: string
   color: string
   sort_order: number
+  /** Hidden categories stay in the admin screen but not on the order screen. */
+  active: boolean
 }
 
 export interface MenuItem {
@@ -39,6 +41,7 @@ export interface MenuItem {
   name: string
   price: number
   sort_order: number
+  active: boolean
 }
 
 export interface ItemOption {
@@ -100,3 +103,14 @@ export interface OrderLine {
 
 export type NewOrderLine = Pick<OrderLine, 'item_id' | 'name' | 'unit_price' | 'quantity' | 'options' | 'note'>
 export type OrderLinePatch = Partial<Pick<OrderLine, 'quantity' | 'note'>>
+
+export type NewCategory = Omit<Category, 'id'>
+export type CategoryPatch = Partial<NewCategory>
+export type NewMenuItem = Omit<MenuItem, 'id'>
+export type MenuItemPatch = Partial<NewMenuItem>
+export type NewOptionGroup = Omit<OptionGroup, 'id' | 'options'>
+export type OptionGroupPatch = Partial<Omit<NewOptionGroup, 'item_id'>>
+export type NewItemOption = Omit<ItemOption, 'id'>
+export type ItemOptionPatch = Partial<Omit<NewItemOption, 'group_id'>>
+/** Tables of the menu that the admin screen edits. */
+export type MenuTable = 'categories' | 'items' | 'option_groups' | 'options'

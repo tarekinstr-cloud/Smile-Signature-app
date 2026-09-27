@@ -5,6 +5,7 @@ import FloorPlan from './FloorPlan'
 import TablePanel from './TablePanel'
 import HallPanel from './HallPanel'
 import OrderScreen from './OrderScreen'
+import MenuAdmin from './MenuAdmin'
 import { useDialog } from './Dialog'
 
 type Mode = 'service' | 'edit'
@@ -16,6 +17,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   const [mode, setMode] = useState<Mode>('service')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [orderTableId, setOrderTableId] = useState<string | null>(null)
+  const [menuAdmin, setMenuAdmin] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const dialog = useDialog()
@@ -119,6 +121,8 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
     })
   }
 
+  if (menuAdmin) return <MenuAdmin onBack={() => setMenuAdmin(false)} />
+
   const orderTable = tables.find((t) => t.id === orderTableId)
   if (orderTable && hall) {
     return <OrderScreen key={orderTable.id} table={orderTable} hall={hall} onBack={() => { setOrderTableId(null); reload() }} />
@@ -144,6 +148,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
           <button className={mode === 'service' ? 'on' : ''} onClick={() => setMode('service')}>الخدمة</button>
           <button className={mode === 'edit' ? 'on' : ''} onClick={() => setMode('edit')}>تعديل المخطط</button>
         </div>
+        <button className="ghost" onClick={() => setMenuAdmin(true)} title="إدارة الفئات والأصناف والأسعار">القائمة</button>
         {onSignOut && <button className="ghost" onClick={onSignOut}>خروج</button>}
       </header>
 
