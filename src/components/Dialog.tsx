@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type FormEvent } from 'react'
+import { useI18n } from '../lib/i18n'
 
 interface Request {
   title: string
@@ -10,6 +11,7 @@ interface Request {
 
 /** In-app replacement for window.prompt / window.confirm, which some hosts (installed PWAs, embedded previews) block. */
 export function useDialog() {
+  const { t } = useI18n()
   const [req, setReq] = useState<Request | null>(null)
   const [value, setValue] = useState('')
   const resolver = useRef<((v: string | null) => void) | null>(null)
@@ -28,8 +30,8 @@ export function useDialog() {
     setReq(null)
   }
 
-  const askText = (title: string, confirmLabel = 'إضافة') => open({ title, input: {}, confirmLabel })
-  const confirm = async (title: string, confirmLabel = 'حذف') =>
+  const askText = (title: string, confirmLabel = t.add) => open({ title, input: {}, confirmLabel })
+  const confirm = async (title: string, confirmLabel = t.delete) =>
     (await open({ title, confirmLabel, danger: true })) !== null
 
   function submit(e: FormEvent) {
@@ -49,7 +51,7 @@ export function useDialog() {
         <h2 id="dialog-title">{req.title}</h2>
         {req.input && <input id="dialog-input" autoFocus value={value} onChange={(e) => setValue(e.target.value)} />}
         <div className="dialog-actions">
-          <button type="button" onClick={() => close(null)}>إلغاء</button>
+          <button type="button" onClick={() => close(null)}>{t.cancel}</button>
           <button type="submit" className={req.danger ? 'danger solid' : 'primary'} autoFocus={!req.input}
             disabled={!!req.input && !value.trim()}>
             {req.confirmLabel}

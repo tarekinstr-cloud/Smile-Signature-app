@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { DiningTable, Hall } from '../lib/types'
+import { useI18n } from '../lib/i18n'
 
 const GRID = 10
 const MOVE_THRESHOLD = 4 // screen px before a press becomes a drag
@@ -30,6 +31,7 @@ const snap = (v: number) => Math.round(v / GRID) * GRID
 const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max)
 
 export default function FloorPlan({ hall, tables, editable, selectedId, onSelect, onTap, onMove }: Props) {
+  const { t: tx } = useI18n()
   const wrapRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
   const [drag, setDrag] = useState<Drag | null>(null)
@@ -62,7 +64,7 @@ export default function FloorPlan({ hall, tables, editable, selectedId, onSelect
   function onPointerMove(e: ReactPointerEvent, t: DiningTable) {
     const d = dragRef.current
     if (!d || d.pointerId !== e.pointerId || !editable) return
-    // The canvas is laid out left-to-right even though the page is RTL, so screen deltas map directly.
+    // The canvas is always laid out left-to-right, even when the page is RTL (Arabic), so screen deltas map directly.
     const dx = e.clientX - d.startClientX
     const dy = e.clientY - d.startClientY
     const moved = d.moved || Math.hypot(dx, dy) > MOVE_THRESHOLD
@@ -130,7 +132,7 @@ export default function FloorPlan({ hall, tables, editable, selectedId, onSelect
                   else onTap(t)
                 }
               }}
-              aria-label={`طاولة ${t.label}، ${t.seats} مقاعد، ${t.status === 'free' ? 'حرة' : 'مشغولة'}`}
+              aria-label={tx.tableAria(t.label, t.seats, t.status === 'free')}
             >
               <span className="label">{t.label}</span>
               <span className="seats">{t.seats} 👤</span>

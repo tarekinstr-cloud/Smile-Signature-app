@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import type { Category, MenuItem, OptionGroup } from '../lib/types'
+import { useI18n } from '../lib/i18n'
 
 export interface DraftOption {
   id?: string
@@ -52,6 +53,7 @@ const key = () => crypto.randomUUID()
 
 /** Adds or edits one menu item: name, price, category, visibility and its option groups (size, extras…). */
 export default function ItemEditor({ item, categoryId, categories, groups, onCancel, onSave, onDelete }: Props) {
+  const { t } = useI18n()
   const [name, setName] = useState(item?.name ?? '')
   const [price, setPrice] = useState(item ? String(item.price) : '')
   const [catId, setCatId] = useState(item?.category_id ?? categoryId)
@@ -76,15 +78,15 @@ export default function ItemEditor({ item, categoryId, categories, groups, onCan
   function submit(e: FormEvent) {
     e.preventDefault()
     const p = parsePrice(price)
-    if (!name.trim()) return setError('اكتب اسم الصنف.')
-    if (!(p >= 0)) return setError('السعر غير صحيح.')
+    if (!name.trim()) return setError(t.errName)
+    if (!(p >= 0)) return setError(t.errPrice)
     const out: ItemDraft['groups'] = []
     for (const g of draftGroups) {
       const opts = g.options.filter((o) => o.name.trim())
-      if (!g.name.trim()) return setError('كل مجموعة خيارات تحتاج اسماً (مثلاً: الحجم).')
-      if (opts.length === 0) return setError(`أضف خياراً واحداً على الأقل في "${g.name}".`)
+      if (!g.name.trim()) return setError(t.errGroupName)
+      if (opts.length === 0) return setError(t.errGroupEmpty(g.name))
       const bad = opts.find((o) => Number.isNaN(parsePrice(o.price)))
-      if (bad) return setError(`فرق السعر لـ "${bad.name}" غير صحيح.`)
+      if (bad) return setError(t.errDelta(bad.name))
       out.push({
         id: g.id,
         name: g.name.trim(),
@@ -100,85 +102,85 @@ export default function ItemEditor({ item, categoryId, categories, groups, onCan
     <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onCancel()}>
       <form className="dialog item-editor" role="dialog" aria-modal="true" aria-labelledby="item-editor-title" onSubmit={submit}
         onKeyDown={(e) => e.key === 'Escape' && onCancel()}>
-        <h2 id="item-editor-title">{item ? `تعديل "${item.name}"` : 'صنف جديد'}</h2>
+        <h2 id="item-editor-title">{item ? t.editItem(item.name) : t.newItem}</h2>
 
         <div className="row">
           <label>
-            الاسم
+            {t.name}
             <input autoFocus={!item} value={name} onChange={(e) => setName(e.target.value)} />
           </label>
           <label className="price-field">
-            السعر (DH)
+            {t.price(t.currency)}
             <input inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0" />
           </label>
         </div>
         <div className="row">
           <label>
-            الفئة
+            {t.category}
             <select value={catId} onChange={(e) => setCatId(e.target.value)}>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </label>
           <label className="check">
             <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
-            يظهر في شاشة الطلب
+            {t.itemVisible}
           </label>
         </div>
 
         <div className="groups">
           <div className="panel-head">
-            <h3>الخيارات</h3>
-            <button type="button" onClick={addGroup}>+ مجموعة خيارات</button>
+            <h3>{t.options}</h3>
+            <button type="button" onClick={addGroup}>{t.addGroup}</button>
           </div>
-          {draftGroups.length === 0 && <p className="muted small">لا خيارات: الصنف يُضاف للطلب بضغطة واحدة. أضف مجموعة مثل "الحجم" أو "إضافات".</p>}
+          {draftGroups.length === 0 && <p className="muted small">{t.noGroups}</p>}
           {draftGroups.map((g) => (
             <fieldset key={g.key} className="group-edit">
               <div className="row">
                 <label>
-                  اسم المجموعة
-                  <input value={g.name} placeholder="الحجم" onChange={(e) => setGroup(g.key, { name: e.target.value })} />
+                  {t.groupName}
+                  <input value={g.name} placeholder={t.groupPlaceholder} onChange={(e) => setGroup(g.key, { name: e.target.value })} />
                 </label>
-                <button type="button" className="danger icon" aria-label="حذف المجموعة"
+                <button type="button" className="danger icon" aria-label={t.deleteGroup}
                   onClick={() => setDraftGroups((gs) => gs.filter((x) => x.key !== g.key))}>✕</button>
               </div>
               <div className="row group-rules">
                 <label className="check">
                   <input type="checkbox" checked={g.required} onChange={(e) => setGroup(g.key, { required: e.target.checked })} />
-                  إجباري
+                  {t.required}
                 </label>
                 <label className="check">
                   <input type="checkbox" checked={g.max > 1} onChange={(e) => setGroup(g.key, { max: e.target.checked ? Math.max(2, g.options.length) : 1 })} />
-                  عدة اختيارات
+                  {t.multiChoice}
                 </label>
                 {g.max > 1 && (
                   <label className="inline">
-                    حتى
+                    {t.upToLabel}
                     <input type="number" min={2} max={20} value={g.max} onChange={(e) => setGroup(g.key, { max: Math.max(2, Number(e.target.value) || 2) })} />
                   </label>
                 )}
               </div>
               {g.options.map((o) => (
                 <div key={o.key} className="option-row">
-                  <input value={o.name} placeholder="اسم الخيار" aria-label="اسم الخيار" onChange={(e) => setOption(g, o.key, { name: e.target.value })} />
-                  <input className="delta" inputMode="decimal" value={o.price} aria-label="فرق السعر" title="فرق السعر (DH)"
+                  <input value={o.name} placeholder={t.optionName} aria-label={t.optionName} onChange={(e) => setOption(g, o.key, { name: e.target.value })} />
+                  <input className="delta" inputMode="decimal" value={o.price} aria-label={t.priceDelta} title={`${t.priceDelta} (${t.currency})`}
                     onChange={(e) => setOption(g, o.key, { price: e.target.value })} />
-                  <button type="button" className="ghost icon" aria-label="حذف الخيار"
+                  <button type="button" className="ghost icon" aria-label={t.deleteOption}
                     onClick={() => setGroup(g.key, { options: g.options.filter((x) => x.key !== o.key) })}>✕</button>
                 </div>
               ))}
               <button type="button" className="ghost add-option"
-                onClick={() => setGroup(g.key, { options: [...g.options, { key: key(), name: '', price: '0' }] })}>+ خيار</button>
+                onClick={() => setGroup(g.key, { options: [...g.options, { key: key(), name: '', price: '0' }] })}>{t.addOption}</button>
             </fieldset>
           ))}
-          {draftGroups.length > 0 && <p className="muted small">الرقم بجانب كل خيار هو ما يُضاف إلى سعر الصنف (0 = بدون زيادة).</p>}
+          {draftGroups.length > 0 && <p className="muted small">{t.deltaHint}</p>}
         </div>
 
         {error && <p className="error">{error}</p>}
         <div className="dialog-actions">
-          {onDelete && <button type="button" className="danger" onClick={onDelete}>حذف الصنف</button>}
+          {onDelete && <button type="button" className="danger" onClick={onDelete}>{t.deleteItem}</button>}
           <div className="spacer" />
-          <button type="button" onClick={onCancel}>إلغاء</button>
-          <button type="submit" className="primary">حفظ</button>
+          <button type="button" onClick={onCancel}>{t.cancel}</button>
+          <button type="submit" className="primary">{t.save}</button>
         </div>
       </form>
     </div>

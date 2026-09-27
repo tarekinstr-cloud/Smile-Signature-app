@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import type { ChosenOption, MenuItem, OptionGroup } from '../lib/types'
 import { money } from '../lib/format'
+import { useI18n } from '../lib/i18n'
 
 interface Props {
   item: MenuItem
@@ -11,6 +12,7 @@ interface Props {
 
 /** Picks an item's options (size, extras…), quantity and note before adding it to the order. */
 export default function ItemOptionsDialog({ item, groups, onCancel, onAdd }: Props) {
+  const { t } = useI18n()
   // Required single-choice groups start on their first option so the common case is one tap.
   const [picked, setPicked] = useState<Record<string, string[]>>(() =>
     Object.fromEntries(groups.map((g) => [g.id, g.min_select >= 1 && g.max_select === 1 && g.options[0] ? [g.options[0].id] : []])),
@@ -50,8 +52,8 @@ export default function ItemOptionsDialog({ item, groups, onCancel, onAdd }: Pro
             <legend>
               {g.name}{' '}
               <span className="muted small">
-                {g.min_select >= 1 ? 'إجباري' : 'اختياري'}
-                {g.max_select > 1 && ` · حتى ${g.max_select}`}
+                {g.min_select >= 1 ? t.required : t.optional}
+                {g.max_select > 1 && ` · ${t.upTo(g.max_select)}`}
               </span>
             </legend>
             <div className="opt-list">
@@ -68,18 +70,18 @@ export default function ItemOptionsDialog({ item, groups, onCancel, onAdd }: Pro
           </fieldset>
         ))}
         <label>
-          ملاحظة
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلاً: بدون بصل" />
+          {t.note}
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={t.notePlaceholder} />
         </label>
         <div className="stepper big">
-          <button type="button" onClick={() => setQuantity((q) => Math.max(1, q - 1))} aria-label="إنقاص">−</button>
+          <button type="button" onClick={() => setQuantity((q) => Math.max(1, q - 1))} aria-label={t.decrease}>−</button>
           <span>{quantity}</span>
-          <button type="button" onClick={() => setQuantity((q) => q + 1)} aria-label="زيادة">+</button>
+          <button type="button" onClick={() => setQuantity((q) => q + 1)} aria-label={t.increase}>+</button>
         </div>
-        {missing.length > 0 && <p className="error small">اختر: {missing.map((g) => g.name).join('، ')}</p>}
+        {missing.length > 0 && <p className="error small">{t.choose} {missing.map((g) => g.name).join(t.listSep)}</p>}
         <div className="dialog-actions">
-          <button type="button" onClick={onCancel}>إلغاء</button>
-          <button type="submit" className="primary" disabled={missing.length > 0}>إضافة · {money(unit * quantity)}</button>
+          <button type="button" onClick={onCancel}>{t.cancel}</button>
+          <button type="submit" className="primary" disabled={missing.length > 0}>{t.add} · {money(unit * quantity)}</button>
         </div>
       </form>
     </div>
