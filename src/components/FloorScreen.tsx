@@ -4,6 +4,7 @@ import type { DiningTable, Hall, TablePatch } from '../lib/types'
 import FloorPlan from './FloorPlan'
 import TablePanel from './TablePanel'
 import HallPanel from './HallPanel'
+import { useDialog } from './Dialog'
 
 type Mode = 'service' | 'edit'
 
@@ -15,6 +16,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const dialog = useDialog()
 
   const hall = halls.find((h) => h.id === hallId) ?? null
   const selected = tables.find((t) => t.id === selectedId) ?? null
@@ -75,7 +77,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   }
 
   async function addHall() {
-    const name = window.prompt('اسم الصالة الجديدة')?.trim()
+    const name = await dialog.askText('اسم الصالة الجديدة')
     if (!name) return
     await run(async () => {
       const h = await repo.createHall(name)
@@ -102,7 +104,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   }
 
   async function deleteTable(t: DiningTable) {
-    if (!window.confirm(`حذف الطاولة ${t.label}؟`)) return
+    if (!(await dialog.confirm(`حذف الطاولة ${t.label}؟`))) return
     await run(async () => {
       await repo.deleteTable(t.id)
       setSelectedId(null)
@@ -111,7 +113,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   }
 
   async function deleteHall(h: Hall) {
-    if (!window.confirm(`حذف الصالة "${h.name}" وكل طاولاتها؟`)) return
+    if (!(await dialog.confirm(`حذف الصالة "${h.name}" وكل طاولاتها؟`))) return
     await run(async () => {
       await repo.deleteHall(h.id)
       setHallId(null)
@@ -201,6 +203,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
           </>
         )}
       </main>
+      {dialog.element}
     </div>
   )
 }
