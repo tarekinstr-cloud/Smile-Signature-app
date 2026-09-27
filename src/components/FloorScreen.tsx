@@ -7,6 +7,8 @@ import HallPanel from './HallPanel'
 import OrderScreen from './OrderScreen'
 import MenuAdmin from './MenuAdmin'
 import { useDialog } from './Dialog'
+import LangToggle from './LangToggle'
+import { useI18n } from '../lib/i18n'
 
 type Mode = 'service' | 'edit'
 
@@ -21,6 +23,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const dialog = useDialog()
+  const { t } = useI18n()
 
   const hall = halls.find((h) => h.id === hallId) ?? null
   const selected = tables.find((t) => t.id === selectedId) ?? null
@@ -78,7 +81,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
 
 
   async function addHall() {
-    const name = await dialog.askText('اسم الصالة الجديدة')
+    const name = await dialog.askText(t.newHallName)
     if (!name) return
     await run(async () => {
       const h = await repo.createHall(name)
@@ -95,26 +98,26 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
     // Cascade new tables so they don't land exactly on top of each other.
     const offset = (tables.length % 8) * 20
     await run(async () => {
-      const t = await repo.createTable({
+      const created = await repo.createTable({
         hall_id: hall.id, label: String(n), seats: 4, shape: 'square',
         x: 20 + offset, y: 20 + offset, width: 90, height: 90, status: 'free',
       })
-      setTables((ts) => (ts.some((x) => x.id === t.id) ? ts : [...ts, t]))
-      setSelectedId(t.id)
+      setTables((ts) => (ts.some((x) => x.id === created.id) ? ts : [...ts, created]))
+      setSelectedId(created.id)
     })
   }
 
-  async function deleteTable(t: DiningTable) {
-    if (!(await dialog.confirm(`حذف الطاولة ${t.label}؟`))) return
+  async function deleteTable(table: DiningTable) {
+    if (!(await dialog.confirm(t.confirmDeleteTable(table.label)))) return
     await run(async () => {
-      await repo.deleteTable(t.id)
+      await repo.deleteTable(table.id)
       setSelectedId(null)
-      setTables((ts) => ts.filter((x) => x.id !== t.id))
+      setTables((ts) => ts.filter((x) => x.id !== table.id))
     })
   }
 
   async function deleteHall(h: Hall) {
-    if (!(await dialog.confirm(`حذف الصالة "${h.name}" وكل طاولاتها؟`))) return
+    if (!(await dialog.confirm(t.confirmDeleteHall(h.name)))) return
     await run(async () => {
       await repo.deleteHall(h.id)
       setHallId(null)
@@ -135,48 +138,49 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
           <img src="/icon.svg" alt="" width={28} height={28} />
           <span>Smile Signature</span>
         </div>
-        <nav className="tabs" aria-label="الصالات">
+        <nav className="tabs" aria-label={t.halls}>
           {halls.map((h) => (
             <button key={h.id} className={h.id === hallId ? 'tab active' : 'tab'} onClick={() => { setHallId(h.id); setSelectedId(null) }}>
               {h.name}
             </button>
           ))}
-          <button className="tab add" onClick={addHall} title="إضافة صالة">+ صالة</button>
+          <button className="tab add" onClick={addHall} title={t.addHall}>{t.addHallTab}</button>
         </nav>
         <div className="spacer" />
-        <div className="segmented" role="group" aria-label="الوضع">
-          <button className={mode === 'service' ? 'on' : ''} onClick={() => setMode('service')}>الخدمة</button>
-          <button className={mode === 'edit' ? 'on' : ''} onClick={() => setMode('edit')}>تعديل المخطط</button>
+        <div className="segmented" role="group" aria-label={t.mode}>
+          <button className={mode === 'service' ? 'on' : ''} onClick={() => setMode('service')}>{t.service}</button>
+          <button className={mode === 'edit' ? 'on' : ''} onClick={() => setMode('edit')}>{t.editPlan}</button>
         </div>
-        <button className="ghost" onClick={() => setMenuAdmin(true)} title="إدارة الفئات والأصناف والأسعار">القائمة</button>
-        {onSignOut && <button className="ghost" onClick={onSignOut}>خروج</button>}
+        <button className="ghost" onClick={() => setMenuAdmin(true)} title={t.menuTitle}>{t.menu}</button>
+        {onSignOut && <button className="ghost" onClick={onSignOut}>{t.signOut}</button>}
+        <LangToggle />
       </header>
 
       {repo.mode === 'local' && (
-        <div className="banner">وضع تجريبي: البيانات محفوظة على هذا الجهاز فقط إلى أن يتم ربط Supabase.</div>
+        <div className="banner">{t.demoBanner}</div>
       )}
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
 
       <main className="content">
         {loading ? (
-          <div className="center muted">جارٍ التحميل…</div>
+          <div className="center muted">{t.loading}</div>
         ) : !hall ? (
           <div className="center">
             <div className="card empty">
-              <p>لا توجد صالات بعد.</p>
-              <button className="primary" onClick={addHall}>إضافة أول صالة</button>
+              <p>{t.noHalls}</p>
+              <button className="primary" onClick={addHall}>{t.addFirstHall}</button>
             </div>
           </div>
         ) : (
           <>
             <section className="floor-area">
               <div className="floor-toolbar">
-                <span className="pill free">حرة: {counts.free}</span>
-                <span className="pill occupied">مشغولة: {counts.occupied}</span>
+                <span className="pill free">{t.freeCount(counts.free)}</span>
+                <span className="pill occupied">{t.occupiedCount(counts.occupied)}</span>
                 <span className="hint">
-                  {mode === 'service' ? 'اضغط على طاولة لفتح طلبها' : 'اسحب الطاولات لتحريكها، واضغط على طاولة لتعديلها'}
+                  {mode === 'service' ? t.hintService : t.hintEdit}
                 </span>
-                {mode === 'edit' && <button className="primary" onClick={addTable}>+ طاولة</button>}
+                {mode === 'edit' && <button className="primary" onClick={addTable}>{t.addTable}</button>}
               </div>
               <FloorPlan
                 hall={hall}
@@ -184,7 +188,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
                 editable={mode === 'edit'}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
-                onTap={(t) => setOrderTableId(t.id)}
+                onTap={(x) => setOrderTableId(x.id)}
                 onMove={(id, x, y) => updateTable(id, { x, y })}
               />
             </section>

@@ -4,6 +4,8 @@ import type { Category, Menu, MenuItem } from '../lib/types'
 import { money } from '../lib/format'
 import { useDialog } from './Dialog'
 import ItemEditor, { type ItemDraft } from './ItemEditor'
+import LangToggle from './LangToggle'
+import { useI18n } from '../lib/i18n'
 
 const COLORS = ['#b45309', '#f59e0b', '#16a34a', '#0891b2', '#2563eb', '#7c3aed', '#db2777', '#dc2626', '#4b5563']
 
@@ -25,6 +27,7 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const dialog = useDialog()
+  const { t } = useI18n()
 
   const run = useCallback(async (fn: () => Promise<unknown>) => {
     setBusy(true)
@@ -61,7 +64,7 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
   })
 
   async function addCategory() {
-    const name = await dialog.askText('اسم الفئة الجديدة')
+    const name = await dialog.askText(t.newCategoryName)
     if (!name || !menu) return
     await change(async () => {
       const sort_order = menu.categories.length ? Math.max(...menu.categories.map((c) => c.sort_order)) + 1 : 0
@@ -78,8 +81,7 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
 
   async function deleteCategory(c: Category) {
     const n = menu?.items.filter((i) => i.category_id === c.id).length ?? 0
-    const what = n ? ` و${n} صنف فيها` : ''
-    if (!(await dialog.confirm(`حذف الفئة "${c.name}"${what}؟ الطلبات القديمة لا تتأثر. يمكنك بدلاً من ذلك إخفاؤها.`))) return
+    if (!(await dialog.confirm(t.confirmDeleteCategory(c.name, n)))) return
     await change(() => repo.deleteCategory(c.id))
   }
 
@@ -143,7 +145,7 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
   }
 
   async function deleteItem(item: MenuItem) {
-    if (!(await dialog.confirm(`حذف الصنف "${item.name}"؟ الطلبات القديمة لا تتأثر.`))) return
+    if (!(await dialog.confirm(t.confirmDeleteItem(item.name)))) return
     setEditing(null)
     await change(() => repo.deleteItem(item.id))
   }
@@ -151,40 +153,41 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
   return (
     <div className="app menu-admin">
       <header className="topbar">
-        <button className="ghost back" onClick={onBack} aria-label="رجوع إلى المخطط">→ رجوع</button>
+        <button className="ghost back" onClick={onBack} aria-label={t.backToFloor}>{t.back}</button>
         <div className="order-title">
-          <strong>إدارة القائمة</strong>
-          <span>الفئات، الأصناف، الأسعار والخيارات</span>
+          <strong>{t.menuAdmin}</strong>
+          <span>{t.menuAdminSub}</span>
         </div>
         <div className="spacer" />
-        {busy && <span className="muted small saving">جارٍ الحفظ…</span>}
+        {busy && <span className="muted small saving">{t.saving}</span>}
+        <LangToggle />
       </header>
 
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
 
       {!menu ? (
-        <div className="center muted">جارٍ التحميل…</div>
+        <div className="center muted">{t.loading}</div>
       ) : (
         <main className="content admin-content">
           <aside className="side">
             <div className="panel">
               <div className="panel-head">
-                <h2>الفئات</h2>
-                <button className="primary" onClick={addCategory}>+ فئة</button>
+                <h2>{t.categories}</h2>
+                <button className="primary" onClick={addCategory}>{t.addCategory}</button>
               </div>
-              {menu.categories.length === 0 && <p className="muted small">لا توجد فئات بعد.</p>}
+              {menu.categories.length === 0 && <p className="muted small">{t.noCategories}</p>}
               <ul className="admin-list">
                 {menu.categories.map((c, i) => (
                   <li key={c.id} className={c.id === categoryId ? 'on' : ''}>
                     <button className="ghost admin-row" onClick={() => setCategoryId(c.id)}>
                       <span className="dot" style={{ background: c.color }} />
                       <span className="grow">{c.name}</span>
-                      {!c.active && <span className="tag">مخفية</span>}
+                      {!c.active && <span className="tag">{t.hiddenF}</span>}
                       <span className="muted small">{menu.items.filter((x) => x.category_id === c.id).length}</span>
                     </button>
                     <span className="order-btns">
-                      <button className="ghost" disabled={i === 0 || busy} onClick={() => moveCategory(i, -1)} aria-label="للأعلى">▲</button>
-                      <button className="ghost" disabled={i === menu.categories.length - 1 || busy} onClick={() => moveCategory(i, 1)} aria-label="للأسفل">▼</button>
+                      <button className="ghost" disabled={i === 0 || busy} onClick={() => moveCategory(i, -1)} aria-label={t.moveUp}>▲</button>
+                      <button className="ghost" disabled={i === menu.categories.length - 1 || busy} onClick={() => moveCategory(i, 1)} aria-label={t.moveDown}>▼</button>
                     </span>
                   </li>
                 ))}
@@ -198,19 +201,19 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
                 <div className="panel category-edit">
                   <div className="row">
                     <label>
-                      اسم الفئة
+                      {t.categoryName}
                       <input value={catName} onChange={(e) => setCatName(e.target.value)} onBlur={commitCatName}
                         onKeyDown={(e) => e.key === 'Enter' && commitCatName()} />
                     </label>
                   </div>
                   <div className="field">
-                    اللون
+                    {t.color}
                     <div className="swatches">
                       {COLORS.map((col) => (
                         <button key={col} className={col === category.color ? 'swatch on' : 'swatch'} style={{ background: col }}
                           aria-label={col} onClick={() => change(() => repo.updateCategory(category.id, { color: col }))} />
                       ))}
-                      <input type="color" value={category.color} aria-label="لون آخر"
+                      <input type="color" value={category.color} aria-label={t.otherColor}
                         onChange={(e) => change(() => repo.updateCategory(category.id, { color: e.target.value }))} />
                     </div>
                   </div>
@@ -218,18 +221,18 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
                     <label className="check">
                       <input type="checkbox" checked={category.active}
                         onChange={(e) => change(() => repo.updateCategory(category.id, { active: e.target.checked }))} />
-                      تظهر في شاشة الطلب
+                      {t.categoryVisible}
                     </label>
-                    <button className="danger" onClick={() => deleteCategory(category)}>حذف الفئة</button>
+                    <button className="danger" onClick={() => deleteCategory(category)}>{t.deleteCategory}</button>
                   </div>
                 </div>
 
                 <div className="panel">
                   <div className="panel-head">
-                    <h2>أصناف "{category.name}"</h2>
-                    <button className="primary" onClick={() => setEditing('new')}>+ صنف</button>
+                    <h2>{t.itemsOf(category.name)}</h2>
+                    <button className="primary" onClick={() => setEditing('new')}>{t.addItem}</button>
                   </div>
-                  {items.length === 0 && <p className="muted small">لا توجد أصناف في هذه الفئة.</p>}
+                  {items.length === 0 && <p className="muted small">{t.noItemsInCategory}</p>}
                   <ul className="admin-list items">
                     {items.map((item, i) => {
                       const groups = menu.groups[item.id] ?? []
@@ -238,26 +241,26 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
                           <button className="ghost admin-row" onClick={() => setEditing(item)}>
                             <span className="grow">
                               <span className="item-name">{item.name}</span>
-                              {groups.length > 0 && <span className="muted small"> · {groups.map((g) => g.name).join('، ')}</span>}
+                              {groups.length > 0 && <span className="muted small"> · {groups.map((g) => g.name).join(t.listSep)}</span>}
                             </span>
-                            {!item.active && <span className="tag">مخفي</span>}
+                            {!item.active && <span className="tag">{t.hiddenM}</span>}
                             <span className="price">{money(item.price)}</span>
                           </button>
                           <span className="order-btns">
-                            <button className="ghost" disabled={i === 0 || busy} onClick={() => moveItem(i, -1)} aria-label="للأعلى">▲</button>
-                            <button className="ghost" disabled={i === items.length - 1 || busy} onClick={() => moveItem(i, 1)} aria-label="للأسفل">▼</button>
+                            <button className="ghost" disabled={i === 0 || busy} onClick={() => moveItem(i, -1)} aria-label={t.moveUp}>▲</button>
+                            <button className="ghost" disabled={i === items.length - 1 || busy} onClick={() => moveItem(i, 1)} aria-label={t.moveDown}>▼</button>
                           </span>
                         </li>
                       )
                     })}
                   </ul>
-                  <p className="muted small">اضغط على صنف لتعديل اسمه وسعره وخياراته. تغيير السعر لا يغيّر الطلبات المفتوحة من قبل.</p>
+                  <p className="muted small">{t.adminItemsHint}</p>
                 </div>
               </>
             ) : (
               <div className="card empty">
-                <p>ابدأ بإضافة فئة (مثلاً: مشروبات ساخنة).</p>
-                <button className="primary" onClick={addCategory}>+ فئة</button>
+                <p>{t.startWithCategory}</p>
+                <button className="primary" onClick={addCategory}>{t.addCategory}</button>
               </div>
             )}
           </section>

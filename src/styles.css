@@ -207,3 +207,6 @@ button.icon { padding: 8px 10px; }
   .admin-content .side { width: 100%; }
 }
 label input, label select { color: var(--ink); }
+
+.lang-toggle { font-weight: 600; }
+.login .lang-toggle { align-self: center; }

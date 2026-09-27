@@ -4,6 +4,8 @@ import type { ChosenOption, DiningTable, Hall, Menu, MenuItem, Order, OrderLine 
 import { money } from '../lib/format'
 import ItemOptionsDialog from './ItemOptionsDialog'
 import { useDialog } from './Dialog'
+import LangToggle from './LangToggle'
+import { useI18n } from '../lib/i18n'
 
 interface Props {
   table: DiningTable
@@ -26,6 +28,7 @@ export default function OrderScreen({ table, hall, onBack }: Props) {
   const opening = useRef<Promise<Order> | null>(null)
   const ticketRef = useRef<HTMLElement>(null)
   const dialog = useDialog()
+  const { t } = useI18n()
 
   const run = useCallback(async (fn: () => Promise<unknown>) => {
     try {
@@ -102,7 +105,7 @@ export default function OrderScreen({ table, hall, onBack }: Props) {
   }
 
   async function editNote(line: OrderLine) {
-    const note = await dialog.askText(`ملاحظة على "${line.name}"`, 'حفظ')
+    const note = await dialog.askText(t.noteFor(line.name), t.save)
     if (note === null) return
     await run(() => repo.updateLine(line.id, { note }))
     await reloadOrder()
@@ -110,7 +113,7 @@ export default function OrderScreen({ table, hall, onBack }: Props) {
 
   async function cancelOrder() {
     if (!order) return
-    if (!(await dialog.confirm(`إلغاء طلب الطاولة ${table.label}؟ ستصبح الطاولة حرة.`, 'إلغاء الطلب'))) return
+    if (!(await dialog.confirm(t.confirmCancelOrder(table.label), t.cancelOrder))) return
     await run(async () => {
       await repo.cancelOrder(order.id)
       onBack()
@@ -126,23 +129,24 @@ export default function OrderScreen({ table, hall, onBack }: Props) {
   return (
     <div className="app order-screen">
       <header className="topbar">
-        <button className="ghost back" onClick={back} aria-label="رجوع إلى المخطط">→ رجوع</button>
+        <button className="ghost back" onClick={back} aria-label={t.backToFloor}>{t.back}</button>
         <div className="order-title">
-          <strong>طاولة {table.label}</strong>
-          <span>{hall.name} · {table.seats} مقاعد</span>
+          <strong>{t.table(table.label)}</strong>
+          <span><bdi>{hall.name}</bdi> · {t.seatsCount(table.seats)}</span>
         </div>
         <div className="spacer" />
-        {order && <span className="pill occupied">طلب مفتوح</span>}
+        {order && <span className="pill occupied">{t.openOrder}</span>}
+        <LangToggle />
       </header>
 
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
 
       {loading ? (
-        <div className="center muted">جارٍ التحميل…</div>
+        <div className="center muted">{t.loading}</div>
       ) : (
         <main className="content order-content">
           <section className="menu-area">
-            <nav className="categories" aria-label="الفئات">
+            <nav className="categories" aria-label={t.categories}>
               {menu?.categories.map((c) => (
                 <button
                   key={c.id}
@@ -156,18 +160,18 @@ export default function OrderScreen({ table, hall, onBack }: Props) {
             </nav>
             {menu && menu.categories.length === 0 ? (
               <div className="card empty">
-                <p>القائمة فارغة. أضف الفئات والأصناف من زر «القائمة» في الشاشة الرئيسية.</p>
+                <p>{t.emptyMenu}</p>
               </div>
             ) : (
               <div className="items-grid">
                 {items.map((i) => (
                   <button key={i.id} className="item-card" onClick={() => tapItem(i)} disabled={busy}>
                     <span className="item-name">{i.name}</span>
-                    {menu?.groups[i.id]?.length ? <span className="item-has-options">خيارات</span> : null}
+                    {menu?.groups[i.id]?.length ? <span className="item-has-options">{t.hasOptions}</span> : null}
                     <span className="item-price">{money(i.price)}</span>
                   </button>
                 ))}
-                {items.length === 0 && <p className="muted">لا توجد أصناف في هذه الفئة.</p>}
+                {items.length === 0 && <p className="muted">{t.noItemsInCategory}</p>}
               </div>
             )}
           </section>
@@ -175,29 +179,29 @@ export default function OrderScreen({ table, hall, onBack }: Props) {
           <aside className="ticket" ref={ticketRef}>
             <div className="panel">
               <div className="panel-head">
-                <h2>الطلب</h2>
-                <span className="muted small">{count} صنف</span>
+                <h2>{t.order}</h2>
+                <span className="muted small">{t.itemCount(count)}</span>
               </div>
               {lines.length === 0 ? (
-                <p className="muted small">اختر فئة ثم اضغط على الأصناف لإضافتها.</p>
+                <p className="muted small">{t.orderHint}</p>
               ) : (
                 <ul className="lines">
                   {lines.map((l) => (
                     <li key={l.id} className="line">
                       <div className="line-main">
-                        <button className="ghost line-name" onClick={() => editNote(l)} title="إضافة ملاحظة">{l.name}</button>
+                        <button className="ghost line-name" onClick={() => editNote(l)} title={t.addNote}>{l.name}</button>
                         <span className="line-total">{money(l.unit_price * l.quantity)}</span>
                       </div>
                       {(l.options.length > 0 || l.note) && (
                         <div className="line-details">
-                          {l.options.map((o) => o.name).join('، ')}
+                          {l.options.map((o) => o.name).join(t.listSep)}
                           {l.note && <em> · {l.note}</em>}
                         </div>
                       )}
                       <div className="stepper">
-                        <button onClick={() => changeQty(l, -1)} aria-label="إنقاص">−</button>
+                        <button onClick={() => changeQty(l, -1)} aria-label={t.decrease}>−</button>
                         <span>{l.quantity}</span>
-                        <button onClick={() => changeQty(l, 1)} aria-label="زيادة">+</button>
+                        <button onClick={() => changeQty(l, 1)} aria-label={t.increase}>+</button>
                         <span className="muted small">× {money(l.unit_price)}</span>
                       </div>
                     </li>
@@ -205,17 +209,17 @@ export default function OrderScreen({ table, hall, onBack }: Props) {
                 </ul>
               )}
               <div className="ticket-total">
-                <span>المجموع</span>
+                <span>{t.total}</span>
                 <strong>{money(total)}</strong>
               </div>
-              {order && <button className="danger" onClick={cancelOrder}>إلغاء الطلب</button>}
-              <button className="primary" onClick={back}>تم، الرجوع للمخطط</button>
+              {order && <button className="danger" onClick={cancelOrder}>{t.cancelOrder}</button>}
+              <button className="primary" onClick={back}>{t.doneBack}</button>
             </div>
           </aside>
 
           {lines.length > 0 && (
             <button className="ticket-bar primary" onClick={() => ticketRef.current?.scrollIntoView({ behavior: 'smooth' })}>
-              عرض الطلب · {count} صنف · {money(total)}
+              {t.showOrder} · {t.itemCount(count)} · {money(total)}
             </button>
           )}
         </main>

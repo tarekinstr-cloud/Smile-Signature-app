@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Hall, HallPatch } from '../lib/types'
+import { useI18n } from '../lib/i18n'
 
 interface Props {
   hall: Hall
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export default function HallPanel({ hall, onChange, onDelete }: Props) {
+  const { t } = useI18n()
   const [name, setName] = useState(hall.name)
   const [width, setWidth] = useState(String(hall.width))
   const [height, setHeight] = useState(String(hall.height))
@@ -25,24 +27,24 @@ export default function HallPanel({ hall, onChange, onDelete }: Props) {
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2>إعدادات الصالة</h2>
+        <h2>{t.hallSettings}</h2>
       </div>
-      <p className="muted small">اختر طاولة لتعديلها، أو عدّل الصالة هنا.</p>
+      <p className="muted small">{t.hallHint}</p>
       <label>
-        اسم الصالة
+        {t.hallName}
         <input value={name} onChange={(e) => setName(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />
       </label>
       <div className="row">
         <label>
-          العرض
+          {t.width}
           <input type="number" step={50} value={width} onChange={(e) => setWidth(e.target.value)} onBlur={commit} />
         </label>
         <label>
-          الطول
+          {t.height}
           <input type="number" step={50} value={height} onChange={(e) => setHeight(e.target.value)} onBlur={commit} />
         </label>
       </div>
-      <button className="danger" onClick={onDelete}>حذف الصالة</button>
+      <button className="danger" onClick={onDelete}>{t.deleteHall}</button>
     </div>
   )
 }

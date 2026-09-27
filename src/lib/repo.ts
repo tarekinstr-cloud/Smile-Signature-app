@@ -5,6 +5,7 @@ import type {
   OrderLine, OrderLinePatch, TablePatch,
 } from './types'
 import { demoMenu } from './demoMenu'
+import { tr } from './i18n'
 
 /** Data access for halls, tables, menu and orders. Backed by Supabase when configured, localStorage otherwise. */
 export interface Repo {
@@ -362,7 +363,7 @@ function localRepo(): Repo {
     async createTable(t) {
       const db = load()
       if (db.tables.some((x) => x.hall_id === t.hall_id && x.label === t.label)) {
-        throw new Error(`الطاولة "${t.label}" موجودة من قبل في هذه الصالة`)
+        throw new Error(tr().duplicateTable(t.label))
       }
       const table: DiningTable = { ...t, id: crypto.randomUUID() }
       db.tables.push(table)
@@ -373,7 +374,7 @@ function localRepo(): Repo {
       const db = load()
       const current = db.tables.find((t) => t.id === id)
       if (current && patch.label !== undefined && db.tables.some((x) => x.id !== id && x.hall_id === current.hall_id && x.label === patch.label)) {
-        throw new Error(`الطاولة "${patch.label}" موجودة من قبل في هذه الصالة`)
+        throw new Error(tr().duplicateTable(patch.label))
       }
       db.tables = db.tables.map((t) => (t.id === id ? { ...t, ...patch } : t))
       commit(db)

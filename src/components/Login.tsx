@@ -1,7 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { supabase } from '../lib/repo'
+import { useI18n } from '../lib/i18n'
+import LangToggle from './LangToggle'
 
 export default function Login() {
+  const { t } = useI18n()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -12,7 +15,7 @@ export default function Login() {
     setBusy(true)
     setError(null)
     const { error } = await supabase!.auth.signInWithPassword({ email, password })
-    if (error) setError('البريد أو كلمة السر غير صحيحة')
+    if (error) setError(t.badLogin)
     setBusy(false)
   }
 
@@ -22,15 +25,16 @@ export default function Login() {
         <img src="/icon.svg" alt="" width={64} height={64} />
         <h1>Smile Signature</h1>
         <label>
-          البريد الإلكتروني
+          {t.email}
           <input type="email" dir="ltr" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="username" />
         </label>
         <label>
-          كلمة السر
+          {t.password}
           <input type="password" dir="ltr" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
         </label>
         {error && <p className="error">{error}</p>}
-        <button className="primary" disabled={busy}>دخول</button>
+        <button className="primary" disabled={busy}>{t.signIn}</button>
+        <LangToggle />
       </form>
     </div>
   )

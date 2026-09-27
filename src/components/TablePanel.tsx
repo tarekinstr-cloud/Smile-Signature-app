@@ -1,11 +1,8 @@
 import { useState } from 'react'
 import type { DiningTable, Hall, TablePatch, TableShape } from '../lib/types'
+import { useI18n } from '../lib/i18n'
 
-const SHAPES: { value: TableShape; label: string }[] = [
-  { value: 'square', label: 'مربعة' },
-  { value: 'round', label: 'دائرية' },
-  { value: 'rect', label: 'مستطيلة' },
-]
+const SHAPES: TableShape[] = ['square', 'round', 'rect']
 
 interface Props {
   table: DiningTable
@@ -16,6 +13,7 @@ interface Props {
 }
 
 export default function TablePanel({ table, hall, onChange, onDelete, onClose }: Props) {
+  const { t } = useI18n()
   const [label, setLabel] = useState(table.label)
 
   function commitLabel() {
@@ -44,49 +42,49 @@ export default function TablePanel({ table, hall, onChange, onDelete, onClose }:
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2>طاولة {table.label}</h2>
-        <button className="ghost" onClick={onClose} aria-label="إغلاق">✕</button>
+        <h2>{t.table(table.label)}</h2>
+        <button className="ghost" onClick={onClose} aria-label={t.close}>✕</button>
       </div>
       <label>
-        الرقم / الاسم
+        {t.tableLabel}
         <input value={label} onChange={(e) => setLabel(e.target.value)} onBlur={commitLabel} onKeyDown={(e) => e.key === 'Enter' && commitLabel()} />
       </label>
       <label>
-        عدد المقاعد
+        {t.seats}
         <input type="number" min={1} max={40} value={table.seats} onChange={(e) => {
           const n = Number(e.target.value)
           if (n >= 1 && n <= 40) onChange({ seats: n })
         }} />
       </label>
       <div className="field">
-        <span>الشكل</span>
+        <span>{t.shape}</span>
         <div className="segmented">
           {SHAPES.map((s) => (
-            <button key={s.value} className={table.shape === s.value ? 'on' : ''} onClick={() => setShape(s.value)}>{s.label}</button>
+            <button key={s} className={table.shape === s ? 'on' : ''} onClick={() => setShape(s)}>{t[s]}</button>
           ))}
         </div>
       </div>
       <div className="row">
         <label>
-          العرض
+          {t.width}
           <input type="number" step={10} value={table.width} onChange={(e) => setSize('width', Number(e.target.value))} />
         </label>
         {table.shape === 'rect' && (
           <label>
-            الطول
+            {t.height}
             <input type="number" step={10} value={table.height} onChange={(e) => setSize('height', Number(e.target.value))} />
           </label>
         )}
       </div>
       <div className="field">
-        <span>الحالة</span>
+        <span>{t.status}</span>
         <div className="segmented">
-          <button className={table.status === 'free' ? 'on' : ''} onClick={() => onChange({ status: 'free' })}>حرة</button>
-          <button className={table.status === 'occupied' ? 'on' : ''} onClick={() => onChange({ status: 'occupied' })}>مشغولة</button>
+          <button className={table.status === 'free' ? 'on' : ''} onClick={() => onChange({ status: 'free' })}>{t.free}</button>
+          <button className={table.status === 'occupied' ? 'on' : ''} onClick={() => onChange({ status: 'occupied' })}>{t.occupied}</button>
         </div>
       </div>
-      <p className="muted small">الموقع: X {table.x} · Y {table.y}</p>
-      <button className="danger" onClick={onDelete}>حذف الطاولة</button>
+      <p className="muted small">{t.position}: X {table.x} · Y {table.y}</p>
+      <button className="danger" onClick={onDelete}>{t.deleteTable}</button>
     </div>
   )
 }

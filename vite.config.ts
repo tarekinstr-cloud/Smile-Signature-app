@@ -12,9 +12,9 @@ export default defineConfig(({ mode }) => ({
       manifest: {
         name: 'Smile Signature',
         short_name: 'Smile',
-        description: 'تسيير مطعم Smile Signature',
-        lang: 'ar',
-        dir: 'rtl',
+        description: 'Gestion du restaurant Smile Signature',
+        lang: 'fr',
+        dir: 'ltr',
         theme_color: '#1f2937',
         background_color: '#f5f5f4',
         display: 'standalone',
