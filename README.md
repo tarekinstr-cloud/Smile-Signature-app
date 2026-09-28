@@ -53,7 +53,7 @@ npm run build      # نسخة الإنتاج في dist/ (مع Service Worker و 
    - `supabase/migrations/20260928010000_payments.sql` (شاشة الدفع: دفع جزئي، تخفيض، مجاني)
    - `supabase/migrations/20260928020000_order_actions.sql` (barre d'actions: à emporter, changement de table + journal table_moves, facture)
    - `supabase/migrations/20260928030000_keep_order_table.sql` (une commande de table garde sa table: plus de passage à emporter, suppression d'une table occupée bloquée)
-   - `supabase/migrations/20260928050000_back_office.sql` (back-office: stock_items + adjust_stock, suppliers, list_staff pour « Gestion des employés »)
+   - `supabase/migrations/20260928060000_back_office.sql` (back-office: stock_items + adjust_stock, suppliers, list_staff pour « Gestion des employés »)
    - (اختياري) `supabase/seed.sql` لطاولات تجريبية.
 3. في **Authentication → Users** أضف مستخدماً للطاقم (بريد + كلمة سر).
 4. انسخ `.env.example` إلى `.env` وضع فيه `Project URL` و `anon public key` من **Project Settings → API**.

@@ -410,7 +410,7 @@ const fr = {
   errQuantity: 'Quantité invalide.',
   errStockName: 'Un produit porte déjà ce nom.',
   errStockGone: 'Produit introuvable (supprimé ?).',
-  errMigrationBackOffice: 'Base de données pas à jour : exécutez 20260928050000_back_office.sql dans Supabase (SQL Editor).',
+  errMigrationBackOffice: 'Base de données pas à jour : exécutez 20260928060000_back_office.sql dans Supabase (SQL Editor).',
 }
 
 type Dict = typeof fr
@@ -808,7 +808,7 @@ const ar: Dict = {
   errQuantity: 'كمية غير صالحة.',
   errStockName: 'يوجد منتج بنفس الاسم.',
   errStockGone: 'المنتج غير موجود (محذوف؟).',
-  errMigrationBackOffice: 'قاعدة البيانات غير محدّثة: شغّل 20260928050000_back_office.sql في Supabase (SQL Editor).',
+  errMigrationBackOffice: 'قاعدة البيانات غير محدّثة: شغّل 20260928060000_back_office.sql في Supabase (SQL Editor).',
 }
 
 const dicts: Record<Lang, Dict> = { fr, ar }
