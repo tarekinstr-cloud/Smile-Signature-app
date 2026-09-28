@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js'
 import type {
   Category, CategoryPatch, DiningTable, Hall, HallPatch, ItemOption, ItemOptionPatch, Menu, MenuItem, MenuItemPatch, MenuTable,
   NewCategory, NewItemOption, NewMenuItem, NewOptionGroup, NewOrderLine, NewTable, OptionGroup, OptionGroupPatch, Order,
@@ -176,7 +176,39 @@ function check<T>(res: { data: T; error: { message: string } | null }): T {
   return res.data
 }
 
+/**
+ * One realtime channel per topic, shared by every screen that listens to it.
+ * supabase-js hands back the already-subscribed channel when a topic is reused
+ * (the floor listens to orders for takeaways while an order screen is open), and adding
+ * callbacks to it throws. So the channel is created and subscribed once, listeners are
+ * kept in a set, and the channel is removed when the last listener leaves.
+ */
+function sharedChannel(sb: SupabaseClient, topic: string, tables: string[]) {
+  const listeners = new Set<() => void>()
+  let channel: RealtimeChannel | null = null
+  const notify = () => listeners.forEach((l) => l())
+  return (onChange: () => void) => {
+    // Wrap so the same callback registered twice stays two independent subscriptions.
+    const listener = () => onChange()
+    listeners.add(listener)
+    if (!channel) {
+      let c = sb.channel(topic)
+      for (const table of tables) c = c.on('postgres_changes', { event: '*', schema: 'public', table }, notify)
+      channel = c.subscribe()
+    }
+    return () => {
+      if (!listeners.delete(listener)) return
+      if (listeners.size === 0 && channel) {
+        sb.removeChannel(channel)
+        channel = null
+      }
+    }
+  }
+}
+
 function supabaseRepo(sb: SupabaseClient): Repo {
+  const floorChannel = sharedChannel(sb, 'floor', ['halls', 'tables'])
+  const ordersChannel = sharedChannel(sb, 'orders', ['orders', 'order_items', 'payments'])
   const insertRow = async (table: MenuTable, row: object) => check(await sb.from(table).insert(row).select().single()) as unknown
   const updateRow = async (table: MenuTable, id: string, patch: object) => {
     check(await sb.from(table).update(patch).eq('id', id))
@@ -215,14 +247,7 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       check(await sb.from('tables').delete().eq('id', id))
     },
     subscribe(onChange) {
-      const channel = sb
-        .channel('floor')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'halls' }, onChange)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tables' }, onChange)
-        .subscribe()
-      return () => {
-        sb.removeChannel(channel)
-      }
+      return floorChannel(onChange)
     },
 
     async getMenu(opts) {
@@ -363,15 +388,7 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       check(await sb.from('order_items').delete().eq('id', id))
     },
     subscribeOrders(onChange) {
-      const channel = sb
-        .channel('orders')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, onChange)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, onChange)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, onChange)
-        .subscribe()
-      return () => {
-        sb.removeChannel(channel)
-      }
+      return ordersChannel(onChange)
     },
 
     async checkoutOrder(orderId, method, received) {

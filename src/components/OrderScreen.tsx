@@ -155,7 +155,10 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
     // Only on first load: another table or order remounts this screen (keyed by it).
   }, [])
 
-  useEffect(() => repo.subscribeOrders(() => reloadOrder()), [reloadOrder])
+  // One realtime subscription per mount, always calling the latest reloadOrder; the cleanup unsubscribes.
+  const reloadRef = useRef(reloadOrder)
+  reloadRef.current = reloadOrder
+  useEffect(() => repo.subscribeOrders(() => reloadRef.current()), [])
 
   const items = useMemo(() => menu?.items.filter((i) => i.category_id === categoryId) ?? [], [menu, categoryId])
   const buttons = useMemo<GridButton[]>(
