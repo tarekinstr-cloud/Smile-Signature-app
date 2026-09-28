@@ -2,6 +2,7 @@ import type { Order, OrderLine, PaidOrder, Payment, ReceiptSettings } from '../l
 import { money } from '../lib/format'
 import { computeBill, discountOf } from '../lib/billing'
 import { useI18n } from '../lib/i18n'
+import { deliveryContact } from '../lib/place'
 
 /** receipt: after the last payment. bill: the running bill of an open order (Addition). invoice: Facture. */
 export type ReceiptKind = 'receipt' | 'bill' | 'invoice'
@@ -13,7 +14,7 @@ interface Props {
   lines: OrderLine[]
   /** Payments of the order, oldest first (several for a partial payment). */
   payments: Payment[]
-  /** "Table 4" or "À emporter n° 12". */
+  /** "Table 4", "À emporter n° 12" or "Livraison n° 3". */
   place: string | null
   hallName: string | null
   kind?: ReceiptKind
@@ -56,7 +57,13 @@ export default function Receipt({ settings, order, lines, payments, place, hallN
         </div>
       )}
       {kind === 'bill' && <div className="receipt-sub receipt-note">{t.billNote}</div>}
-      {kind === 'invoice' && (order.customer_name || order.customer_address) && (
+      {order.order_type === 'delivery' ? (
+        <div className="receipt-customer receipt-delivery">
+          <div><strong>[{t.delivery}]</strong></div>
+          {deliveryContact(order) && <div dir="auto">{deliveryContact(order)}</div>}
+          {order.customer_address && textLines(order.customer_address)}
+        </div>
+      ) : kind === 'invoice' && (order.customer_name || order.customer_address) && (
         <div className="receipt-customer">
           <div><strong>{t.customer}</strong> : <bdi>{order.customer_name ?? ''}</bdi></div>
           {order.customer_address && textLines(order.customer_address)}

@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom'
 import type { KitchenTicket as Ticket, KitchenTicketLine } from '../lib/types'
 import { useI18n } from '../lib/i18n'
-import { placeFromLabel } from '../lib/place'
+import { ticketLabelParts } from '../lib/place'
 import { splitTakeaway } from '../lib/kitchen'
 
 interface Props {
@@ -56,10 +56,13 @@ function Lines({ lines }: { lines: KitchenTicketLine[] }) {
 export function KitchenTicketView({ ticket }: { ticket: Ticket }) {
   const { t } = useI18n()
   const at = new Date(ticket.created_at)
+  const label = ticket.table_label ? ticketLabelParts(t, ticket.table_label) : null
   return (
     <div className="receipt kitchen-ticket">
       <div className="kt-printer" dir="auto">{ticket.printer_name}</div>
-      {ticket.table_label && <div className="kt-table">{placeFromLabel(t, ticket.table_label)}</div>}
+      {label?.delivery && <div className="kt-group kt-delivery">[{t.delivery.toUpperCase()}]</div>}
+      {label && <div className="kt-table">{label.place}</div>}
+      {label?.details.map((line, i) => <div key={i} className="kt-delivery-info" dir="auto">{line}</div>)}
       <div className="receipt-sep" />
       <div className="receipt-meta">
         <span>{t.ticketTime}</span>

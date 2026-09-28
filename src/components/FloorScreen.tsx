@@ -12,9 +12,12 @@ import { money } from '../lib/format'
 import { computeBill } from '../lib/billing'
 import LangToggle from './LangToggle'
 import { useI18n } from '../lib/i18n'
-import { placeText } from '../lib/place'
+import { deliveryContact, placeText } from '../lib/place'
+import DeliveryDialog from './DeliveryDialog'
 
 type Mode = 'service' | 'edit'
+/** Orders without a table, each with its button and list in the top bar. */
+type NoTable = 'takeaway' | 'delivery'
 
 export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   const [halls, setHalls] = useState<Hall[]>([])
@@ -24,10 +27,16 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [orderTableId, setOrderTableId] = useState<string | null>(null)
   const [checkoutFirst, setCheckoutFirst] = useState(false)
-  /** Takeaway order on screen: an open one (its id), or a new one (null id, with a key so each is a fresh screen). */
+  /**
+   * Takeaway or delivery order on screen: an open one (its id), or a new takeaway (null id, with a key so each is
+   * a fresh screen). A delivery is created with its customer before the screen opens, so it always has an id.
+   */
   const [takeaway, setTakeaway] = useState<{ orderId: string | null; key: number } | null>(null)
   const [takeaways, setTakeaways] = useState<OpenOrder[]>([])
-  const [takeawayList, setTakeawayList] = useState(false)
+  const [deliveries, setDeliveries] = useState<OpenOrder[]>([])
+  const [openList, setOpenList] = useState<NoTable | null>(null)
+  /** Nouvelle livraison: the customer form, before the order screen. */
+  const [newDelivery, setNewDelivery] = useState(false)
   /** Occupied table tapped in service mode: choose between its order and checkout. */
   const [actions, setActions] = useState<{ table: DiningTable; total: number; count: number } | null>(null)
   const [menuAdmin, setMenuAdmin] = useState(false)
@@ -67,7 +76,8 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   useEffect(() => repo.subscribe(() => reload()), [reload])
 
   const reloadTakeaways = useCallback(() => {
-    repo.listOpenTakeaways().then(setTakeaways, () => setTakeaways([]))
+    repo.listOpenOrders('takeaway').then(setTakeaways, () => setTakeaways([]))
+    repo.listOpenOrders('delivery').then(setDeliveries, () => setDeliveries([]))
   }, [])
   useEffect(() => {
     reloadTakeaways()
@@ -75,9 +85,17 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   }, [reloadTakeaways])
 
   function openTakeaway(orderId: string | null) {
-    setTakeawayList(false)
+    setOpenList(null)
+    setNewDelivery(false)
     setOrderTableId(null)
     setTakeaway({ orderId, key: Date.now() })
+  }
+
+  function startDelivery() {
+    setOpenList(null)
+    setTakeaway(null)
+    setOrderTableId(null)
+    setNewDelivery(true)
   }
 
   useEffect(() => {
@@ -182,14 +200,14 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   if (takeaway) {
     return (
       <OrderScreen key={`takeaway-${takeaway.orderId ?? takeaway.key}`} table={null} hall={null} orderId={takeaway.orderId ?? undefined}
-        onBack={leaveOrder} onNewTakeaway={() => openTakeaway(null)} />
+        onBack={leaveOrder} onNewTakeaway={() => openTakeaway(null)} onNewDelivery={startDelivery} />
     )
   }
   const orderTable = tables.find((t) => t.id === orderTableId)
   if (orderTable && hall) {
     return (
       <OrderScreen key={orderTable.id} table={orderTable} hall={hall} startCheckout={checkoutFirst}
-        onBack={leaveOrder} onNewTakeaway={() => openTakeaway(null)} />
+        onBack={leaveOrder} onNewTakeaway={() => openTakeaway(null)} onNewDelivery={startDelivery} />
     )
   }
 
@@ -213,8 +231,11 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
           <button className={mode === 'service' ? 'on' : ''} onClick={() => setMode('service')}>{t.service}</button>
           <button className={mode === 'edit' ? 'on' : ''} onClick={() => setMode('edit')}>{t.editPlan}</button>
         </div>
-        <button className="takeaway-btn" onClick={() => setTakeawayList(true)} title={t.takeawayOrders}>
+        <button className="takeaway-btn" onClick={() => setOpenList('takeaway')} title={t.takeawayOrders}>
           🥡 {t.takeawayBtn}{takeaways.length > 0 && <span className="count">{takeaways.length}</span>}
+        </button>
+        <button className="takeaway-btn" onClick={() => setOpenList('delivery')} title={t.deliveryOrders}>
+          🛵 {t.deliveryBtn}{deliveries.length > 0 && <span className="count">{deliveries.length}</span>}
         </button>
         <button className="ghost" onClick={() => setMenuAdmin(true)} title={t.menuTitle}>{t.menu}</button>
         <button className="ghost" onClick={() => setPrinterSettings(true)} title={t.printersTitle}>{t.printers}</button>
@@ -296,21 +317,29 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
           </div>
         </div>
       )}
-      {takeawayList && (
-        <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setTakeawayList(false)}>
+      {openList && (
+        <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setOpenList(null)}>
           <div className="dialog table-actions" role="dialog" aria-modal="true" aria-labelledby="takeaway-title"
-            onKeyDown={(e) => e.key === 'Escape' && setTakeawayList(false)}>
+            onKeyDown={(e) => e.key === 'Escape' && setOpenList(null)}>
             <div className="panel-head">
-              <h2 id="takeaway-title">{t.takeawayOrders}</h2>
-              <button className="ghost" onClick={() => setTakeawayList(false)} aria-label={t.close}>✕</button>
+              <h2 id="takeaway-title">{openList === 'delivery' ? t.deliveryOrders : t.takeawayOrders}</h2>
+              <button className="ghost" onClick={() => setOpenList(null)} aria-label={t.close}>✕</button>
             </div>
-            <button className="primary big" autoFocus onClick={() => openTakeaway(null)}>{t.newTakeaway}</button>
-            {takeaways.length === 0 ? (
-              <p className="muted small">{t.noTakeaways}</p>
+            <button className="primary big" autoFocus onClick={() => (openList === 'delivery' ? startDelivery() : openTakeaway(null))}>
+              {openList === 'delivery' ? t.newDelivery : t.newTakeaway}
+            </button>
+            {(openList === 'delivery' ? deliveries : takeaways).length === 0 ? (
+              <p className="muted small">{openList === 'delivery' ? t.noDeliveries : t.noTakeaways}</p>
             ) : (
-              takeaways.map(({ order, lines, payments }) => (
+              (openList === 'delivery' ? deliveries : takeaways).map(({ order, lines, payments }) => (
                 <button key={order.id} className="big takeaway-row" onClick={() => openTakeaway(order.id)}>
-                  <span>{placeText(t, order, null)}</span>
+                  <span>
+                    {placeText(t, order, null)}
+                    {order.order_type === 'delivery' && (
+                      <span className="muted small delivery-row-info"><bdi>{deliveryContact(order) ?? ''}</bdi></span>
+                    )}
+                  </span>
+                  {order.delivery_status && <span className={`tag delivery-status ${order.delivery_status}`}>{t.deliveryStatuses[order.delivery_status]}</span>}
                   <span className="muted small">{t.itemCount(lines.reduce((s, l) => s + l.quantity, 0))}</span>
                   <strong>{money(computeBill(order, lines, payments).remaining)}</strong>
                 </button>
@@ -318,6 +347,13 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
             )}
           </div>
         </div>
+      )}
+      {newDelivery && (
+        <DeliveryDialog submitLabel={t.deliveryStart} onCancel={() => setNewDelivery(false)}
+          onSubmit={async (customer) => {
+            const order = await repo.openDelivery(customer)
+            openTakeaway(order.id)
+          }} />
       )}
       {dialog.element}
     </div>

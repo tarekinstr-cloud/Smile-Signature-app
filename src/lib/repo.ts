@@ -3,7 +3,7 @@ import type {
   Category, CategoryPatch, DiningTable, Hall, HallPatch, ItemOption, ItemOptionPatch, Menu, MenuItem, MenuItemPatch, MenuTable,
   NewCategory, NewItemOption, NewMenuItem, NewOptionGroup, NewOrderLine, NewTable, OptionGroup, OptionGroupPatch, Order,
   OrderLine, OrderLinePatch, PaidOrder, Payment, PaymentMethod, ReceiptSettings, TablePatch, AdjustmentsPatch,
-  CategoryPrinters, KitchenTicket, NewPrinter, Printer, PrinterPatch, InvoiceCustomer, TableMove,
+  CategoryPrinters, KitchenTicket, NewPrinter, Printer, PrinterPatch, InvoiceCustomer, TableMove, DeliveryCustomer, DeliveryStatus,
 } from './types'
 import { demoMenu } from './demoMenu'
 import { buildKitchenTickets, type SendResult } from './kitchen'
@@ -47,8 +47,12 @@ export interface Repo {
   openOrder(tableId: string): Promise<Order>
   /** Opens a takeaway order: no table, and the next takeaway number. */
   openTakeaway(): Promise<Order>
-  /** Open takeaway orders, oldest first, with their lines and payments. */
-  listOpenTakeaways(): Promise<OpenOrder[]>
+  /** Opens a delivery order for this customer: no table, the next delivery number, status « En préparation ». */
+  openDelivery(customer: DeliveryCustomer): Promise<Order>
+  /** Changes a delivery's customer or status. */
+  updateDelivery(orderId: string, patch: DeliveryPatch): Promise<Order>
+  /** Open takeaway or delivery orders, oldest first, with their lines and payments. */
+  listOpenOrders(type: 'takeaway' | 'delivery'): Promise<OpenOrder[]>
   /** Every table of every hall (Changement de Table). */
   listAllTables(): Promise<DiningTable[]>
   /**
@@ -109,6 +113,9 @@ export interface Repo {
   waiterName(): Promise<string>
 }
 
+/** What can change on a delivery: its customer, its status. */
+export type DeliveryPatch = Partial<DeliveryCustomer> & { status?: DeliveryStatus }
+
 /** Printers created with a fresh demo database, and the demo categories they print (by position). */
 const demoPrinters = ['CUISINE', 'PIZZA', 'CAISSE']
 const demoCategoryPrinter = ['CAISSE', 'CAISSE', 'CUISINE', 'CUISINE', 'CUISINE']
@@ -159,6 +166,8 @@ function checkoutError(code: string): Error {
   if (code.includes('cancel_paid')) return new Error(t.errCancelPaid)
   if (code.includes('table_link_required')) return new Error(t.errTableLinkRequired)
   if (code.includes('table_has_order')) return new Error(t.errTableHasOrder)
+  // Deliveries need the delivery migration.
+  if (/delivery_|customer_phone|orders_order_type_check/.test(code)) return new Error(t.errMigrationDelivery)
   // Takeaway, table moves and invoices need the order-actions migration.
   if (/order_type|takeaway|table_moves|move_order|issue_invoice|invoice_no|customer_/.test(code) && /does not exist|schema cache|Could not find/i.test(code)) {
     return new Error(t.errMigrationActions)
@@ -331,8 +340,18 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       if (res.error) throw checkoutError(res.error.message)
       return normalizeOrder(res.data as Order)
     },
-    async listOpenTakeaways() {
-      const res = await sb.from('orders').select(ORDER_COLS).eq('status', 'open').eq('order_type', 'takeaway').order('created_at')
+    async openDelivery(customer) {
+      const res = await sb.from('orders').insert({ table_id: null, order_type: 'delivery', ...deliveryRow(customer) }).select(ORDER_COLS).single()
+      if (res.error) throw checkoutError(res.error.message)
+      return normalizeOrder(res.data as Order)
+    },
+    async updateDelivery(orderId, patch) {
+      const res = await sb.from('orders').update(deliveryRow(patch)).eq('id', orderId).eq('order_type', 'delivery').select(ORDER_COLS).single()
+      if (res.error) throw checkoutError(res.error.message)
+      return normalizeOrder(res.data as Order)
+    },
+    async listOpenOrders(type) {
+      const res = await sb.from('orders').select(ORDER_COLS).eq('status', 'open').eq('order_type', type).order('created_at')
       if (res.error) {
         // Before the order-actions migration there are no takeaway orders.
         if (/does not exist|schema cache|Could not find/i.test(res.error.message)) return []
@@ -507,14 +526,28 @@ function groupLinks(rows: { category_id: string; printer_id: string }[]): Catego
 }
 
 function normalizeOrder(o: Order): Order {
-  // Rows saved before the order-actions migration (or old demo data) have no type, number or customer.
+  // Rows saved before the order-actions / delivery migrations (or old demo data) have no type, number or customer.
   return {
     ...normalizeAdjustments(o),
-    order_type: o.order_type === 'takeaway' ? 'takeaway' : 'dine_in',
+    order_type: o.order_type === 'takeaway' || o.order_type === 'delivery' ? o.order_type : 'dine_in',
     takeaway_no: o.takeaway_no == null ? null : Number(o.takeaway_no),
+    delivery_no: o.delivery_no == null ? null : Number(o.delivery_no),
     customer_name: o.customer_name ?? null,
     customer_address: o.customer_address ?? null,
+    customer_phone: o.customer_phone ?? null,
+    delivery_status: o.order_type === 'delivery' ? o.delivery_status ?? 'preparing' : null,
     invoice_no: o.invoice_no == null ? null : Number(o.invoice_no),
+  }
+}
+
+/** Delivery fields to write: only those given, trimmed, empty text saved as null. */
+function deliveryRow(patch: DeliveryPatch): Partial<Pick<Order, 'customer_name' | 'customer_phone' | 'customer_address' | 'delivery_status'>> {
+  const text = (v: string) => v.trim() || null
+  return {
+    ...(patch.name !== undefined && { customer_name: text(patch.name) }),
+    ...(patch.phone !== undefined && { customer_phone: text(patch.phone) }),
+    ...(patch.address !== undefined && { customer_address: text(patch.address) }),
+    ...(patch.status !== undefined && { delivery_status: patch.status }),
   }
 }
 
@@ -557,6 +590,7 @@ const newOrder = (tableId: string | null): Order => ({
   id: crypto.randomUUID(), table_id: tableId, status: 'open', note: null, created_at: new Date().toISOString(),
   discount_type: null, discount_value: 0, offered: false,
   order_type: 'dine_in', takeaway_no: null, customer_name: null, customer_address: null, invoice_no: null,
+  delivery_no: null, customer_phone: null, delivery_status: null,
 })
 
 const KEY = 'smile.floor.v1'
@@ -609,6 +643,8 @@ interface LocalOrdersDb {
   payments?: Payment[]
   /** Missing in demo data saved before takeaway orders, table moves and invoices existed. */
   lastTakeaway?: number
+  /** Missing in demo data saved before delivery orders existed. */
+  lastDelivery?: number
   lastInvoice?: number
   tableMoves?: TableMove[]
 }
@@ -853,10 +889,27 @@ function localRepo(): Repo {
       commitOrders(db)
       return order
     },
-    async listOpenTakeaways() {
+    async openDelivery(customer) {
+      const db = loadOrders()
+      const delivery_no = (db.lastDelivery ?? 0) + 1
+      const order: Order = { ...newOrder(null), order_type: 'delivery', delivery_no, delivery_status: 'preparing', ...deliveryRow(customer) }
+      db.lastDelivery = delivery_no
+      db.orders.push(order)
+      commitOrders(db)
+      return order
+    },
+    async updateDelivery(orderId, patch) {
+      const db = loadOrders()
+      const order = db.orders.find((o) => o.id === orderId && o.order_type === 'delivery')
+      if (!order) throw checkoutError('order_not_found')
+      Object.assign(order, deliveryRow(patch))
+      commitOrders(db)
+      return normalizeOrder(order)
+    },
+    async listOpenOrders(type) {
       const db = loadOrders()
       return db.orders
-        .filter((o) => o.status === 'open' && o.order_type === 'takeaway')
+        .filter((o) => o.status === 'open' && o.order_type === type)
         .sort((a, b) => a.created_at.localeCompare(b.created_at))
         .map((o) => openOrderOf(db, o))
     },

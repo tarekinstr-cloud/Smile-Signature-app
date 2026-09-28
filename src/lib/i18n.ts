@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { PaymentMethod } from './types'
+import type { DeliveryStatus, PaymentMethod } from './types'
 
 export type Lang = 'fr' | 'ar'
 
@@ -331,6 +331,21 @@ const fr = {
   errTableLinkRequired: 'Une commande de table reste sur une table : utilisez « Changement de Table », l’encaissement ou « Annuler la CMD ».',
   errTableHasOrder: 'Impossible de supprimer : une commande est ouverte sur cette table. Encaissez-la ou annulez-la d’abord.',
   errMigrationActions: 'Base de données pas à jour : exécutez 20260928020000_order_actions.sql dans Supabase (SQL Editor).',
+  delivery: 'Livraison',
+  deliveryNo: (n: string) => `Livraison n° ${n}`,
+  deliveryBtn: 'Livraison',
+  deliveryOrders: 'Commandes en livraison',
+  newDelivery: '+ Nouvelle livraison',
+  noDeliveries: 'Aucune livraison en cours.',
+  newOrderDelivery: 'Livraison',
+  deliveryCustomer: 'Client de la livraison',
+  customerPhone: 'Téléphone',
+  deliveryStart: 'Prendre la commande',
+  deliveryNeedContact: 'Indiquez le téléphone et l’adresse du client.',
+  deliveryStatus: 'Statut',
+  deliveryStatuses: { preparing: 'En préparation', on_the_way: 'En route', delivered: 'Livrée' } as Record<DeliveryStatus, string>,
+  deliveryNoMove: 'Une livraison n’a pas de table.',
+  errMigrationDelivery: 'Base de données pas à jour : exécutez 20260928050000_delivery.sql dans Supabase (SQL Editor).',
 }
 
 type Dict = typeof fr
@@ -649,6 +664,21 @@ const ar: Dict = {
   errTableLinkRequired: 'طلب الطاولة يبقى على طاولة: استعمل «تبديل الطاولة»، الدفع أو «إلغاء الطلب».',
   errTableHasOrder: 'ما يمكنش الحذف: كاين طلب مفتوح على هذه الطاولة. خلّصو ولا ألغيه قبل.',
   errMigrationActions: 'قاعدة البيانات غير محدّثة: شغّل 20260928020000_order_actions.sql في Supabase (SQL Editor).',
+  delivery: 'توصيل',
+  deliveryNo: (n) => `توصيل رقم ${n}`,
+  deliveryBtn: 'توصيل',
+  deliveryOrders: 'طلبات التوصيل',
+  newDelivery: '+ توصيل جديد',
+  noDeliveries: 'ما كاين حتى توصيل حالياً.',
+  newOrderDelivery: 'توصيل',
+  deliveryCustomer: 'زبون التوصيل',
+  customerPhone: 'الهاتف',
+  deliveryStart: 'خذ الطلب',
+  deliveryNeedContact: 'اكتب هاتف الزبون وعنوانه.',
+  deliveryStatus: 'الحالة',
+  deliveryStatuses: { preparing: 'قيد التحضير', on_the_way: 'في الطريق', delivered: 'تم التوصيل' },
+  deliveryNoMove: 'التوصيل ما عندوش طاولة.',
+  errMigrationDelivery: 'قاعدة البيانات غير محدّثة: شغّل 20260928050000_delivery.sql في Supabase (SQL Editor).',
 }
 
 const dicts: Record<Lang, Dict> = { fr, ar }
