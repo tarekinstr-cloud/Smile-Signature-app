@@ -255,19 +255,19 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
         <div className="center muted">{t.loading}</div>
       ) : (
         <main className="content order-content">
+          <nav className="categories category-col" aria-label={t.categories}>
+            {menu?.categories.map((c) => (
+              <button
+                key={c.id}
+                className={c.id === categoryId ? 'category on' : 'category'}
+                style={{ ['--cat' as string]: c.color }}
+                onClick={() => setCategoryId(c.id)}
+              >
+                {c.name}
+              </button>
+            ))}
+          </nav>
           <section className="menu-area">
-            <nav className="categories" aria-label={t.categories}>
-              {menu?.categories.map((c) => (
-                <button
-                  key={c.id}
-                  className={c.id === categoryId ? 'category on' : 'category'}
-                  style={{ ['--cat' as string]: c.color }}
-                  onClick={() => setCategoryId(c.id)}
-                >
-                  {c.name}
-                </button>
-              ))}
-            </nav>
             {menu && menu.categories.length === 0 ? (
               <div className="card empty">
                 <p>{t.emptyMenu}</p>
