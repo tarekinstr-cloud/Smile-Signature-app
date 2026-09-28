@@ -14,6 +14,9 @@ import LangToggle from './LangToggle'
 import { useI18n } from '../lib/i18n'
 import { deliveryContact, placeText } from '../lib/place'
 import DeliveryDialog from './DeliveryDialog'
+import BackOffice from './backoffice/BackOffice'
+import MenuBar from './backoffice/MenuBar'
+import type { BackOfficePage } from './backoffice/pages'
 
 type Mode = 'service' | 'edit'
 /** Orders without a table, each with its button and list in the top bar. */
@@ -41,6 +44,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   const [actions, setActions] = useState<{ table: DiningTable; total: number; count: number } | null>(null)
   const [menuAdmin, setMenuAdmin] = useState(false)
   const [printerSettings, setPrinterSettings] = useState(false)
+  const [backOffice, setBackOffice] = useState<BackOfficePage | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const dialog = useDialog()
@@ -190,6 +194,13 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
 
   if (menuAdmin) return <MenuAdmin onBack={() => setMenuAdmin(false)} />
   if (printerSettings) return <PrinterSettings onBack={() => setPrinterSettings(false)} />
+  if (backOffice) {
+    return (
+      <BackOffice page={backOffice} onBack={() => setBackOffice(null)}
+        onOpenMenu={() => { setBackOffice(null); setMenuAdmin(true) }}
+        onOpenPrinters={() => { setBackOffice(null); setPrinterSettings(true) }} />
+    )
+  }
 
   const leaveOrder = () => {
     setOrderTableId(null)
@@ -242,6 +253,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
         {onSignOut && <button className="ghost" onClick={onSignOut}>{t.signOut}</button>}
         <LangToggle />
       </header>
+      <MenuBar onOpen={setBackOffice} />
 
       {repo.mode === 'local' && (
         <div className="banner">{t.demoBanner}</div>
