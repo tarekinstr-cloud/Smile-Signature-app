@@ -131,31 +131,34 @@ button.danger.solid { background: var(--occ); border-color: var(--occ); color: #
 .item-card:active { transform: scale(0.97); }
 .item-name { font-weight: 600; }
 .item-price { color: var(--muted); font-size: 14px; margin-top: auto; }
-.item-card.with-options { grid-column: span 2; background: var(--surface); border: 1px solid var(--line); cursor: default; }
-.item-card.with-options:active { transform: none; }
 .supp-btns { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
-.size-rows { display: flex; flex-direction: column; gap: 6px; width: 100%; }
-.size-row { display: flex; align-items: center; gap: 8px; width: 100%; }
-.size-btn { flex: 1; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 12px; font-weight: 700; }
-.size-row.on .size-btn { background: var(--accent); border-color: var(--accent); }
-.size-row.on .size-price { color: var(--ink); }
-.size-row > .size-price { flex: 1; }
-.size-btn:active, .supp-btn:active { transform: scale(0.96); }
-.add-draft { width: 100%; padding: 12px; font-weight: 700; margin-top: 4px; }
-.size-price { font-size: 13px; font-weight: 500; color: var(--muted); }
-.supp-group { display: flex; flex-direction: column; gap: 4px; width: 100%; }
-.supp-label { font-size: 12px; color: var(--muted); }
 .supp-btn { padding: 8px 10px; font-size: 13px; }
 .supp-btn.on { background: var(--accent); border-color: var(--accent); font-weight: 600; }
-.supp-rows { display: flex; flex-direction: column; gap: 4px; width: 100%; }
-.supp-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 4px 2px 10px; border-radius: 8px; }
-.supp-row.on { background: #fef3c7; }
-.supp-name { font-size: 14px; }
 
-.order-content { flex-direction: column; align-items: stretch; }
-.menu-area { width: 100%; }
-.ticket { width: min(560px, 100%); align-self: center; }
-.back-to-menu { font-weight: 600; padding: 12px; }
+/* Order screen: categories | items + supplements | order, each column scrolling on its own (touch tablet). */
+.order-screen { height: 100dvh; }
+.order-content { display: grid; grid-template-columns: 170px minmax(0, 1fr) 360px; align-items: stretch; min-height: 0; overflow: hidden; }
+.order-content > * { min-height: 0; overflow-y: auto; }
+.category-col { flex-direction: column; overflow-x: hidden; padding-bottom: 0; }
+.category-col .category { min-height: 64px; font-size: 17px; white-space: normal; text-align: start; padding: 12px 14px; flex-shrink: 0; }
+.order-content .items-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.order-content .item-card { min-height: 110px; padding: 14px; font-size: 17px; touch-action: manipulation; }
+.order-content .item-price { font-size: 16px; font-weight: 600; color: var(--ink); }
+.item-size { font-weight: 800; font-size: 22px; }
+.order-content .supp-btn { min-height: 56px; padding: 10px 16px; font-size: 16px; touch-action: manipulation; }
+.order-content .supp-btns { gap: 10px; }
+.ticket { overflow: hidden; }
+.ticket .panel { height: 100%; box-sizing: border-box; }
+.ticket .lines { flex: 1; min-height: 0; overflow-y: auto; }
+.order-content .stepper button { width: 48px; height: 48px; font-size: 22px; touch-action: manipulation; }
+.order-content .checkout-btn { min-height: 60px; font-size: 18px; }
+.supplements { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.supp-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.supp-btn:disabled { opacity: 0.45; }
+.supp-btn:active { transform: scale(0.96); }
+.line { cursor: pointer; border-radius: 8px; padding: 6px 8px 10px; }
+.line.on { background: #fef3c7; box-shadow: inset 3px 0 0 var(--accent); }
+.stepper .note-btn { margin-inline-start: auto; font-size: 15px; }
 .lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .line { border-bottom: 1px solid var(--line); padding-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
 .line-main { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -168,10 +171,15 @@ button.danger.solid { background: var(--occ); border-color: var(--occ); color: #
 .stepper.big { justify-content: center; }
 .stepper.big button { width: 44px; height: 44px; }
 .ticket-total { display: flex; justify-content: space-between; font-size: 18px; padding-top: 4px; }
-.ticket-bar { position: sticky; bottom: 12px; width: min(560px, 100%); align-self: center; margin-top: auto; padding: 14px; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,0,0,0.2); display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.added-flash { font-size: 13px; font-weight: 500; }
 
 @media (max-width: 800px) {
+  .order-screen { height: auto; }
+  .order-content { display: flex; overflow: visible; }
+  .order-content > * { overflow: visible; }
+  .category-col { flex-direction: row; overflow-x: auto; }
+  .category-col .category { min-height: 52px; white-space: nowrap; }
+  .ticket .panel { height: auto; }
+  .ticket .lines { overflow: visible; }
   .items-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 }
 
