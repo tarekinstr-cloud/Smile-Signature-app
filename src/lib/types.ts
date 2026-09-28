@@ -252,3 +252,55 @@ export interface KitchenTicket {
   /** Set by the printing driver once the ticket is on paper; null while it waits. */
   printed_at: string | null
 }
+
+// ───────────── Back-office (Statistiques, Stock, Fournisseurs, Employés) ─────────────
+
+/** An ingredient or product counted in stock. Adjusted by hand; not linked to sales yet. */
+export interface StockItem {
+  id: string
+  name: string
+  quantity: number
+  /** Free text: kg, L, pièce… */
+  unit: string
+  updated_at: string
+}
+
+export type NewStockItem = Pick<StockItem, 'name' | 'quantity' | 'unit'>
+export type StockItemPatch = Partial<Pick<StockItem, 'name' | 'unit'>>
+
+export interface Supplier {
+  id: string
+  name: string
+  phone: string
+  /** Products supplied, free text. */
+  products: string
+}
+
+export type NewSupplier = Omit<Supplier, 'id'>
+
+/** An account that signs in to the app. There are no roles yet: every account is staff. */
+export interface StaffAccount {
+  id: string
+  email: string
+  created_at: string | null
+  last_sign_in_at: string | null
+}
+
+export interface TopItem {
+  name: string
+  quantity: number
+  /** What customers paid for it, after discounts and offers. */
+  amount: number
+}
+
+/** Sales of one day, from the orders paid that day. */
+export interface DayStats {
+  /** Sum of the paid orders' totals. */
+  sales: number
+  /** Paid orders. */
+  orders: number
+  /** Orders still open (not paid yet), whatever their day. */
+  openOrders: number
+  /** Most sold items, by quantity. */
+  topItems: TopItem[]
+}
