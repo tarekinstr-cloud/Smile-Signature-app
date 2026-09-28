@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { PaymentMethod } from './types'
+import type { DeliveryStatus, PaymentMethod } from './types'
 
 export type Lang = 'fr' | 'ar'
 
@@ -411,6 +411,21 @@ const fr = {
   errStockName: 'Un produit porte déjà ce nom.',
   errStockGone: 'Produit introuvable (supprimé ?).',
   errMigrationBackOffice: 'Base de données pas à jour : exécutez 20260928060000_back_office.sql dans Supabase (SQL Editor).',
+  delivery: 'Livraison',
+  deliveryNo: (n: string) => `Livraison n° ${n}`,
+  deliveryBtn: 'Livraison',
+  deliveryOrders: 'Commandes en livraison',
+  newDelivery: '+ Nouvelle livraison',
+  noDeliveries: 'Aucune livraison en cours.',
+  newOrderDelivery: 'Livraison',
+  deliveryCustomer: 'Client de la livraison',
+  customerPhone: 'Téléphone',
+  deliveryStart: 'Prendre la commande',
+  deliveryNeedContact: 'Indiquez le téléphone et l’adresse du client.',
+  deliveryStatus: 'Statut',
+  deliveryStatuses: { preparing: 'En préparation', on_the_way: 'En route', delivered: 'Livrée' } as Record<DeliveryStatus, string>,
+  deliveryNoMove: 'Une livraison n’a pas de table.',
+  errMigrationDelivery: 'Base de données pas à jour : exécutez 20260928050000_delivery.sql dans Supabase (SQL Editor).',
 }
 
 type Dict = typeof fr
@@ -809,6 +824,21 @@ const ar: Dict = {
   errStockName: 'يوجد منتج بنفس الاسم.',
   errStockGone: 'المنتج غير موجود (محذوف؟).',
   errMigrationBackOffice: 'قاعدة البيانات غير محدّثة: شغّل 20260928060000_back_office.sql في Supabase (SQL Editor).',
+  delivery: 'توصيل',
+  deliveryNo: (n) => `توصيل رقم ${n}`,
+  deliveryBtn: 'توصيل',
+  deliveryOrders: 'طلبات التوصيل',
+  newDelivery: '+ توصيل جديد',
+  noDeliveries: 'ما كاين حتى توصيل حالياً.',
+  newOrderDelivery: 'توصيل',
+  deliveryCustomer: 'زبون التوصيل',
+  customerPhone: 'الهاتف',
+  deliveryStart: 'خذ الطلب',
+  deliveryNeedContact: 'اكتب هاتف الزبون وعنوانه.',
+  deliveryStatus: 'الحالة',
+  deliveryStatuses: { preparing: 'قيد التحضير', on_the_way: 'في الطريق', delivered: 'تم التوصيل' },
+  deliveryNoMove: 'التوصيل ما عندوش طاولة.',
+  errMigrationDelivery: 'قاعدة البيانات غير محدّثة: شغّل 20260928050000_delivery.sql في Supabase (SQL Editor).',
 }
 
 const dicts: Record<Lang, Dict> = { fr, ar }

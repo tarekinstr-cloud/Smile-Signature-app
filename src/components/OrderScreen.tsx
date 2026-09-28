@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { repo } from '../lib/repo'
 import type {
-  AdjustmentsPatch, ChosenOption, Discount, DiningTable, Hall, ItemOption, Menu, MenuItem, OptionGroup, Order, OrderLine, PaidOrder, Payment,
+  AdjustmentsPatch, ChosenOption, DeliveryStatus, Discount, DiningTable, Hall, ItemOption, Menu, MenuItem, OptionGroup, Order, OrderLine, PaidOrder, Payment,
 } from '../lib/types'
 import { money } from '../lib/format'
 import PaymentScreen, { minus } from './PaymentScreen'
@@ -12,7 +12,8 @@ import DiscountDialog from './DiscountDialog'
 import MoveTableDialog from './MoveTableDialog'
 import { BillDialog, InvoiceDialog } from './DocumentDialog'
 import { dispatchTickets, type SendResult } from '../lib/kitchen'
-import { placeText, ticketPlace } from '../lib/place'
+import { deliveryContact, placeText, ticketPlace } from '../lib/place'
+import DeliveryDialog from './DeliveryDialog'
 import { useDialog } from './Dialog'
 import LangToggle from './LangToggle'
 import { useI18n } from '../lib/i18n'
@@ -28,7 +29,11 @@ interface Props {
   onBack(): void
   /** Nouvelle CMD → À emporter: the floor screen opens a fresh takeaway order. */
   onNewTakeaway(): void
+  /** Nouvelle CMD → Livraison: the floor screen asks for the customer, then opens the new delivery. */
+  onNewDelivery(): void
 }
+
+const DELIVERY_STATUSES: DeliveryStatus[] = ['preparing', 'on_the_way', 'delivered']
 
 const sameOptions = (a: ChosenOption[], b: ChosenOption[]) =>
   a.length === b.length && a.every((o, i) => o.group === b[i].group && o.name === b[i].name)
@@ -72,9 +77,9 @@ interface PayMode {
   noTicket?: boolean
 }
 
-type Modal = 'move' | 'invoice' | 'bill' | 'print' | 'new' | 'discount'
+type Modal = 'move' | 'invoice' | 'bill' | 'print' | 'new' | 'discount' | 'delivery'
 
-export default function OrderScreen({ table, hall: startHall, orderId: startOrderId, startCheckout, onBack, onNewTakeaway }: Props) {
+export default function OrderScreen({ table, hall: startHall, orderId: startOrderId, startCheckout, onBack, onNewTakeaway, onNewDelivery }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null)
   const [categoryId, setCategoryId] = useState<string | null>(null)
   /** Where the order is: a table (with its hall), or null for takeaway. Follows Changement de Table. */
@@ -409,11 +414,18 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
     onBack()
   }
 
-  async function newOrder(kind: 'table' | 'takeaway') {
+  async function newOrder(kind: 'table' | 'takeaway' | 'delivery') {
     setModal(null)
     await leaveEmpty()
     if (kind === 'takeaway') onNewTakeaway()
+    else if (kind === 'delivery') onNewDelivery()
     else onBack()
+  }
+
+  async function setDeliveryStatus(status: DeliveryStatus) {
+    if (!order || order.delivery_status === status) return
+    setOrder({ ...order, delivery_status: status })
+    await run(async () => setOrder(await repo.updateDelivery(order.id, { status })))
   }
 
   // The paid order is no longer open: name it from the paid order itself (takeaway number included).
@@ -449,6 +461,7 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
     )
   }
 
+  const isDelivery = order?.order_type === 'delivery'
   const offerOn = selected ? selected.offered : !!order?.offered
   const target = selected ? selected.name : t.wholeOrder
   const selectedBill = selected ? bill.lines.find((b) => b.line.id === selected.id) : null
@@ -459,8 +472,23 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
         <button className="ghost back" onClick={back} aria-label={t.backToFloor}>{t.back}</button>
         <div className="order-title">
           <strong>{where}</strong>
-          <span>{place ? <><bdi>{place.hall.name}</bdi> · {t.seatsCount(place.table.seats)}</> : t.takeaway}</span>
+          <span>
+            {place ? <><bdi>{place.hall.name}</bdi> · {t.seatsCount(place.table.seats)}</>
+              : isDelivery ? <bdi>{[deliveryContact(order), order.customer_address].filter(Boolean).join(' · ')}</bdi>
+              : t.takeaway}
+          </span>
         </div>
+        {isDelivery && (
+          <>
+            <button className="ghost" onClick={() => setModal('delivery')}>✎ {t.customer}</button>
+            <div className="segmented delivery-status-bar" role="group" aria-label={t.deliveryStatus}>
+              {DELIVERY_STATUSES.map((s) => (
+                <button key={s} className={order.delivery_status === s ? 'on' : ''} aria-pressed={order.delivery_status === s}
+                  onClick={() => setDeliveryStatus(s)}>{t.deliveryStatuses[s]}</button>
+              ))}
+            </div>
+          </>
+        )}
         <div className="spacer" />
         {order && <span className="pill occupied">{t.openOrder}</span>}
         <LangToggle />
@@ -567,7 +595,7 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
                         <span>{l.quantity}</span>
                         <button onClick={() => changeQty(l, 1)} aria-label={t.increase}>+</button>
                         <span className="muted small">× {money(l.unit_price)}</span>
-                        {order?.order_type !== 'takeaway' && (
+                        {order?.order_type === 'dine_in' && (
                           <button className={l.is_takeaway ? 'takeaway-toggle on' : 'takeaway-toggle'} onClick={() => toggleTakeaway(l)}
                             disabled={!!l.sent_at} aria-pressed={l.is_takeaway} title={l.sent_at ? t.sentLocked : t.lineTakeawayHint}>
                             {l.is_takeaway ? `🥡 ${t.lineTakeaway}` : `🍽 ${t.lineOnSite}`}
@@ -606,7 +634,9 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
           <div className="action-btns">
             <button onClick={suite}><i aria-hidden>＋</i>{t.actSuite}</button>
             <button onClick={() => setModal('new')} disabled={busy}><i aria-hidden>🆕</i>{t.actNewOrder}</button>
-            <button onClick={() => setModal('move')} disabled={busy}><i aria-hidden>⇄</i>{t.actMoveTable}</button>
+            <button onClick={() => setModal('move')} disabled={busy || isDelivery} title={isDelivery ? t.deliveryNoMove : undefined}>
+              <i aria-hidden>⇄</i>{t.actMoveTable}
+            </button>
             <button onClick={() => setModal('invoice')} disabled={busy || !hasItems}><i aria-hidden>🧾</i>{t.actInvoice}</button>
             <button onClick={() => setPaying({ noTicket: true })} disabled={busy || !hasItems}><i aria-hidden>💵</i>{t.actPayNoTicket}</button>
             <button onClick={() => setModal('print')} disabled={busy || !hasItems}><i aria-hidden>🖨</i>{t.actPrint}</button>
@@ -629,6 +659,14 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
       )}
       {modal === 'move' && (
         <MoveTableDialog currentTableId={place?.table.id ?? null} busy={busy} onCancel={() => setModal(null)} onPick={moveTo} />
+      )}
+      {modal === 'delivery' && order && (
+        <DeliveryDialog place={where} submitLabel={t.save} onCancel={() => setModal(null)}
+          initial={{ name: order.customer_name ?? '', phone: order.customer_phone ?? '', address: order.customer_address ?? '' }}
+          onSubmit={async (customer) => {
+            setOrder(await repo.updateDelivery(order.id, customer))
+            setModal(null)
+          }} />
       )}
       {modal === 'discount' && order && (
         <DiscountDialog
@@ -662,6 +700,7 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
               <>
                 <button className="big" autoFocus onClick={() => newOrder('table')}>🍽 {t.newOrderTable}</button>
                 <button className="big" onClick={() => newOrder('takeaway')}>🥡 {t.newOrderTakeaway}</button>
+                <button className="big" onClick={() => newOrder('delivery')}>🛵 {t.newOrderDelivery}</button>
               </>
             )}
           </div>
