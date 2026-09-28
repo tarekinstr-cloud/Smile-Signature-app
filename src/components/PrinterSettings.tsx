@@ -85,6 +85,20 @@ export default function PrinterSettings({ onBack }: { onBack(): void }) {
     await reload()
   }
 
+  /** Links the category to this printer, or unlinks it; the category's other printers stay. */
+  async function toggleCategory(p: Printer, c: Category) {
+    const current = links[c.id] ?? []
+    const next = current.includes(p.id) ? current.filter((id) => id !== p.id) : [...current, p.id]
+    setLinks({ ...links, [c.id]: next })
+    try {
+      setError(null)
+      await repo.setCategoryPrinters(c.id, next)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+    await reload()
+  }
+
   const categoriesOf = (p: Printer) => categories.filter((c) => links[c.id]?.includes(p.id)).map((c) => c.name)
   const unlinked = categories.filter((c) => !links[c.id]?.length)
 
@@ -117,7 +131,7 @@ export default function PrinterSettings({ onBack }: { onBack(): void }) {
                 {printers.map((p) => {
                   const cats = categoriesOf(p)
                   return (
-                    <li key={p.id}>
+                    <li key={p.id} className="printer-item">
                       <button className="ghost admin-row" onClick={() => open(p)}>
                         <span className="printer-icon" aria-hidden>🖨</span>
                         <span className="grow">
@@ -128,6 +142,19 @@ export default function PrinterSettings({ onBack }: { onBack(): void }) {
                         </span>
                         <span className="tag" dir="ltr">{p.ip ? `${p.ip}:${p.port}` : t.noIp}</span>
                       </button>
+                      <div className="printer-links">
+                        <span className="muted small">{categories.length ? t.printerCategoriesEdit : t.noCategoriesYet}</span>
+                        <div className="printer-chips">
+                          {categories.map((c) => {
+                            const on = links[c.id]?.includes(p.id) ?? false
+                            return (
+                              <button key={c.id} className={on ? 'supp-btn on' : 'supp-btn'} aria-pressed={on} onClick={() => toggleCategory(p, c)}>
+                                {on ? '✓ ' : ''}<bdi>{c.name}</bdi>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
                     </li>
                   )
                 })}
