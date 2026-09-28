@@ -293,6 +293,14 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .kt-table { text-align: center; font-size: 24px; font-weight: 800; }
 .kt-lines { gap: 6px; }
 .kt-line { font-size: 17px; }
+.kt-emp { margin-inline-start: 6px; font-size: 12px; font-weight: 800; border: 1.5px solid #000; padding: 0 4px; white-space: nowrap; }
+.kt-group { text-align: center; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; margin: 6px 0 4px; }
+.kt-group-emp { font-size: 15px; font-weight: 800; background: #000; color: #fff; padding: 2px 0; }
+.receipt-emp { font-weight: 700; }
+.tag.takeaway-tag { background: #dcfce7; color: #166534; align-self: flex-start; font-weight: 600; }
+.stepper button.takeaway-toggle { width: auto; padding: 0 10px; font-size: 13px; white-space: nowrap; }
+.order-content .stepper button.takeaway-toggle { width: auto; height: 40px; font-size: 14px; }
+.stepper button.takeaway-toggle.on { background: #dcfce7; border-color: #16a34a; color: #166534; font-weight: 700; }
 .kt-note { font-style: italic; }
 .unrouted { display: flex; flex-direction: column; gap: 6px; border: 1px solid #fcd34d; background: #fffbeb; border-radius: 8px; padding: 10px 12px; }
 

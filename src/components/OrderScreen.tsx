@@ -219,7 +219,7 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
     setBusy(true)
     await run(async () => {
       // A line already sent to the kitchen stays as it was: more of the same goes on a new line.
-      if (last && !last.sent_at && !last.note && !last.offered && !discountOf(last) && sameOptions(last.options, options)) {
+      if (last && !last.sent_at && !last.is_takeaway && !last.note && !last.offered && !discountOf(last) && sameOptions(last.options, options)) {
         await repo.updateLine(last.id, { quantity: last.quantity + 1 })
         setSelectedId(last.id)
       } else {
@@ -276,7 +276,7 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
 
   /** "+" on a line already sent: the extra portion is new, so it goes on an unsent line of the same item. */
   async function addToSent(line: OrderLine) {
-    const twin = lines.find((l) => !l.sent_at && !l.offered && !discountOf(l) && l.item_id === line.item_id && l.name === line.name && l.note === line.note && sameOptions(l.options, line.options))
+    const twin = lines.find((l) => !l.sent_at && !l.offered && !discountOf(l) && l.is_takeaway === line.is_takeaway && l.item_id === line.item_id && l.name === line.name && l.note === line.note && sameOptions(l.options, line.options))
     setBusy(true)
     await run(async () => {
       if (twin) {
@@ -284,7 +284,7 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
         setSelectedId(twin.id)
       } else {
         const o = await ensureOrder()
-        const copy = await repo.addLine(o.id, { item_id: line.item_id, name: line.name, unit_price: line.unit_price, quantity: 1, options: line.options, note: line.note })
+        const copy = await repo.addLine(o.id, { item_id: line.item_id, name: line.name, unit_price: line.unit_price, quantity: 1, options: line.options, note: line.note, is_takeaway: line.is_takeaway })
         setSelectedId(copy.id)
       }
       await reloadOrder()
@@ -308,6 +308,15 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
   }
 
   const clock = (iso: string) => new Date(iso).toLocaleTimeString(t.locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+
+  /** Sur place / À emporter on one line. Only while it is new: the kitchen already has the sent ones. */
+  async function toggleTakeaway(line: OrderLine) {
+    if (line.sent_at) return
+    const is_takeaway = !line.is_takeaway
+    setLines((ls) => ls.map((l) => (l.id === line.id ? { ...l, is_takeaway } : l)))
+    await run(() => repo.updateLine(line.id, { is_takeaway }))
+    await reloadOrder()
+  }
 
   async function editNote(line: OrderLine) {
     if (line.sent_at) return
@@ -539,6 +548,7 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
                         <span className="line-name">{l.name}</span>
                         <span className="line-total">{offered ? <s className="muted">{money(l.unit_price * l.quantity)}</s> : money(l.unit_price * l.quantity)}</span>
                       </div>
+                      {l.is_takeaway && <span className="tag takeaway-tag">{t.lineTakeaway}</span>}
                       {offered && <span className="tag offered-tag">{t.offered}</span>}
                       {discountOf(l) && !offered && <span className="tag">{t.discount}</span>}
                       {l.sent_at ? (
@@ -557,6 +567,12 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
                         <span>{l.quantity}</span>
                         <button onClick={() => changeQty(l, 1)} aria-label={t.increase}>+</button>
                         <span className="muted small">× {money(l.unit_price)}</span>
+                        {order?.order_type !== 'takeaway' && (
+                          <button className={l.is_takeaway ? 'takeaway-toggle on' : 'takeaway-toggle'} onClick={() => toggleTakeaway(l)}
+                            disabled={!!l.sent_at} aria-pressed={l.is_takeaway} title={l.sent_at ? t.sentLocked : t.lineTakeawayHint}>
+                            {l.is_takeaway ? `🥡 ${t.lineTakeaway}` : `🍽 ${t.lineOnSite}`}
+                          </button>
+                        )}
                         {!l.sent_at && <button className="note-btn" onClick={() => editNote(l)} title={t.addNote} aria-label={t.addNote}>✎</button>}
                       </div>
                     </li>

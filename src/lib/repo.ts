@@ -535,6 +535,8 @@ function normalizeLine(l: OrderLine): OrderLine {
     unit_price: Number(l.unit_price),
     options: (l.options ?? []).map((o) => ({ ...o, price_delta: Number(o.price_delta) })),
     sent_at: l.sent_at ?? null,
+    // Rows saved before the line-takeaway migration (or old demo data) have no flag.
+    is_takeaway: !!l.is_takeaway,
   }
 }
 
@@ -705,7 +707,7 @@ function localRepo(): Repo {
 
   const openOrderOf = (db: LocalOrdersDb, order: Order): OpenOrder => ({
     order: normalizeOrder(order),
-    lines: db.lines.filter((l) => l.order_id === order.id).map((l) => normalizeAdjustments({ ...l, sent_at: l.sent_at ?? null })),
+    lines: db.lines.filter((l) => l.order_id === order.id).map((l) => normalizeAdjustments({ ...l, sent_at: l.sent_at ?? null, is_takeaway: !!l.is_takeaway })),
     payments: (db.payments ?? []).filter((p) => p.order_id === order.id),
   })
 
@@ -928,6 +930,7 @@ function localRepo(): Repo {
     async addLine(orderId, line) {
       const db = loadOrders()
       const row: OrderLine = {
+        is_takeaway: false,
         ...line, id: crypto.randomUUID(), order_id: orderId, created_at: new Date().toISOString(), sent_at: null,
         discount_type: null, discount_value: 0, offered: false,
       }

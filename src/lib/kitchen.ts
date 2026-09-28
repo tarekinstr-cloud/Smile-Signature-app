@@ -20,7 +20,13 @@ export const ticketLine = (l: OrderLine): KitchenTicketLine => ({
   quantity: l.quantity,
   options: l.options.map((o) => o.name),
   note: l.note || null,
+  takeaway: l.is_takeaway,
 })
+
+/** Splits ticket lines into those eaten at the table and those to pack (box / bag), keeping their order. */
+export function splitTakeaway(lines: KitchenTicketLine[]): { onSite: KitchenTicketLine[]; takeaway: KitchenTicketLine[] } {
+  return { onSite: lines.filter((l) => !l.takeaway), takeaway: lines.filter((l) => l.takeaway) }
+}
 
 /**
  * Splits the lines just sent across printers by the category of their item.

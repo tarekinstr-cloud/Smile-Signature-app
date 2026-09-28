@@ -149,10 +149,15 @@ export interface OrderLine extends Adjustments {
   created_at: string
   /** When the line went to the kitchen (Valider); null while it is new. */
   sent_at: string | null
+  /**
+   * Packed to take away (box / bag) although the order stays on its table. Independent of the order's
+   * order_type and table_id: a whole takeaway order does not set it.
+   */
+  is_takeaway: boolean
 }
 
-export type NewOrderLine = Pick<OrderLine, 'item_id' | 'name' | 'unit_price' | 'quantity' | 'options' | 'note'>
-export type OrderLinePatch = Partial<Pick<OrderLine, 'quantity' | 'note' | 'options' | 'unit_price'>>
+export type NewOrderLine = Pick<OrderLine, 'item_id' | 'name' | 'unit_price' | 'quantity' | 'options' | 'note'> & Partial<Pick<OrderLine, 'is_takeaway'>>
+export type OrderLinePatch = Partial<Pick<OrderLine, 'quantity' | 'note' | 'options' | 'unit_price' | 'is_takeaway'>>
 export type AdjustmentsPatch = Partial<Adjustments>
 
 export type NewCategory = Omit<Category, 'id'>
@@ -229,6 +234,8 @@ export interface KitchenTicketLine {
   quantity: number
   options: string[]
   note: string | null
+  /** To take away (box / bag) although the order is at a table. Missing on tickets made before this flag. */
+  takeaway?: boolean
 }
 
 /** What one printer receives when an order is sent (Valider): the new lines of its categories only. */

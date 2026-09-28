@@ -2,6 +2,7 @@ import { createPortal } from 'react-dom'
 import type { KitchenTicket as Ticket, KitchenTicketLine } from '../lib/types'
 import { useI18n } from '../lib/i18n'
 import { placeFromLabel } from '../lib/place'
+import { splitTakeaway } from '../lib/kitchen'
 
 interface Props {
   /** Tickets no printing driver took, shown here instead. */
@@ -14,17 +15,40 @@ interface Props {
   onClose(): void
 }
 
-function Lines({ lines }: { lines: KitchenTicketLine[] }) {
+function LineList({ lines }: { lines: KitchenTicketLine[] }) {
+  const { t } = useI18n()
   return (
     <ul className="receipt-lines kt-lines">
       {lines.map((l, i) => (
         <li key={i}>
-          <div className="kt-line"><strong>{l.quantity} ×</strong> <bdi>{l.name}</bdi></div>
+          <div className="kt-line">
+            <strong>{l.quantity} ×</strong> <bdi>{l.name}</bdi>
+            {l.takeaway && <span className="kt-emp">{t.lineTakeawayShort}</span>}
+          </div>
           {l.options.map((o, j) => <div key={j} className="receipt-sub">+ <bdi>{o}</bdi></div>)}
           {l.note && <div className="receipt-sub kt-note">» <bdi>{l.note}</bdi></div>}
         </li>
       ))}
     </ul>
+  )
+}
+
+/** The lines of a ticket, those to take away grouped last under their own heading so the kitchen packs them. */
+function Lines({ lines }: { lines: KitchenTicketLine[] }) {
+  const { t } = useI18n()
+  const { onSite, takeaway } = splitTakeaway(lines)
+  if (!takeaway.length) return <LineList lines={onSite} />
+  return (
+    <>
+      {onSite.length > 0 && (
+        <>
+          <div className="kt-group">{t.lineOnSite.toUpperCase()}</div>
+          <LineList lines={onSite} />
+        </>
+      )}
+      <div className="kt-group kt-group-emp">*** {t.lineTakeaway.toUpperCase()} ***</div>
+      <LineList lines={takeaway} />
+    </>
   )
 }
 
