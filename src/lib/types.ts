@@ -99,6 +99,8 @@ export interface OrderLine {
   options: ChosenOption[]
   note: string | null
   created_at: string
+  /** When the line went to the kitchen (Valider); null while it is new. */
+  sent_at: string | null
 }
 
 export type NewOrderLine = Pick<OrderLine, 'item_id' | 'name' | 'unit_price' | 'quantity' | 'options' | 'note'>
@@ -135,4 +137,43 @@ export interface ReceiptSettings {
   header: string
   /** Closing message, e.g. "Merci de votre visite — Bon Appétit !". */
   footer: string
+}
+
+/** A kitchen / bar / cashier printer. The IP address is only needed once tickets are really printed. */
+export interface Printer {
+  id: string
+  name: string
+  ip: string | null
+  /** Raw TCP port of network printers (ESC/POS), usually 9100. */
+  port: number
+  sort_order: number
+}
+
+export type NewPrinter = Omit<Printer, 'id'>
+export type PrinterPatch = Partial<NewPrinter>
+
+/** Printers each category's items go to, keyed by category id. */
+export type CategoryPrinters = Record<string, string[]>
+
+/** One line of a kitchen ticket: what to prepare, without prices. */
+export interface KitchenTicketLine {
+  name: string
+  quantity: number
+  options: string[]
+  note: string | null
+}
+
+/** What one printer receives when an order is sent (Valider): the new lines of its categories only. */
+export interface KitchenTicket {
+  id: string
+  order_id: string
+  /** Null when the printer has been deleted since; the name stays. */
+  printer_id: string | null
+  printer_name: string
+  table_label: string | null
+  waiter: string
+  created_at: string
+  lines: KitchenTicketLine[]
+  /** Set by the printing driver once the ticket is on paper; null while it waits. */
+  printed_at: string | null
 }

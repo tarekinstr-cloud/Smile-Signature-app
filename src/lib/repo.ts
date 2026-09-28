@@ -3,8 +3,10 @@ import type {
   Category, CategoryPatch, DiningTable, Hall, HallPatch, ItemOption, ItemOptionPatch, Menu, MenuItem, MenuItemPatch, MenuTable,
   NewCategory, NewItemOption, NewMenuItem, NewOptionGroup, NewOrderLine, NewTable, OptionGroup, OptionGroupPatch, Order,
   OrderLine, OrderLinePatch, PaidOrder, PaymentMethod, ReceiptSettings, TablePatch,
+  CategoryPrinters, KitchenTicket, NewPrinter, Printer, PrinterPatch,
 } from './types'
 import { demoMenu } from './demoMenu'
+import { buildKitchenTickets, type SendResult } from './kitchen'
 import { tr } from './i18n'
 
 /** Data access for halls, tables, menu and orders. Backed by Supabase when configured, localStorage otherwise. */
@@ -55,6 +57,40 @@ export interface Repo {
   checkoutOrder(orderId: string, method: PaymentMethod, received: number | null): Promise<PaidOrder>
   getReceiptSettings(): Promise<ReceiptSettings>
   updateReceiptSettings(patch: Partial<ReceiptSettings>): Promise<void>
+
+  listPrinters(): Promise<Printer[]>
+  createPrinter(p: NewPrinter): Promise<Printer>
+  updatePrinter(id: string, patch: PrinterPatch): Promise<void>
+  /** Deletes the printer and its links to categories. Tickets already sent keep its name. */
+  deletePrinter(id: string): Promise<void>
+  getCategoryPrinters(): Promise<CategoryPrinters>
+  /** Replaces the printers of a category. The same printer cannot be given twice. */
+  setCategoryPrinters(categoryId: string, printerIds: string[]): Promise<void>
+  /**
+   * Valider: marks the order's new lines as sent, now, and builds one kitchen ticket per printer
+   * concerned, with only those lines. The order stays open.
+   */
+  sendOrder(orderId: string, tableLabel: string | null): Promise<SendResult>
+  /** Name printed on kitchen tickets: the signed-in user's name, or their e-mail. */
+  waiterName(): Promise<string>
+}
+
+/** Printers created with a fresh demo database, and the demo categories they print (by position). */
+const demoPrinters = ['CUISINE', 'PIZZA', 'CAISSE']
+const demoCategoryPrinter = ['CAISSE', 'CAISSE', 'CUISINE', 'CUISINE', 'CUISINE']
+
+const cleanPrinter = <T extends PrinterPatch>(p: T): T => ({
+  ...p,
+  ...(p.name !== undefined && { name: p.name.trim() }),
+  ...(p.ip !== undefined && { ip: p.ip?.trim() || null }),
+})
+
+function checkPrinterIds(printerIds: string[]) {
+  if (new Set(printerIds).size !== printerIds.length) throw new Error(tr().errPrinterTwice)
+}
+
+function printerError(message: string): Error {
+  return message.includes('printers_name_key') || message.includes('23505') ? new Error(tr().errPrinterName) : new Error(message)
 }
 
 export const defaultReceiptSettings = (): ReceiptSettings => ({
@@ -232,7 +268,64 @@ function supabaseRepo(sb: SupabaseClient): Repo {
     async updateReceiptSettings(patch) {
       check(await sb.from('receipt_settings').upsert({ id: 1, ...patch }))
     },
+
+    async listPrinters() {
+      return check(await sb.from('printers').select('id, name, ip, port, sort_order').order('sort_order').order('created_at')) as Printer[]
+    },
+    async createPrinter(p) {
+      const res = await sb.from('printers').insert(cleanPrinter(p)).select('id, name, ip, port, sort_order').single()
+      if (res.error) throw printerError(res.error.message)
+      return res.data as Printer
+    },
+    async updatePrinter(id, patch) {
+      const res = await sb.from('printers').update(cleanPrinter(patch)).eq('id', id)
+      if (res.error) throw printerError(res.error.message)
+    },
+    async deletePrinter(id) {
+      check(await sb.from('printers').delete().eq('id', id))
+    },
+    async getCategoryPrinters() {
+      const rows = check(await sb.from('category_printers').select('category_id, printer_id')) as { category_id: string; printer_id: string }[]
+      return groupLinks(rows)
+    },
+    async setCategoryPrinters(categoryId, printerIds) {
+      checkPrinterIds(printerIds)
+      const current = (await this.getCategoryPrinters())[categoryId] ?? []
+      const removed = current.filter((id) => !printerIds.includes(id))
+      const added = printerIds.filter((id) => !current.includes(id))
+      if (removed.length) check(await sb.from('category_printers').delete().eq('category_id', categoryId).in('printer_id', removed))
+      if (added.length) {
+        check(await sb.from('category_printers').upsert(added.map((printer_id) => ({ category_id: categoryId, printer_id })), { ignoreDuplicates: true }))
+      }
+    },
+    async sendOrder(orderId, tableLabel) {
+      const [waiter, printers, links] = await Promise.all([this.waiterName(), this.listPrinters(), this.getCategoryPrinters()])
+      const res = await sb.rpc('send_order_lines', { p_order_id: orderId })
+      if (res.error) throw checkoutError(res.error.message)
+      const lines = (res.data as OrderLine[]).map(normalizeLine)
+      if (!lines.length) return { tickets: [], unrouted: [] }
+      const itemIds = [...new Set(lines.map((l) => l.item_id).filter((id): id is string => !!id))]
+      const items = itemIds.length ? (check(await sb.from('items').select('id, category_id').in('id', itemIds)) as Pick<MenuItem, 'id' | 'category_id'>[]) : []
+      const itemCategory = Object.fromEntries(items.map((i) => [i.id, i.category_id]))
+      const at = lines.reduce((max, l) => (l.sent_at && l.sent_at > max ? l.sent_at : max), '') || new Date().toISOString()
+      const built = buildKitchenTickets(lines, itemCategory, links, printers, { orderId, tableLabel, waiter, at })
+      const tickets = built.tickets.length ? (check(await sb.from('kitchen_tickets').insert(built.tickets).select()) as KitchenTicket[]) : []
+      // Inserted rows come back in no set order: keep the printers' order.
+      const rank = (t: KitchenTicket) => built.tickets.findIndex((b) => b.printer_id === t.printer_id)
+      return { tickets: tickets.sort((a, b) => rank(a) - rank(b)), unrouted: built.unrouted }
+    },
+    async waiterName() {
+      const { data } = await sb.auth.getUser()
+      const meta = data.user?.user_metadata ?? {}
+      return String(meta.full_name || meta.name || data.user?.email || tr().waiterUnknown)
+    },
   }
+}
+
+function groupLinks(rows: { category_id: string; printer_id: string }[]): CategoryPrinters {
+  const out: CategoryPrinters = {}
+  for (const r of rows) (out[r.category_id] ??= []).push(r.printer_id)
+  return out
 }
 
 function normalizeLine(l: OrderLine): OrderLine {
@@ -240,6 +333,7 @@ function normalizeLine(l: OrderLine): OrderLine {
     ...l,
     unit_price: Number(l.unit_price),
     options: (l.options ?? []).map((o) => ({ ...o, price_delta: Number(o.price_delta) })),
+    sent_at: l.sent_at ?? null,
   }
 }
 
@@ -298,6 +392,10 @@ interface LocalOrdersDb {
   /** Last receipt number handed out. */
   lastTicket?: number
   receipt?: ReceiptSettings
+  /** Missing in demo data saved before kitchen printers existed; created on first use. */
+  printers?: Printer[]
+  categoryPrinters?: CategoryPrinters
+  kitchenTickets?: KitchenTicket[]
 }
 
 function localRepo(): Repo {
@@ -355,6 +453,20 @@ function localRepo(): Repo {
   window.addEventListener('storage', (e) => {
     if (e.key === ORDERS_KEY) orderListeners.forEach((l) => l())
   })
+  /** Demo database with its printers, adding the demo ones the first time. */
+  const loadKitchen = () => {
+    const db = loadOrders()
+    if (!db.printers) {
+      db.printers = demoPrinters.map((name, sort_order) => ({ id: crypto.randomUUID(), name, ip: null, port: 9100, sort_order }))
+      const byName = Object.fromEntries(db.printers.map((p) => [p.name, p.id]))
+      const cats = [...db.categories].sort((a, b) => a.sort_order - b.sort_order)
+      db.categoryPrinters = Object.fromEntries(cats.slice(0, demoCategoryPrinter.length).map((c, i) => [c.id, [byName[demoCategoryPrinter[i]]]]))
+      saveOrders(db)
+    }
+    return db as LocalOrdersDb & { printers: Printer[]; categoryPrinters: CategoryPrinters }
+  }
+  const printerNameTaken = (db: { printers: Printer[] }, name: string, id?: string) =>
+    db.printers.some((p) => p.id !== id && p.name.trim().toLowerCase() === name.trim().toLowerCase())
   const editMenu = (fn: (db: LocalOrdersDb) => unknown) => {
     const db = loadOrders()
     fn(db)
@@ -458,6 +570,7 @@ function localRepo(): Repo {
       editMenu((db) => {
         db.items.filter((i) => i.category_id === id).forEach((i) => removeItem(db, i.id))
         db.categories = db.categories.filter((c) => c.id !== id)
+        if (db.categoryPrinters) delete db.categoryPrinters[id]
       })
     },
     async createItem(i) {
@@ -497,7 +610,7 @@ function localRepo(): Repo {
       const db = loadOrders()
       const order = db.orders.find((o) => o.table_id === tableId && o.status === 'open')
       if (!order) return null
-      return { order, lines: db.lines.filter((l) => l.order_id === order.id) }
+      return { order, lines: db.lines.filter((l) => l.order_id === order.id).map((l) => ({ ...l, sent_at: l.sent_at ?? null })) }
     },
     async openOrder(tableId) {
       const db = loadOrders()
@@ -520,7 +633,7 @@ function localRepo(): Repo {
     },
     async addLine(orderId, line) {
       const db = loadOrders()
-      const row: OrderLine = { ...line, id: crypto.randomUUID(), order_id: orderId, created_at: new Date().toISOString() }
+      const row: OrderLine = { ...line, id: crypto.randomUUID(), order_id: orderId, created_at: new Date().toISOString(), sent_at: null }
       db.lines.push(row)
       commitOrders(db)
       return row
@@ -568,6 +681,68 @@ function localRepo(): Repo {
       const db = loadOrders()
       db.receipt = { ...defaultReceiptSettings(), ...db.receipt, ...patch }
       commitOrders(db)
+    },
+
+    async listPrinters() {
+      return [...loadKitchen().printers].sort((a, b) => a.sort_order - b.sort_order)
+    },
+    async createPrinter(p) {
+      const db = loadKitchen()
+      const row: Printer = { ...cleanPrinter(p), id: crypto.randomUUID() }
+      if (printerNameTaken(db, row.name)) throw new Error(tr().errPrinterName)
+      db.printers.push(row)
+      commitOrders(db)
+      return row
+    },
+    async updatePrinter(id, patch) {
+      const db = loadKitchen()
+      const clean = cleanPrinter(patch)
+      if (clean.name !== undefined && printerNameTaken(db, clean.name, id)) throw new Error(tr().errPrinterName)
+      db.printers = db.printers.map((p) => (p.id === id ? { ...p, ...clean } : p))
+      commitOrders(db)
+    },
+    async deletePrinter(id) {
+      const db = loadKitchen()
+      db.printers = db.printers.filter((p) => p.id !== id)
+      for (const c of Object.keys(db.categoryPrinters)) db.categoryPrinters[c] = db.categoryPrinters[c].filter((x) => x !== id)
+      db.kitchenTickets = db.kitchenTickets?.map((t) => (t.printer_id === id ? { ...t, printer_id: null } : t))
+      commitOrders(db)
+    },
+    async getCategoryPrinters() {
+      const links = loadKitchen().categoryPrinters
+      return Object.fromEntries(Object.entries(links).filter(([, ids]) => ids.length))
+    },
+    async setCategoryPrinters(categoryId, printerIds) {
+      checkPrinterIds(printerIds)
+      const db = loadKitchen()
+      const known = new Set(db.printers.map((p) => p.id))
+      db.categoryPrinters[categoryId] = printerIds.filter((id) => known.has(id))
+      commitOrders(db)
+    },
+    async sendOrder(orderId, tableLabel) {
+      const waiter = await this.waiterName()
+      const db = loadKitchen()
+      const order = db.orders.find((o) => o.id === orderId)
+      if (!order || order.status !== 'open') throw checkoutError('order_not_open')
+      const at = new Date().toISOString()
+      const sent: OrderLine[] = []
+      db.lines = db.lines.map((l) => {
+        if (l.order_id !== orderId || l.sent_at) return l
+        const row = { ...l, sent_at: at }
+        sent.push(row)
+        return row
+      })
+      if (!sent.length) return { tickets: [], unrouted: [] }
+      const itemCategory = Object.fromEntries(db.items.map((i) => [i.id, i.category_id]))
+      const built = buildKitchenTickets(sent, itemCategory, db.categoryPrinters, db.printers, { orderId, tableLabel, waiter, at })
+      const tickets = built.tickets.map((t) => ({ ...t, id: crypto.randomUUID() }))
+      // The demo keeps only the latest tickets, to stay within the browser's storage.
+      db.kitchenTickets = [...(db.kitchenTickets ?? []), ...tickets].slice(-200)
+      commitOrders(db)
+      return { tickets, unrouted: built.unrouted }
+    },
+    async waiterName() {
+      return tr().waiterDemo
     },
   }
 }
