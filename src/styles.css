@@ -357,3 +357,52 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
   .pay-content { display: flex; overflow: visible; }
   .pay-content > * { overflow: visible; }
 }
+
+/* ───────────── Barre d'actions de la commande ───────────── */
+.order-content { flex: 1; }
+.action-bar { flex: none; display: flex; gap: 12px; align-items: stretch; padding: 10px 16px; background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -4px 12px rgba(0,0,0,0.05); }
+.action-sum { flex: 0 0 220px; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 8px 14px; border-radius: 8px; background: var(--brand); color: #fff; font-variant-numeric: tabular-nums; }
+.sum-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; white-space: nowrap; }
+.sum-total strong { font-size: 26px; }
+.sum-rest { color: #fecaca; }
+.sum-change { color: #bbf7d0; }
+.action-btns { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.action-btns button { min-height: 54px; padding: 6px 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-weight: 600; font-size: 14px; line-height: 1.15; text-align: center; touch-action: manipulation; }
+.action-btns button i { font-style: normal; font-size: 18px; line-height: 1; }
+.action-btns button small { font-weight: 400; font-size: 11px; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.action-btns button:active:not(:disabled) { transform: scale(0.97); }
+.action-btns .act-pay { background: var(--free); border-color: var(--free); color: #fff; }
+.action-btns .act-cancel { border-color: #fecaca; color: var(--occ); }
+.action-btns .act-offer.on { background: #ede9fe; border-color: #7c3aed; color: #6d28d9; }
+
+.move-dialog { width: min(640px, 100%); max-height: 92vh; overflow-y: auto; }
+.move-dialog h3 { margin: 0 0 8px; font-size: 15px; color: var(--muted); }
+.move-halls { display: flex; flex-direction: column; gap: 14px; }
+.move-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.move-table { min-height: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-width: 2px; touch-action: manipulation; }
+.move-table strong { font-size: 22px; }
+.move-table span { font-size: 12px; font-weight: 600; }
+.move-table.free { background: var(--free-bg); border-color: var(--free); color: #14532d; }
+.move-table.occupied { background: var(--occ-bg); border-color: var(--occ); color: #7f1d1d; cursor: not-allowed; }
+.move-table.current { background: #fef3c7; border-color: var(--accent); color: #92400e; opacity: 1; }
+.move-msg { border-radius: 8px; font-weight: 600; }
+
+.takeaway-btn { background: var(--accent); border-color: var(--accent); color: #1c1917; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
+.takeaway-btn .count { background: var(--brand); color: #fff; border-radius: 999px; padding: 0 8px; font-size: 13px; }
+.takeaway-row { display: flex; align-items: center; gap: 10px; text-align: start; }
+.takeaway-row > span:first-child { flex: 1; }
+.receipt-customer { margin-top: 6px; }
+.receipt-note { padding-inline-start: 0; font-style: italic; }
+
+@media (max-width: 1100px) {
+  .action-sum { flex-basis: 180px; }
+  .action-btns button { font-size: 13px; }
+}
+@media (max-width: 800px) {
+  .action-bar { position: sticky; bottom: 0; z-index: 5; flex-direction: column; gap: 8px; padding: 8px 12px; }
+  .action-sum { flex: none; flex-direction: row; flex-wrap: wrap; gap: 4px 16px; padding: 6px 12px; }
+  .sum-total { flex: 1; }
+  .sum-total strong { font-size: 22px; }
+  .action-btns { display: flex; overflow-x: auto; gap: 6px; padding-bottom: 2px; }
+  .action-btns button { flex: 0 0 96px; min-height: 58px; }
+}

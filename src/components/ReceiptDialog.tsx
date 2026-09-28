@@ -9,13 +9,14 @@ interface Props {
   order: PaidOrder
   lines: OrderLine[]
   payments: Payment[]
-  tableLabel: string | null
+  /** "Table 4" or "À emporter n° 12". */
+  place: string | null
   hallName: string | null
   onDone(): void
 }
 
 /** Shown after checkout: the ticket on screen, a print button and the ticket's editable texts. */
-export default function ReceiptDialog({ order, lines, payments, tableLabel, hallName, onDone }: Props) {
+export default function ReceiptDialog({ order, lines, payments, place, hallName, onDone }: Props) {
   const { t } = useI18n()
   const [settings, setSettings] = useState<ReceiptSettings | null>(null)
   const [editing, setEditing] = useState<ReceiptSettings | null>(null)
@@ -39,7 +40,7 @@ export default function ReceiptDialog({ order, lines, payments, tableLabel, hall
   }
 
   const shown = editing ?? settings
-  const ticket = shown && <Receipt settings={shown} order={order} lines={lines} payments={payments} tableLabel={tableLabel} hallName={hallName} />
+  const ticket = shown && <Receipt settings={shown} order={order} lines={lines} payments={payments} place={place} hallName={hallName} />
 
   return (
     <div className="dialog-backdrop">

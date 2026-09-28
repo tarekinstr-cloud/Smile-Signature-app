@@ -90,12 +90,43 @@ export interface Adjustments {
   offered: boolean
 }
 
+/** On a table of the floor plan, or to take away (no table). */
+export type OrderType = 'dine_in' | 'takeaway'
+
 export interface Order extends Adjustments {
   id: string
+  /** Null for a takeaway order (or when its table was deleted). */
   table_id: string | null
   status: OrderStatus
   note: string | null
   created_at: string
+  order_type: OrderType
+  /** Short number called out for takeaway orders ("À emporter n° 12"); null for table orders. */
+  takeaway_no: number | null
+  /** Optional customer printed on the invoice (Facture). */
+  customer_name: string | null
+  customer_address: string | null
+  /** Set the first time an invoice is made for the order. */
+  invoice_no: number | null
+}
+
+/** Customer details typed for an invoice; both optional. */
+export interface InvoiceCustomer {
+  name: string
+  address: string
+}
+
+/** One "Changement de Table" (or switch to takeaway), kept in the table_moves log. */
+export interface TableMove {
+  id: string
+  order_id: string
+  from_table_id: string | null
+  to_table_id: string | null
+  /** Table labels at the time of the move; null means takeaway. */
+  from_label: string | null
+  to_label: string | null
+  moved_by_name: string | null
+  moved_at: string
 }
 
 /** Snapshot of a chosen option, copied onto the order line. */

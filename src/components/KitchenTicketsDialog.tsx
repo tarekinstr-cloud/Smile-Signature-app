@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom'
 import type { KitchenTicket as Ticket, KitchenTicketLine } from '../lib/types'
 import { useI18n } from '../lib/i18n'
+import { placeFromLabel } from '../lib/place'
 
 interface Props {
   /** Tickets no printing driver took, shown here instead. */
@@ -8,6 +9,8 @@ interface Props {
   /** How many tickets were built in all (some may have gone straight to a printer). */
   sentCount: number
   unrouted: KitchenTicketLine[]
+  /** Reprint of tickets already sent (Imprimer), instead of a fresh Valider. */
+  reprint?: boolean
   onClose(): void
 }
 
@@ -32,7 +35,7 @@ export function KitchenTicketView({ ticket }: { ticket: Ticket }) {
   return (
     <div className="receipt kitchen-ticket">
       <div className="kt-printer" dir="auto">{ticket.printer_name}</div>
-      {ticket.table_label && <div className="kt-table">{t.table(ticket.table_label)}</div>}
+      {ticket.table_label && <div className="kt-table">{placeFromLabel(t, ticket.table_label)}</div>}
       <div className="receipt-sep" />
       <div className="receipt-meta">
         <span>{t.ticketTime}</span>
@@ -50,17 +53,17 @@ export function KitchenTicketView({ ticket }: { ticket: Ticket }) {
 }
 
 /** Shown after Valider: a preview of each printer's ticket, printable from the browser. */
-export default function KitchenTicketsDialog({ tickets, sentCount, unrouted, onClose }: Props) {
+export default function KitchenTicketsDialog({ tickets, sentCount, unrouted, reprint, onClose }: Props) {
   const { t } = useI18n()
   return (
     <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="dialog receipt-dialog kitchen-dialog" role="dialog" aria-modal="true" aria-labelledby="kitchen-title"
         onKeyDown={(e) => e.key === 'Escape' && onClose()}>
         <div className="panel-head">
-          <h2 id="kitchen-title">{t.kitchenTickets}</h2>
+          <h2 id="kitchen-title">{reprint ? `${t.kitchenTickets} · ${t.reprint}` : t.kitchenTickets}</h2>
           <span className="pill free">{sentCount}</span>
         </div>
-        {tickets.length > 0 ? (
+        {reprint ? null : tickets.length > 0 ? (
           <p className="muted small">{t.kitchenPreviewHint}</p>
         ) : (
           sentCount > 0 && <p className="small">{t.kitchenAllPrinted}</p>

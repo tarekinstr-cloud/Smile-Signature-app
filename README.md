@@ -51,6 +51,7 @@ npm run build      # نسخة الإنتاج في dist/ (مع Service Worker و 
    - `supabase/migrations/20260927020000_checkout.sql` (التحصيل، رقم التذكرة، إعدادات التذكرة)
    - `supabase/migrations/20260928000000_kitchen.sql` (الطابعات، Valider، تذاكر المطبخ)
    - `supabase/migrations/20260928010000_payments.sql` (شاشة الدفع: دفع جزئي، تخفيض، مجاني)
+   - `supabase/migrations/20260928020000_order_actions.sql` (barre d'actions: à emporter, changement de table + journal table_moves, facture)
    - (اختياري) `supabase/seed.sql` لطاولات تجريبية.
 3. في **Authentication → Users** أضف مستخدماً للطاقم (بريد + كلمة سر).
 4. انسخ `.env.example` إلى `.env` وضع فيه `Project URL` و `anon public key` من **Project Settings → API**.

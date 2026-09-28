@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { repo } from '../lib/repo'
+import { repo, type OpenOrder } from '../lib/repo'
 import type { DiningTable, Hall, TablePatch } from '../lib/types'
 import FloorPlan from './FloorPlan'
 import TablePanel from './TablePanel'
@@ -12,6 +12,7 @@ import { money } from '../lib/format'
 import { computeBill } from '../lib/billing'
 import LangToggle from './LangToggle'
 import { useI18n } from '../lib/i18n'
+import { placeText } from '../lib/place'
 
 type Mode = 'service' | 'edit'
 
@@ -23,6 +24,10 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [orderTableId, setOrderTableId] = useState<string | null>(null)
   const [checkoutFirst, setCheckoutFirst] = useState(false)
+  /** Takeaway order on screen: an open one (its id), or a new one (null id, with a key so each is a fresh screen). */
+  const [takeaway, setTakeaway] = useState<{ orderId: string | null; key: number } | null>(null)
+  const [takeaways, setTakeaways] = useState<OpenOrder[]>([])
+  const [takeawayList, setTakeawayList] = useState(false)
   /** Occupied table tapped in service mode: choose between its order and checkout. */
   const [actions, setActions] = useState<{ table: DiningTable; total: number; count: number } | null>(null)
   const [menuAdmin, setMenuAdmin] = useState(false)
@@ -60,6 +65,20 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   }, [reload])
 
   useEffect(() => repo.subscribe(() => reload()), [reload])
+
+  const reloadTakeaways = useCallback(() => {
+    repo.listOpenTakeaways().then(setTakeaways, () => setTakeaways([]))
+  }, [])
+  useEffect(() => {
+    reloadTakeaways()
+    return repo.subscribeOrders(reloadTakeaways)
+  }, [reloadTakeaways])
+
+  function openTakeaway(orderId: string | null) {
+    setTakeawayList(false)
+    setOrderTableId(null)
+    setTakeaway({ orderId, key: Date.now() })
+  }
 
   useEffect(() => {
     if (mode === 'service') setSelectedId(null)
@@ -154,11 +173,23 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   if (menuAdmin) return <MenuAdmin onBack={() => setMenuAdmin(false)} />
   if (printerSettings) return <PrinterSettings onBack={() => setPrinterSettings(false)} />
 
+  const leaveOrder = () => {
+    setOrderTableId(null)
+    setTakeaway(null)
+    reload()
+    reloadTakeaways()
+  }
+  if (takeaway) {
+    return (
+      <OrderScreen key={`takeaway-${takeaway.orderId ?? takeaway.key}`} table={null} hall={null} orderId={takeaway.orderId ?? undefined}
+        onBack={leaveOrder} onNewTakeaway={() => openTakeaway(null)} />
+    )
+  }
   const orderTable = tables.find((t) => t.id === orderTableId)
   if (orderTable && hall) {
     return (
       <OrderScreen key={orderTable.id} table={orderTable} hall={hall} startCheckout={checkoutFirst}
-        onBack={() => { setOrderTableId(null); reload() }} />
+        onBack={leaveOrder} onNewTakeaway={() => openTakeaway(null)} />
     )
   }
 
@@ -182,6 +213,9 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
           <button className={mode === 'service' ? 'on' : ''} onClick={() => setMode('service')}>{t.service}</button>
           <button className={mode === 'edit' ? 'on' : ''} onClick={() => setMode('edit')}>{t.editPlan}</button>
         </div>
+        <button className="takeaway-btn" onClick={() => setTakeawayList(true)} title={t.takeawayOrders}>
+          🥡 {t.takeawayBtn}{takeaways.length > 0 && <span className="count">{takeaways.length}</span>}
+        </button>
         <button className="ghost" onClick={() => setMenuAdmin(true)} title={t.menuTitle}>{t.menu}</button>
         <button className="ghost" onClick={() => setPrinterSettings(true)} title={t.printersTitle}>{t.printers}</button>
         {onSignOut && <button className="ghost" onClick={onSignOut}>{t.signOut}</button>}
@@ -259,6 +293,29 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
             <p className="muted small">{t.itemCount(actions.count)} · {money(actions.total)}</p>
             <button className="primary big" autoFocus onClick={() => openOrder(actions.table.id, true)}>{t.checkoutAmount(money(actions.total))}</button>
             <button className="big" onClick={() => openOrder(actions.table.id, false)}>{t.viewOrder}</button>
+          </div>
+        </div>
+      )}
+      {takeawayList && (
+        <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setTakeawayList(false)}>
+          <div className="dialog table-actions" role="dialog" aria-modal="true" aria-labelledby="takeaway-title"
+            onKeyDown={(e) => e.key === 'Escape' && setTakeawayList(false)}>
+            <div className="panel-head">
+              <h2 id="takeaway-title">{t.takeawayOrders}</h2>
+              <button className="ghost" onClick={() => setTakeawayList(false)} aria-label={t.close}>✕</button>
+            </div>
+            <button className="primary big" autoFocus onClick={() => openTakeaway(null)}>{t.newTakeaway}</button>
+            {takeaways.length === 0 ? (
+              <p className="muted small">{t.noTakeaways}</p>
+            ) : (
+              takeaways.map(({ order, lines, payments }) => (
+                <button key={order.id} className="big takeaway-row" onClick={() => openTakeaway(order.id)}>
+                  <span>{placeText(t, order, null)}</span>
+                  <span className="muted small">{t.itemCount(lines.reduce((s, l) => s + l.quantity, 0))}</span>
+                  <strong>{money(computeBill(order, lines, payments).remaining)}</strong>
+                </button>
+              ))
+            )}
           </div>
         </div>
       )}
