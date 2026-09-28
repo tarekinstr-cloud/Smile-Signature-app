@@ -4,6 +4,8 @@ import type { ChosenOption, DiningTable, Hall, ItemOption, Menu, MenuItem, Optio
 import { money } from '../lib/format'
 import CheckoutDialog from './CheckoutDialog'
 import ReceiptDialog from './ReceiptDialog'
+import KitchenTicketsDialog from './KitchenTicketsDialog'
+import { dispatchTickets, type SendResult } from '../lib/kitchen'
 import { useDialog } from './Dialog'
 import LangToggle from './LangToggle'
 import { useI18n } from '../lib/i18n'
@@ -61,6 +63,8 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
   const [busy, setBusy] = useState(false)
   const [paying, setPaying] = useState(false)
   const [paid, setPaid] = useState<{ order: PaidOrder; lines: OrderLine[] } | null>(null)
+  /** Result of the last Valider, shown as kitchen ticket previews. */
+  const [sent, setSent] = useState<(SendResult & { sentCount: number }) | null>(null)
   // Line that supplement buttons apply to: the one last added, or the one tapped in the order.
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const opening = useRef<Promise<Order> | null>(null)
@@ -125,6 +129,9 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
   }, [selectedItem, items, menu])
   const total = lines.reduce((s, l) => s + l.unit_price * l.quantity, 0)
   const count = lines.reduce((s, l) => s + l.quantity, 0)
+  const newCount = lines.reduce((s, l) => s + (l.sent_at ? 0 : l.quantity), 0)
+  const selectedSent = !!selected?.sent_at
+  const anySent = lines.some((l) => l.sent_at)
 
   async function ensureOrder(): Promise<Order> {
     if (order) return order
@@ -148,7 +155,8 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
     const last = lines.filter((l) => l.item_id === item.id && (!main || l.options.some((c) => c.group === main.name && c.name === size?.name))).at(-1)
     setBusy(true)
     await run(async () => {
-      if (last && !last.note && sameOptions(last.options, options)) {
+      // A line already sent to the kitchen stays as it was: more of the same goes on a new line.
+      if (last && !last.sent_at && !last.note && sameOptions(last.options, options)) {
         await repo.updateLine(last.id, { quantity: last.quantity + 1 })
         setSelectedId(last.id)
       } else {
@@ -171,7 +179,7 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
   /** Switches a supplement on or off on the selected line, for all its portions. */
   async function tapSupplement(g: OptionGroup, o: ItemOption) {
     const target = supplementTarget(g, o)
-    if (!selected || !target) return
+    if (!selected || selected.sent_at || !target) return
     const { group, option } = target
     const on = isChosen(selected.options, group, option)
     const inGroup = selected.options.filter((c) => c.group === group.name)
@@ -196,13 +204,50 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
   }
 
   async function changeQty(line: OrderLine, delta: number) {
+    if (delta > 0 && line.sent_at) return addToSent(line)
     const quantity = line.quantity + delta
     setLines((ls) => (quantity > 0 ? ls.map((l) => (l.id === line.id ? { ...l, quantity } : l)) : ls.filter((l) => l.id !== line.id)))
     await run(() => (quantity > 0 ? repo.updateLine(line.id, { quantity }) : repo.deleteLine(line.id)))
     await reloadOrder()
   }
 
+  /** "+" on a line already sent: the extra portion is new, so it goes on an unsent line of the same item. */
+  async function addToSent(line: OrderLine) {
+    const twin = lines.find((l) => !l.sent_at && l.item_id === line.item_id && l.name === line.name && l.note === line.note && sameOptions(l.options, line.options))
+    setBusy(true)
+    await run(async () => {
+      if (twin) {
+        await repo.updateLine(twin.id, { quantity: twin.quantity + 1 })
+        setSelectedId(twin.id)
+      } else {
+        const o = await ensureOrder()
+        const copy = await repo.addLine(o.id, { item_id: line.item_id, name: line.name, unit_price: line.unit_price, quantity: 1, options: line.options, note: line.note })
+        setSelectedId(copy.id)
+      }
+      await reloadOrder()
+    })
+    setBusy(false)
+  }
+
+  /** Valider: sends the new lines to the kitchen and shows each printer's ticket. The order stays open. */
+  async function validate() {
+    if (!order || newCount === 0) return
+    setBusy(true)
+    await run(async () => {
+      const result = await repo.sendOrder(order.id, table.label)
+      await reloadOrder()
+      if (!result.tickets.length && !result.unrouted.length) throw new Error(t.nothingToSend)
+      const printers = result.tickets.length ? await repo.listPrinters() : []
+      const left = await dispatchTickets(result.tickets, printers)
+      setSent({ tickets: left, unrouted: result.unrouted, sentCount: result.tickets.length })
+    })
+    setBusy(false)
+  }
+
+  const clock = (iso: string) => new Date(iso).toLocaleTimeString(t.locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+
   async function editNote(line: OrderLine) {
+    if (line.sent_at) return
     const note = await dialog.askText(t.noteFor(line.name), t.save)
     if (note === null) return
     await run(() => repo.updateLine(line.id, { note }))
@@ -288,7 +333,7 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
             <div className="supplements" aria-label={t.supplements}>
               <div className="supp-head">
                 <strong>{t.supplements}</strong>
-                <span className="muted small">{selected ? <>→ <bdi>{selected.name}</bdi>{selected.options[0] && <> <bdi>{selected.options[0].name}</bdi></>}</> : t.selectLineHint}</span>
+                <span className="muted small">{selectedSent ? t.sentLocked : selected ? <>→ <bdi>{selected.name}</bdi>{selected.options[0] && <> <bdi>{selected.options[0].name}</bdi></>}</> : t.selectLineHint}</span>
               </div>
               {supplementGroups.length === 0 ? (
                 <p className="muted small">{t.noSupplements}</p>
@@ -300,7 +345,7 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
                       const on = !!(selected && target && isChosen(selected.options, target.group, target.option))
                       const delta = target?.option.price_delta ?? o.price_delta
                       return (
-                        <button key={o.id} className={on ? 'supp-btn on' : 'supp-btn'} aria-pressed={on} disabled={busy || !target}
+                        <button key={o.id} className={on ? 'supp-btn on' : 'supp-btn'} aria-pressed={on} disabled={busy || !target || selectedSent}
                           onClick={() => tapSupplement(g, o)}>
                           <bdi>{o.name}</bdi>
                           {delta !== 0 && <span className="small"> <bdi dir="ltr">{delta > 0 ? '+' : ''}{money(delta)}</bdi></span>}
@@ -329,6 +374,11 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
                         <span className="line-name">{l.name}</span>
                         <span className="line-total">{money(l.unit_price * l.quantity)}</span>
                       </div>
+                      {l.sent_at ? (
+                        <div className="line-sent">✓ {t.sentAt(clock(l.sent_at))}</div>
+                      ) : (
+                        anySent && <span className="tag new-tag">{t.newLine}</span>
+                      )}
                       {(l.options.length > 0 || l.note) && (
                         <div className="line-details">
                           {l.options.map((o) => o.name).join(t.listSep)}
@@ -340,7 +390,7 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
                         <span>{l.quantity}</span>
                         <button onClick={() => changeQty(l, 1)} aria-label={t.increase}>+</button>
                         <span className="muted small">× {money(l.unit_price)}</span>
-                        <button className="note-btn" onClick={() => editNote(l)} title={t.addNote} aria-label={t.addNote}>✎</button>
+                        {!l.sent_at && <button className="note-btn" onClick={() => editNote(l)} title={t.addNote} aria-label={t.addNote}>✎</button>}
                       </div>
                     </li>
                   ))}
@@ -350,6 +400,11 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
                 <span>{t.total}</span>
                 <strong>{money(total)}</strong>
               </div>
+              {lines.length > 0 && (
+                <button className="validate-btn" onClick={validate} disabled={busy || newCount === 0} title={t.validateHint}>
+                  {newCount > 0 ? t.validateCount(newCount) : t.validate}
+                </button>
+              )}
               {lines.length > 0 && (
                 <button className="primary checkout-btn" onClick={() => setPaying(true)}>{t.checkoutAmount(money(total))}</button>
               )}
@@ -365,6 +420,9 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
       )}
       {paid && (
         <ReceiptDialog order={paid.order} lines={paid.lines} tableLabel={table.label} hallName={hall.name} onDone={onBack} />
+      )}
+      {sent && (
+        <KitchenTicketsDialog tickets={sent.tickets} sentCount={sent.sentCount} unrouted={sent.unrouted} onClose={() => setSent(null)} />
       )}
       {dialog.element}
     </div>

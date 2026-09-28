@@ -6,6 +6,7 @@ import TablePanel from './TablePanel'
 import HallPanel from './HallPanel'
 import OrderScreen from './OrderScreen'
 import MenuAdmin from './MenuAdmin'
+import PrinterSettings from './PrinterSettings'
 import { useDialog } from './Dialog'
 import { money } from '../lib/format'
 import LangToggle from './LangToggle'
@@ -24,6 +25,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   /** Occupied table tapped in service mode: choose between its order and checkout. */
   const [actions, setActions] = useState<{ table: DiningTable; total: number; count: number } | null>(null)
   const [menuAdmin, setMenuAdmin] = useState(false)
+  const [printerSettings, setPrinterSettings] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const dialog = useDialog()
@@ -149,6 +151,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   }
 
   if (menuAdmin) return <MenuAdmin onBack={() => setMenuAdmin(false)} />
+  if (printerSettings) return <PrinterSettings onBack={() => setPrinterSettings(false)} />
 
   const orderTable = tables.find((t) => t.id === orderTableId)
   if (orderTable && hall) {
@@ -179,6 +182,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
           <button className={mode === 'edit' ? 'on' : ''} onClick={() => setMode('edit')}>{t.editPlan}</button>
         </div>
         <button className="ghost" onClick={() => setMenuAdmin(true)} title={t.menuTitle}>{t.menu}</button>
+        <button className="ghost" onClick={() => setPrinterSettings(true)} title={t.printersTitle}>{t.printers}</button>
         {onSignOut && <button className="ghost" onClick={onSignOut}>{t.signOut}</button>}
         <LangToggle />
       </header>

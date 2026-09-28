@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { repo } from '../lib/repo'
-import type { Category, Menu, MenuItem } from '../lib/types'
+import type { Category, CategoryPrinters, Menu, MenuItem, Printer } from '../lib/types'
 import { money } from '../lib/format'
 import { useDialog } from './Dialog'
 import ItemEditor, { type ItemDraft } from './ItemEditor'
@@ -21,6 +21,8 @@ function moved<T extends { id: string; sort_order: number }>(list: T[], index: n
 /** Admin screen: categories, items, prices and item options, edited from inside the app. */
 export default function MenuAdmin({ onBack }: { onBack(): void }) {
   const [menu, setMenu] = useState<Menu | null>(null)
+  const [printers, setPrinters] = useState<Printer[]>([])
+  const [links, setLinks] = useState<CategoryPrinters>({})
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const [editing, setEditing] = useState<MenuItem | 'new' | null>(null)
   const [catName, setCatName] = useState('')
@@ -41,8 +43,10 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
   }, [])
 
   const reload = useCallback(async () => {
-    const m = await repo.getMenu({ includeHidden: true })
+    const [m, p, l] = await Promise.all([repo.getMenu({ includeHidden: true }), repo.listPrinters(), repo.getCategoryPrinters()])
     setMenu(m)
+    setPrinters(p)
+    setLinks(l)
     setCategoryId((id) => (id && m.categories.some((c) => c.id === id) ? id : m.categories[0]?.id ?? null))
   }, [])
 
@@ -83,6 +87,14 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
     const n = menu?.items.filter((i) => i.category_id === c.id).length ?? 0
     if (!(await dialog.confirm(t.confirmDeleteCategory(c.name, n)))) return
     await change(() => repo.deleteCategory(c.id))
+  }
+
+  /** Adds the printer to the category, or removes it: a printer is never chosen twice. */
+  function togglePrinter(c: Category, printerId: string) {
+    const current = links[c.id] ?? []
+    const next = current.includes(printerId) ? current.filter((id) => id !== printerId) : [...current, printerId]
+    setLinks({ ...links, [c.id]: next })
+    change(() => repo.setCategoryPrinters(c.id, next))
   }
 
   function moveCategory(index: number, dir: -1 | 1) {
@@ -183,6 +195,7 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
                       <span className="dot" style={{ background: c.color }} />
                       <span className="grow">{c.name}</span>
                       {!c.active && <span className="tag">{t.hiddenF}</span>}
+                      {printers.length > 0 && !links[c.id]?.length && <span className="tag warn">{t.noPrinterTag}</span>}
                       <span className="muted small">{menu.items.filter((x) => x.category_id === c.id).length}</span>
                     </button>
                     <span className="order-btns">
@@ -216,6 +229,27 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
                       <input type="color" value={category.color} aria-label={t.otherColor}
                         onChange={(e) => change(() => repo.updateCategory(category.id, { color: e.target.value }))} />
                     </div>
+                  </div>
+                  <div className="field">
+                    {t.categoryPrinters}
+                    {printers.length === 0 ? (
+                      <span className="muted small">{t.noPrintersYet}</span>
+                    ) : (
+                      <>
+                        <div className="printer-chips">
+                          {printers.map((p) => {
+                            const on = links[category.id]?.includes(p.id) ?? false
+                            return (
+                              <button key={p.id} className={on ? 'supp-btn on' : 'supp-btn'} aria-pressed={on} disabled={busy}
+                                onClick={() => togglePrinter(category, p.id)}>
+                                {on ? '✓ ' : ''}<bdi>{p.name}</bdi>
+                              </button>
+                            )
+                          })}
+                        </div>
+                        <span className="muted small">{t.categoryPrintersHint}</span>
+                      </>
+                    )}
                   </div>
                   <div className="row actions-row">
                     <label className="check">

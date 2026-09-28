@@ -274,4 +274,25 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
   #root { display: none !important; }
   .print-area { display: block; }
   .print-area .receipt { width: 72mm; margin: 0 auto; padding: 4mm 0; }
+  .print-area .kitchen-ticket { break-after: page; }
+  .print-area .kitchen-ticket:last-child { break-after: auto; }
 }
+
+/* ───────────── المطبخ: Valider والطابعات ───────────── */
+.validate-btn { padding: 14px; font-size: 16px; font-weight: 700; background: var(--free); border-color: var(--free); color: #fff; }
+.line-sent { font-size: 12px; color: var(--free); }
+.tag.new-tag { background: #fef3c7; color: #92400e; align-self: flex-start; }
+.tag.warn { background: #fef3c7; color: #92400e; }
+.printer-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.printer-icon { font-size: 20px; }
+.printer-cats { display: block; }
+.port-field { flex: 0 0 110px; }
+.kitchen-dialog { display: flex; flex-direction: column; gap: 12px; }
+.kitchen-ticket { font-size: 14px; }
+.kt-printer { text-align: center; font-size: 13px; font-weight: 700; letter-spacing: 0.1em; border: 2px solid #000; padding: 2px 6px; align-self: center; width: fit-content; margin: 0 auto 6px; }
+.kt-table { text-align: center; font-size: 24px; font-weight: 800; }
+.kt-lines { gap: 6px; }
+.kt-line { font-size: 17px; }
+.kt-note { font-style: italic; }
+.unrouted { display: flex; flex-direction: column; gap: 6px; border: 1px solid #fcd34d; background: #fffbeb; border-radius: 8px; padding: 10px 12px; }
+
