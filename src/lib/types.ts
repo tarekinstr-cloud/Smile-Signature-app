@@ -73,7 +73,24 @@ export interface Menu {
 
 export type OrderStatus = 'open' | 'paid' | 'cancelled'
 
-export interface Order {
+/** A discount: a percentage, or a fixed amount in DA. */
+export type DiscountType = 'percent' | 'amount'
+
+export interface Discount {
+  type: DiscountType
+  value: number
+}
+
+/** Discount and "offert" settings, shared by an order and each of its lines. */
+export interface Adjustments {
+  discount_type: DiscountType | null
+  /** Percent (0–100) or DA, depending on discount_type; 0 when there is no discount. */
+  discount_value: number
+  /** Offered: costs nothing, but stays in the statistics with its normal price. */
+  offered: boolean
+}
+
+export interface Order extends Adjustments {
   id: string
   table_id: string | null
   status: OrderStatus
@@ -88,7 +105,7 @@ export interface ChosenOption {
   price_delta: number
 }
 
-export interface OrderLine {
+export interface OrderLine extends Adjustments {
   id: string
   order_id: string
   item_id: string | null
@@ -105,6 +122,7 @@ export interface OrderLine {
 
 export type NewOrderLine = Pick<OrderLine, 'item_id' | 'name' | 'unit_price' | 'quantity' | 'options' | 'note'>
 export type OrderLinePatch = Partial<Pick<OrderLine, 'quantity' | 'note' | 'options' | 'unit_price'>>
+export type AdjustmentsPatch = Partial<Adjustments>
 
 export type NewCategory = Omit<Category, 'id'>
 export type CategoryPatch = Partial<NewCategory>
@@ -117,15 +135,34 @@ export type ItemOptionPatch = Partial<Omit<NewItemOption, 'group_id'>>
 /** Tables of the menu that the admin screen edits. */
 export type MenuTable = 'categories' | 'items' | 'option_groups' | 'options'
 
+/**
+ * How a payment is made. Stored as plain text, so a new mode (cheque, voucher…) only needs a new entry
+ * in PAYMENT_METHODS (src/lib/billing.ts) and its label.
+ */
 export type PaymentMethod = 'cash' | 'card'
 
-/** An order after checkout: what the receipt prints. */
+/** One payment on an order; several of them make a partial payment. */
+export interface Payment {
+  id: string
+  order_id: string
+  method: PaymentMethod
+  /** Part of the order's total this payment settles. */
+  amount: number
+  /** Cash handed over by the customer (equals amount for other methods). */
+  received: number
+  /** Money given back: received − amount. */
+  change_amount: number
+  created_at: string
+}
+
+/** An order after its last payment: what the receipt prints. */
 export interface PaidOrder extends Order {
-  /** Sequential receipt number, assigned at checkout. */
+  /** Sequential receipt number, assigned when the order is fully paid. */
   ticket_no: number
   total: number
-  payment_method: PaymentMethod
-  /** Cash handed over by the customer (equals the total for card payments). */
+  /** Method of the last payment. */
+  payment_method: PaymentMethod | null
+  /** Everything the customer handed over, all payments together. */
   amount_received: number
   closed_at: string
 }

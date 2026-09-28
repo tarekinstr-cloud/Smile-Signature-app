@@ -2,12 +2,13 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type {
   Category, CategoryPatch, DiningTable, Hall, HallPatch, ItemOption, ItemOptionPatch, Menu, MenuItem, MenuItemPatch, MenuTable,
   NewCategory, NewItemOption, NewMenuItem, NewOptionGroup, NewOrderLine, NewTable, OptionGroup, OptionGroupPatch, Order,
-  OrderLine, OrderLinePatch, PaidOrder, PaymentMethod, ReceiptSettings, TablePatch,
+  OrderLine, OrderLinePatch, PaidOrder, Payment, PaymentMethod, ReceiptSettings, TablePatch, AdjustmentsPatch,
   CategoryPrinters, KitchenTicket, NewPrinter, Printer, PrinterPatch,
 } from './types'
 import { demoMenu } from './demoMenu'
 import { buildKitchenTickets, type SendResult } from './kitchen'
 import { tr } from './i18n'
+import { computeBill, normalizeAdjustments } from './billing'
 
 /** Data access for halls, tables, menu and orders. Backed by Supabase when configured, localStorage otherwise. */
 export interface Repo {
@@ -38,8 +39,8 @@ export interface Repo {
   createOption(o: NewItemOption): Promise<ItemOption>
   updateOption(id: string, patch: ItemOptionPatch): Promise<void>
   deleteOption(id: string): Promise<void>
-  /** The table's open order and its lines, or null when the table has none. */
-  getOpenOrder(tableId: string): Promise<{ order: Order; lines: OrderLine[] } | null>
+  /** The table's open order, its lines and the payments already made (partial payments), or null when the table has none. */
+  getOpenOrder(tableId: string): Promise<OpenOrder | null>
   /** Opens an order on the table (marking it occupied), or returns the one already open. */
   openOrder(tableId: string): Promise<Order>
   /** Cancels an open order and frees its table. */
@@ -55,6 +56,19 @@ export interface Repo {
    * The total is computed from the order's lines; `received` is the cash handed over (cash only).
    */
   checkoutOrder(orderId: string, method: PaymentMethod, received: number | null): Promise<PaidOrder>
+  /**
+   * Pays `amount` of an open order (all of what is left, or part of it). `received` is the cash handed over (cash only).
+   * When nothing is left to pay, the order is closed as paid, its table freed and it gets a receipt number: the paid
+   * order is returned. Otherwise the order stays open and null is returned. An amount of 0 only closes an order
+   * that has nothing left to pay (everything offered).
+   */
+  addPayment(orderId: string, method: PaymentMethod, amount: number, received: number | null): Promise<PaidOrder | null>
+  listPayments(orderId: string): Promise<Payment[]>
+  /**
+   * Sets a discount or "offert" on the whole order (lineId null) or on one of its lines. Refused when the new total
+   * would fall below what has already been paid.
+   */
+  adjust(orderId: string, lineId: string | null, patch: AdjustmentsPatch): Promise<void>
   getReceiptSettings(): Promise<ReceiptSettings>
   updateReceiptSettings(patch: Partial<ReceiptSettings>): Promise<void>
 
@@ -93,20 +107,34 @@ function printerError(message: string): Error {
   return message.includes('printers_name_key') || message.includes('23505') ? new Error(tr().errPrinterName) : new Error(message)
 }
 
+export interface OpenOrder {
+  order: Order
+  lines: OrderLine[]
+  payments: Payment[]
+}
+
+const ORDER_COLS = 'id, table_id, status, note, created_at, discount_type, discount_value, offered'
+
+function checkAdjustments(patch: AdjustmentsPatch) {
+  const v = patch.discount_value
+  if (v !== undefined && (!Number.isFinite(v) || v < 0 || (patch.discount_type === 'percent' && v > 100))) throw new Error(tr().errDiscount)
+}
+
 export const defaultReceiptSettings = (): ReceiptSettings => ({
   name: 'Smile Signature',
   header: '',
   footer: 'Merci de votre visite — Bon Appétit !',
 })
 
-const lineTotal = (lines: Pick<OrderLine, 'unit_price' | 'quantity'>[]) =>
-  Math.round(lines.reduce((s, l) => s + l.unit_price * l.quantity, 0) * 100) / 100
-
 function checkoutError(code: string): Error {
   const t = tr()
   if (code.includes('order_not_open') || code.includes('order_not_found')) return new Error(t.errOrderClosed)
   if (code.includes('order_empty')) return new Error(t.errOrderEmpty)
   if (code.includes('amount_too_low')) return new Error(t.errAmountTooLow)
+  if (code.includes('amount_invalid')) return new Error(t.errAmountInvalid)
+  if (code.includes('below_paid')) return new Error(t.errBelowPaid)
+  // Payments need the payments migration; tell the user which file to run instead of a raw schema error.
+  if (/add_payment|payments|discount_|offered/.test(code) && /does not exist|schema cache|Could not find/i.test(code)) return new Error(t.errMigration)
   return new Error(code)
 }
 
@@ -213,21 +241,24 @@ function supabaseRepo(sb: SupabaseClient): Repo {
     deleteOption: (id) => deleteRow('options', id),
 
     async getOpenOrder(tableId) {
-      const order = check(
-        await sb.from('orders').select('id, table_id, status, note, created_at').eq('table_id', tableId).eq('status', 'open').maybeSingle(),
-      ) as Order | null
-      if (!order) return null
-      const lines = check(await sb.from('order_items').select('*').eq('order_id', order.id).order('created_at')) as OrderLine[]
-      return { order, lines: lines.map(normalizeLine) }
+      const res = await sb.from('orders').select(ORDER_COLS).eq('table_id', tableId).eq('status', 'open').maybeSingle()
+      if (res.error) throw checkoutError(res.error.message)
+      if (!res.data) return null
+      const order = normalizeOrder(res.data as Order)
+      const [lines, payments] = await Promise.all([
+        sb.from('order_items').select('*').eq('order_id', order.id).order('created_at'),
+        this.listPayments(order.id),
+      ])
+      return { order, lines: (check(lines) as OrderLine[]).map(normalizeLine), payments }
     },
     async openOrder(tableId) {
-      const res = await sb.from('orders').insert({ table_id: tableId }).select('id, table_id, status, note, created_at').single()
+      const res = await sb.from('orders').insert({ table_id: tableId }).select(ORDER_COLS).single()
       // 23505: another device opened an order on this table first.
       if (res.error?.code === '23505') {
         const existing = await this.getOpenOrder(tableId)
         if (existing) return existing.order
       }
-      return check(res) as Order
+      return normalizeOrder(check(res) as Order)
     },
     async cancelOrder(orderId) {
       check(await sb.from('orders').update({ status: 'cancelled' }).eq('id', orderId).eq('status', 'open'))
@@ -246,6 +277,7 @@ function supabaseRepo(sb: SupabaseClient): Repo {
         .channel('orders')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, onChange)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, onChange)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, onChange)
         .subscribe()
       return () => {
         sb.removeChannel(channel)
@@ -255,11 +287,39 @@ function supabaseRepo(sb: SupabaseClient): Repo {
     async checkoutOrder(orderId, method, received) {
       const res = await sb.rpc('checkout_order', { p_order_id: orderId, p_method: method, p_received: received })
       if (res.error) throw checkoutError(res.error.message)
+      return normalizePaid(res.data as PaidOrder)
+    },
+    async addPayment(orderId, method, amount, received) {
+      const res = await sb.rpc('add_payment', { p_order_id: orderId, p_method: method, p_amount: amount, p_received: received })
+      if (res.error) throw checkoutError(res.error.message)
       const o = res.data as PaidOrder
-      return {
-        id: o.id, table_id: o.table_id, status: o.status, note: o.note, created_at: o.created_at, closed_at: o.closed_at,
-        ticket_no: Number(o.ticket_no), total: Number(o.total), payment_method: o.payment_method, amount_received: Number(o.amount_received),
+      return o.status === 'paid' ? normalizePaid(o) : null
+    },
+    async listPayments(orderId) {
+      const res = await sb.from('payments').select('id, order_id, method, amount, received, change_amount, created_at').eq('order_id', orderId).order('created_at')
+      if (res.error) {
+        // Before the payments migration there are no partial payments: the screen still works for one-off payments.
+        if (/does not exist|schema cache|Could not find/i.test(res.error.message)) return []
+        throw new Error(res.error.message)
       }
+      return (res.data as Payment[]).map(normalizePayment)
+    },
+    async adjust(orderId, lineId, patch) {
+      checkAdjustments(patch)
+      const res = await sb.from('orders').select(ORDER_COLS).eq('id', orderId).single()
+      if (res.error) throw checkoutError(res.error.message)
+      const order = normalizeOrder(res.data as Order)
+      if (order.status !== 'open') throw checkoutError('order_not_open')
+      const [lines, payments] = await Promise.all([
+        sb.from('order_items').select('*').eq('order_id', orderId),
+        this.listPayments(orderId),
+      ])
+      const next = (check(lines) as OrderLine[]).map(normalizeLine).map((l) => (l.id === lineId ? { ...l, ...patch } : l))
+      if (payments.length && computeBill(lineId ? order : { ...order, ...patch }, next, payments).total < computeBill(order, [], payments).paid) {
+        throw checkoutError('below_paid')
+      }
+      const upd = lineId ? await sb.from('order_items').update(patch).eq('id', lineId) : await sb.from('orders').update(patch).eq('id', orderId)
+      if (upd.error) throw checkoutError(upd.error.message)
     },
     async getReceiptSettings() {
       const row = check(await sb.from('receipt_settings').select('name, header, footer').eq('id', 1).maybeSingle()) as ReceiptSettings | null
@@ -328,9 +388,24 @@ function groupLinks(rows: { category_id: string; printer_id: string }[]): Catego
   return out
 }
 
+function normalizeOrder(o: Order): Order {
+  return normalizeAdjustments(o)
+}
+
+function normalizePaid(o: PaidOrder): PaidOrder {
+  return {
+    ...normalizeOrder(o), status: o.status, closed_at: o.closed_at ?? new Date().toISOString(),
+    ticket_no: Number(o.ticket_no), total: Number(o.total), payment_method: o.payment_method ?? null, amount_received: Number(o.amount_received),
+  }
+}
+
+function normalizePayment(p: Payment): Payment {
+  return { ...p, amount: Number(p.amount), received: Number(p.received), change_amount: Number(p.change_amount) }
+}
+
 function normalizeLine(l: OrderLine): OrderLine {
   return {
-    ...l,
+    ...normalizeAdjustments(l),
     unit_price: Number(l.unit_price),
     options: (l.options ?? []).map((o) => ({ ...o, price_delta: Number(o.price_delta) })),
     sent_at: l.sent_at ?? null,
@@ -396,6 +471,8 @@ interface LocalOrdersDb {
   printers?: Printer[]
   categoryPrinters?: CategoryPrinters
   kitchenTickets?: KitchenTicket[]
+  /** Missing in demo data saved before partial payments existed. */
+  payments?: Payment[]
 }
 
 function localRepo(): Repo {
@@ -610,13 +687,17 @@ function localRepo(): Repo {
       const db = loadOrders()
       const order = db.orders.find((o) => o.table_id === tableId && o.status === 'open')
       if (!order) return null
-      return { order, lines: db.lines.filter((l) => l.order_id === order.id).map((l) => ({ ...l, sent_at: l.sent_at ?? null })) }
+      return {
+        order: normalizeOrder(order),
+        lines: db.lines.filter((l) => l.order_id === order.id).map((l) => normalizeAdjustments({ ...l, sent_at: l.sent_at ?? null })),
+        payments: (db.payments ?? []).filter((p) => p.order_id === order.id),
+      }
     },
     async openOrder(tableId) {
       const db = loadOrders()
       let order = db.orders.find((o) => o.table_id === tableId && o.status === 'open')
       if (!order) {
-        order = { id: crypto.randomUUID(), table_id: tableId, status: 'open', note: null, created_at: new Date().toISOString() }
+        order = { id: crypto.randomUUID(), table_id: tableId, status: 'open', note: null, created_at: new Date().toISOString(), discount_type: null, discount_value: 0, offered: false }
         db.orders.push(order)
         commitOrders(db)
       }
@@ -633,7 +714,10 @@ function localRepo(): Repo {
     },
     async addLine(orderId, line) {
       const db = loadOrders()
-      const row: OrderLine = { ...line, id: crypto.randomUUID(), order_id: orderId, created_at: new Date().toISOString(), sent_at: null }
+      const row: OrderLine = {
+        ...line, id: crypto.randomUUID(), order_id: orderId, created_at: new Date().toISOString(), sent_at: null,
+        discount_type: null, discount_value: 0, offered: false,
+      }
       db.lines.push(row)
       commitOrders(db)
       return row
@@ -657,22 +741,66 @@ function localRepo(): Repo {
 
     async checkoutOrder(orderId, method, received) {
       const db = loadOrders()
+      const order = db.orders.find((o) => o.id === orderId)
+      const payments = (db.payments ?? []).filter((p) => p.order_id === orderId)
+      const { remaining } = computeBill(order ? normalizeOrder(order) : null, db.lines.filter((l) => l.order_id === orderId).map(normalizeAdjustments), payments)
+      const paid = await this.addPayment(orderId, method, remaining, received)
+      if (!paid) throw checkoutError('amount_invalid')
+      return paid
+    },
+    // Mirrors public.add_payment() in the payments migration.
+    async addPayment(orderId, method, amount, received) {
+      const db = loadOrders()
       const i = db.orders.findIndex((o) => o.id === orderId)
       if (i < 0 || db.orders[i].status !== 'open') throw checkoutError('order_not_open')
-      const lines = db.lines.filter((l) => l.order_id === orderId)
+      const lines = db.lines.filter((l) => l.order_id === orderId).map(normalizeAdjustments)
       if (!lines.length) throw checkoutError('order_empty')
-      const total = lineTotal(lines)
-      if (method === 'cash' && received !== null && received < total) throw checkoutError('amount_too_low')
+      const payments = (db.payments ??= [])
+      const bill = computeBill(normalizeOrder(db.orders[i]), lines, payments.filter((p) => p.order_id === orderId))
+      const pay = Math.round(amount * 100) / 100
+      if (!(pay >= 0) || pay > bill.remaining || (pay === 0 && bill.remaining > 0)) throw checkoutError('amount_invalid')
+      let remaining = bill.remaining
+      if (pay > 0) {
+        const got = method === 'cash' ? received ?? pay : pay
+        if (got < pay) throw checkoutError('amount_too_low')
+        payments.push({
+          id: crypto.randomUUID(), order_id: orderId, method, amount: pay, received: got, change_amount: Math.round((got - pay) * 100) / 100,
+          created_at: new Date().toISOString(),
+        })
+        remaining = Math.round((remaining - pay) * 100) / 100
+      }
+      if (remaining > 0) {
+        commitOrders(db)
+        return null
+      }
+      const mine = payments.filter((p) => p.order_id === orderId)
       const ticket_no = (db.lastTicket ?? 0) + 1
       const paid: PaidOrder = {
-        ...db.orders[i], status: 'paid', closed_at: new Date().toISOString(), ticket_no, total, payment_method: method,
-        amount_received: method === 'cash' ? received ?? total : total,
+        ...normalizeOrder(db.orders[i]), status: 'paid', closed_at: new Date().toISOString(), ticket_no, total: bill.total,
+        payment_method: mine.at(-1)?.method ?? null, amount_received: mine.reduce((s, p) => s + p.received, 0),
       }
       db.orders[i] = paid
       db.lastTicket = ticket_no
       commitOrders(db)
       setTableStatus(paid.table_id, 'free')
       return paid
+    },
+    async listPayments(orderId) {
+      return (loadOrders().payments ?? []).filter((p) => p.order_id === orderId)
+    },
+    async adjust(orderId, lineId, patch) {
+      checkAdjustments(patch)
+      const db = loadOrders()
+      const order = db.orders.find((o) => o.id === orderId)
+      if (!order || order.status !== 'open') throw checkoutError('order_not_open')
+      const payments = (db.payments ?? []).filter((p) => p.order_id === orderId)
+      const lines = db.lines.filter((l) => l.order_id === orderId).map(normalizeAdjustments)
+      const next = lines.map((l) => (l.id === lineId ? { ...l, ...patch } : l))
+      const bill = computeBill(lineId ? normalizeOrder(order) : { ...normalizeOrder(order), ...patch }, next, payments)
+      if (payments.length && bill.total < bill.paid) throw checkoutError('below_paid')
+      if (lineId) db.lines = db.lines.map((l) => (l.id === lineId ? { ...l, ...patch } : l))
+      else Object.assign(order, patch)
+      commitOrders(db)
     },
     async getReceiptSettings() {
       return { ...defaultReceiptSettings(), ...loadOrders().receipt }

@@ -299,3 +299,61 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .printer-select-row { display: flex; gap: 6px; align-items: center; max-width: 360px; }
 .admin-list li.printer-item { flex-direction: column; align-items: stretch; padding-bottom: 10px; }
 .printer-links { display: flex; flex-direction: column; gap: 6px; padding-inline-start: 44px; }
+
+/* ───────────── شاشة الدفع (Paiement) ───────────── */
+.banner.ok { background: var(--free-bg); color: #14532d; cursor: pointer; }
+.pay-content { display: grid; grid-template-columns: minmax(0, 1fr) 420px; align-items: stretch; min-height: 0; overflow: hidden; }
+.pay-content > * { min-height: 0; overflow-y: auto; }
+.pay-lines { flex: none; }
+.pay-lines .line { gap: 4px; }
+.line-discount { font-size: 13px; color: #92400e; }
+.tag.offered-tag { background: #ede9fe; color: #6d28d9; align-self: flex-start; font-weight: 600; }
+.adjust-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; background: var(--bg); border-radius: 8px; }
+.adjust-bar .adjust-target { flex: 1 1 160px; font-weight: 600; }
+.adjust-bar button { min-height: 48px; font-weight: 600; touch-action: manipulation; }
+.adjust-bar button.on { background: #ede9fe; border-color: #7c3aed; color: #6d28d9; }
+.bill-sum { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.bill-sum > div, .ticket-sub { display: flex; justify-content: space-between; gap: 8px; }
+.bill-sum dt { color: var(--muted); }
+.bill-sum dd { margin: 0; font-weight: 600; white-space: nowrap; }
+.bill-sum .sum-total { font-size: 20px; border-top: 1px solid var(--line); padding-top: 6px; margin-top: 2px; }
+.bill-sum .sum-total dt { color: var(--ink); }
+.ticket-sub { font-size: 14px; color: var(--muted); }
+.ticket-sub.remaining { color: var(--occ); font-size: 16px; }
+.pay-history { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.pay-history ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pay-history li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.pay-history li strong { margin-inline-start: auto; }
+.pay-desk { gap: 10px; }
+.pay-desk .pay-methods .pay-method { flex-direction: row; justify-content: center; gap: 8px; padding: 10px; }
+.pay-desk .pay-method span { font-size: 22px; }
+.due.remaining { background: var(--brand); color: #fff; }
+.due.remaining { padding: 10px 14px; }
+.due.remaining strong { font-size: 30px; }
+.partial-toggle { min-height: 48px; font-weight: 600; text-align: start; }
+.partial-toggle.on { border-color: var(--accent); background: #fef3c7; }
+.pay-fields { display: flex; gap: 10px; }
+.pay-field { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border-width: 2px; text-align: start; }
+.pay-field span { font-size: 13px; color: var(--muted); }
+.pay-field strong { font-size: 22px; }
+.pay-field.on { border-color: var(--accent); background: #fffbeb; }
+.pay-field .bad, .amount-display.bad { color: var(--occ); }
+.keypad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.keypad button { min-height: 50px; font-size: 24px; font-weight: 600; touch-action: manipulation; }
+.keypad button:active { transform: scale(0.96); background: var(--bg); }
+.keypad .key-fn { background: var(--bg); }
+.keypad .key-zero { grid-column: span 3; }
+.pay-desk .quick-amounts button { min-height: 48px; font-weight: 600; }
+.pay-go { min-height: 60px; font-size: 19px; position: sticky; bottom: 0; flex-shrink: 0; box-shadow: 0 -8px 12px var(--surface); }
+.discount-dialog { width: min(380px, 100%); max-height: 94vh; overflow-y: auto; }
+.discount-dialog .dialog-actions { align-items: center; flex-wrap: wrap; }
+.segmented.wide { display: flex; }
+.segmented.wide button { flex: 1; padding: 10px; font-size: 18px; font-weight: 700; }
+.amount-display { font-size: 34px; font-weight: 700; text-align: end; padding: 6px 12px; background: var(--bg); border-radius: 8px; }
+.amount-display span { font-size: 20px; color: var(--muted); }
+.receipt-subtitle { font-weight: 700; margin: 4px 0 2px; }
+
+@media (max-width: 800px) {
+  .pay-content { display: flex; overflow: visible; }
+  .pay-content > * { overflow: visible; }
+}

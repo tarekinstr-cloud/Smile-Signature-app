@@ -1,20 +1,21 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { defaultReceiptSettings, repo } from '../lib/repo'
-import type { OrderLine, PaidOrder, ReceiptSettings } from '../lib/types'
+import type { OrderLine, PaidOrder, Payment, ReceiptSettings } from '../lib/types'
 import Receipt from './Receipt'
 import { useI18n } from '../lib/i18n'
 
 interface Props {
   order: PaidOrder
   lines: OrderLine[]
+  payments: Payment[]
   tableLabel: string | null
   hallName: string | null
   onDone(): void
 }
 
 /** Shown after checkout: the ticket on screen, a print button and the ticket's editable texts. */
-export default function ReceiptDialog({ order, lines, tableLabel, hallName, onDone }: Props) {
+export default function ReceiptDialog({ order, lines, payments, tableLabel, hallName, onDone }: Props) {
   const { t } = useI18n()
   const [settings, setSettings] = useState<ReceiptSettings | null>(null)
   const [editing, setEditing] = useState<ReceiptSettings | null>(null)
@@ -38,7 +39,7 @@ export default function ReceiptDialog({ order, lines, tableLabel, hallName, onDo
   }
 
   const shown = editing ?? settings
-  const ticket = shown && <Receipt settings={shown} order={order} lines={lines} tableLabel={tableLabel} hallName={hallName} />
+  const ticket = shown && <Receipt settings={shown} order={order} lines={lines} payments={payments} tableLabel={tableLabel} hallName={hallName} />
 
   return (
     <div className="dialog-backdrop">

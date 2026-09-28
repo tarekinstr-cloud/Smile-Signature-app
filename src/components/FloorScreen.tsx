@@ -9,6 +9,7 @@ import MenuAdmin from './MenuAdmin'
 import PrinterSettings from './PrinterSettings'
 import { useDialog } from './Dialog'
 import { money } from '../lib/format'
+import { computeBill } from '../lib/billing'
 import LangToggle from './LangToggle'
 import { useI18n } from '../lib/i18n'
 
@@ -94,7 +95,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
       if (!lines.length) return openOrder(table.id, false)
       setActions({
         table,
-        total: lines.reduce((s, l) => s + l.unit_price * l.quantity, 0),
+        total: computeBill(current?.order ?? null, lines, current?.payments ?? []).remaining,
         count: lines.reduce((s, l) => s + l.quantity, 0),
       })
     })
