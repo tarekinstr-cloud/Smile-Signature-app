@@ -90,12 +90,15 @@ export interface Adjustments {
   offered: boolean
 }
 
-/** On a table of the floor plan, or to take away (no table). */
-export type OrderType = 'dine_in' | 'takeaway'
+/** On a table of the floor plan, to take away, or delivered to the customer (no table for the last two). */
+export type OrderType = 'dine_in' | 'takeaway' | 'delivery'
+
+/** Where a delivery is: En préparation → En route → Livrée. */
+export type DeliveryStatus = 'preparing' | 'on_the_way' | 'delivered'
 
 export interface Order extends Adjustments {
   id: string
-  /** Null for a takeaway order (or when its table was deleted). */
+  /** Null for a takeaway or delivery order (or when its table was deleted). */
   table_id: string | null
   status: OrderStatus
   note: string | null
@@ -103,9 +106,15 @@ export interface Order extends Adjustments {
   order_type: OrderType
   /** Short number called out for takeaway orders ("À emporter n° 12"); null for table orders. */
   takeaway_no: number | null
-  /** Optional customer printed on the invoice (Facture). */
+  /** Short number of a delivery ("Livraison n° 3"); null for other orders. */
+  delivery_no: number | null
+  /** Customer printed on the invoice (Facture); for a delivery, who and where to deliver. */
   customer_name: string | null
   customer_address: string | null
+  /** Customer's phone (delivery). */
+  customer_phone: string | null
+  /** Null unless the order is a delivery. */
+  delivery_status: DeliveryStatus | null
   /** Set the first time an invoice is made for the order. */
   invoice_no: number | null
 }
@@ -113,6 +122,13 @@ export interface Order extends Adjustments {
 /** Customer details typed for an invoice; both optional. */
 export interface InvoiceCustomer {
   name: string
+  address: string
+}
+
+/** Customer of a delivery order. */
+export interface DeliveryCustomer {
+  name: string
+  phone: string
   address: string
 }
 
