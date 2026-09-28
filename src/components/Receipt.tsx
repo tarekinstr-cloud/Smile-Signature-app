@@ -72,6 +72,7 @@ export default function Receipt({ settings, order, lines, payments, place, hallN
                 <span>{l.quantity} × <bdi>{l.name}</bdi></span>
                 <span>{offered ? t.offered.toUpperCase() : money(gross)}</span>
               </div>
+              {l.is_takeaway && <div className="receipt-sub receipt-emp">[{t.lineTakeaway}]</div>}
               {l.options.length > 0 && <div className="receipt-sub">{l.options.map((o) => o.name).join(t.listSep)}</div>}
               {(l.quantity > 1 || offered) && <div className="receipt-sub">{l.quantity} × {money(l.unit_price)}{offered && <> · {t.offered} ({money(gross)})</>}</div>}
               {d && discount > 0 && (
