@@ -335,22 +335,6 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
     menuRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }
 
-  /** Emporter: the order leaves its table (freed) and becomes a takeaway order. */
-  async function toTakeaway() {
-    if (!place) return
-    if (!order) {
-      setPlace(null)
-      return
-    }
-    if (!(await dialog.confirm(t.confirmToTakeaway(place.table.label), t.toTakeaway))) return
-    const from = t.table(place.table.label)
-    await act(async () => {
-      const o = await repo.moveOrder(order.id, null)
-      setPlace(null)
-      setNotice(t.moved(from, placeText(t, o, null)))
-    })
-  }
-
   /** Changement de Table: the order, its lines, kitchen status and payments go to the chosen free table. */
   async function moveTo(target: DiningTable, targetHall: Hall) {
     if (!order) {
@@ -605,7 +589,6 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
           </div>
           <div className="action-btns">
             <button onClick={suite}><i aria-hidden>＋</i>{t.actSuite}</button>
-            <button onClick={toTakeaway} disabled={busy || !place} title={place ? undefined : t.alreadyTakeaway}><i aria-hidden>🥡</i>{t.actTakeaway}</button>
             <button onClick={() => setModal('new')} disabled={busy}><i aria-hidden>🆕</i>{t.actNewOrder}</button>
             <button onClick={() => setModal('move')} disabled={busy}><i aria-hidden>⇄</i>{t.actMoveTable}</button>
             <button onClick={() => setModal('invoice')} disabled={busy || !hasItems}><i aria-hidden>🧾</i>{t.actInvoice}</button>
