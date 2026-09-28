@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { repo } from '../lib/repo'
-import type { ChosenOption, DiningTable, Hall, ItemOption, Menu, MenuItem, OptionGroup, Order, OrderLine, PaidOrder, PaymentMethod } from '../lib/types'
+import type { ChosenOption, DiningTable, Hall, ItemOption, Menu, MenuItem, OptionGroup, Order, OrderLine, PaidOrder, Payment } from '../lib/types'
 import { money } from '../lib/format'
-import CheckoutDialog from './CheckoutDialog'
+import PaymentScreen, { minus } from './PaymentScreen'
+import { computeBill, discountOf } from '../lib/billing'
 import ReceiptDialog from './ReceiptDialog'
 import KitchenTicketsDialog from './KitchenTicketsDialog'
 import { dispatchTickets, type SendResult } from '../lib/kitchen'
@@ -58,11 +59,13 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const [order, setOrder] = useState<Order | null>(null)
   const [lines, setLines] = useState<OrderLine[]>([])
+  /** Partial payments already made on the open order. */
+  const [payments, setPayments] = useState<Payment[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [paying, setPaying] = useState(false)
-  const [paid, setPaid] = useState<{ order: PaidOrder; lines: OrderLine[] } | null>(null)
+  const [paid, setPaid] = useState<{ order: PaidOrder; lines: OrderLine[]; payments: Payment[] } | null>(null)
   /** Result of the last Valider, shown as kitchen ticket previews. */
   const [sent, setSent] = useState<(SendResult & { sentCount: number }) | null>(null)
   // Line that supplement buttons apply to: the one last added, or the one tapped in the order.
@@ -85,6 +88,7 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
       const current = await repo.getOpenOrder(table.id)
       setOrder(current?.order ?? null)
       setLines(current?.lines ?? [])
+      setPayments(current?.payments ?? [])
     })
   }, [run, table.id])
 
@@ -127,7 +131,7 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
       return groups.filter((g) => g !== main && !seen.has(g.name) && seen.add(g.name))
     })
   }, [selectedItem, items, menu])
-  const total = lines.reduce((s, l) => s + l.unit_price * l.quantity, 0)
+  const bill = computeBill(order, lines, payments)
   const count = lines.reduce((s, l) => s + l.quantity, 0)
   const newCount = lines.reduce((s, l) => s + (l.sent_at ? 0 : l.quantity), 0)
   const selectedSent = !!selected?.sent_at
@@ -156,7 +160,7 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
     setBusy(true)
     await run(async () => {
       // A line already sent to the kitchen stays as it was: more of the same goes on a new line.
-      if (last && !last.sent_at && !last.note && sameOptions(last.options, options)) {
+      if (last && !last.sent_at && !last.note && !last.offered && !discountOf(last) && sameOptions(last.options, options)) {
         await repo.updateLine(last.id, { quantity: last.quantity + 1 })
         setSelectedId(last.id)
       } else {
@@ -213,7 +217,7 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
 
   /** "+" on a line already sent: the extra portion is new, so it goes on an unsent line of the same item. */
   async function addToSent(line: OrderLine) {
-    const twin = lines.find((l) => !l.sent_at && l.item_id === line.item_id && l.name === line.name && l.note === line.note && sameOptions(l.options, line.options))
+    const twin = lines.find((l) => !l.sent_at && !l.offered && !discountOf(l) && l.item_id === line.item_id && l.name === line.name && l.note === line.note && sameOptions(l.options, line.options))
     setBusy(true)
     await run(async () => {
       if (twin) {
@@ -263,22 +267,21 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
     })
   }
 
-  async function pay(method: PaymentMethod, received: number | null) {
-    if (!order) return
-    const snapshot = lines
-    setBusy(true)
-    await run(async () => {
-      const done = await repo.checkoutOrder(order.id, method, received)
-      setPaying(false)
-      setPaid({ order: done, lines: snapshot })
-    })
-    setBusy(false)
-  }
-
   async function back() {
     // An order that was opened but never got an item should not keep the table occupied.
     if (order && lines.length === 0) await run(() => repo.cancelOrder(order.id))
     onBack()
+  }
+
+  if (paid) {
+    return <ReceiptDialog order={paid.order} lines={paid.lines} payments={paid.payments} tableLabel={table.label} hallName={hall.name} onDone={onBack} />
+  }
+  if (paying && order && lines.length > 0) {
+    return (
+      <PaymentScreen table={table} hall={hall}
+        onBack={() => { setPaying(false); reloadOrder() }}
+        onPaid={(result) => { setPaying(false); setPaid(result) }} />
+    )
   }
 
   return (
@@ -374,6 +377,8 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
                         <span className="line-name">{l.name}</span>
                         <span className="line-total">{money(l.unit_price * l.quantity)}</span>
                       </div>
+                      {(l.offered || order?.offered) && <span className="tag offered-tag">{t.offered}</span>}
+                      {discountOf(l) && !l.offered && !order?.offered && <span className="tag">{t.discount}</span>}
                       {l.sent_at ? (
                         <div className="line-sent">✓ {t.sentAt(clock(l.sent_at))}</div>
                       ) : (
@@ -396,17 +401,26 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
                   ))}
                 </ul>
               )}
+              {bill.total !== bill.gross && (
+                <div className="ticket-sub"><span>{t.subtotal}</span><span>{money(bill.gross)}</span></div>
+              )}
               <div className="ticket-total">
                 <span>{t.total}</span>
-                <strong>{money(total)}</strong>
+                <strong>{money(bill.total)}</strong>
               </div>
+              {bill.paid > 0 && (
+                <>
+                  <div className="ticket-sub"><span>{t.alreadyPaid}</span><span>{minus(bill.paid)}</span></div>
+                  <div className="ticket-sub remaining"><span>{t.remaining}</span><strong>{money(bill.remaining)}</strong></div>
+                </>
+              )}
               {lines.length > 0 && (
                 <button className="validate-btn" onClick={validate} disabled={busy || newCount === 0} title={t.validateHint}>
                   {newCount > 0 ? t.validateCount(newCount) : t.validate}
                 </button>
               )}
               {lines.length > 0 && (
-                <button className="primary checkout-btn" onClick={() => setPaying(true)}>{t.checkoutAmount(money(total))}</button>
+                <button className="primary checkout-btn" onClick={() => setPaying(true)}>{t.checkoutAmount(money(bill.remaining))}</button>
               )}
               <button onClick={back}>{t.doneBack}</button>
               {order && <button className="danger" onClick={cancelOrder}>{t.cancelOrder}</button>}
@@ -415,12 +429,6 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
         </main>
       )}
 
-      {paying && order && lines.length > 0 && (
-        <CheckoutDialog tableLabel={table.label} total={total} busy={busy} onCancel={() => setPaying(false)} onPay={pay} />
-      )}
-      {paid && (
-        <ReceiptDialog order={paid.order} lines={paid.lines} tableLabel={table.label} hallName={hall.name} onDone={onBack} />
-      )}
       {sent && (
         <KitchenTicketsDialog tickets={sent.tickets} sentCount={sent.sentCount} unrouted={sent.unrouted} onClose={() => setSent(null)} />
       )}
