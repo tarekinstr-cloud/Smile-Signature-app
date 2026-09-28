@@ -271,7 +271,6 @@ const fr = {
   // Order actions bar
   actions: 'Actions de la commande',
   actSuite: 'Suite (+)',
-  actTakeaway: 'Emporter',
   actNewOrder: 'Nouvelle CMD',
   actMoveTable: 'Changement de Table',
   actInvoice: 'Facture',
@@ -292,9 +291,6 @@ const fr = {
   takeawayOrders: 'Commandes à emporter',
   newTakeaway: '+ Nouvelle commande à emporter',
   noTakeaways: 'Aucune commande à emporter en cours.',
-  confirmToTakeaway: (label: string) => `Passer la commande de la table ${label} en « à emporter » ? La table redeviendra libre.`,
-  toTakeaway: 'Passer à emporter',
-  alreadyTakeaway: 'Cette commande est déjà à emporter.',
   newOrderTitle: 'Nouvelle commande',
   newOrderTable: 'Sur une table (plan de salle)',
   newOrderTakeaway: 'À emporter',
@@ -328,6 +324,8 @@ const fr = {
   errCancelPaid: 'Impossible d’annuler : un paiement a déjà été enregistré sur cette commande.',
   errTableOccupied: 'Cette table est déjà occupée.',
   errTableNotFound: 'Table introuvable (supprimée ?).',
+  errTableLinkRequired: 'Une commande de table reste sur une table : utilisez « Changement de Table », l’encaissement ou « Annuler la CMD ».',
+  errTableHasOrder: 'Impossible de supprimer : une commande est ouverte sur cette table. Encaissez-la ou annulez-la d’abord.',
   errMigrationActions: 'Base de données pas à jour : exécutez 20260928020000_order_actions.sql dans Supabase (SQL Editor).',
 }
 
@@ -587,7 +585,6 @@ const ar: Dict = {
 
   actions: 'إجراءات الطلب',
   actSuite: 'تكملة (+)',
-  actTakeaway: 'للأخذ',
   actNewOrder: 'طلب جديد',
   actMoveTable: 'تبديل الطاولة',
   actInvoice: 'فاتورة',
@@ -608,9 +605,6 @@ const ar: Dict = {
   takeawayOrders: 'طلبات للأخذ',
   newTakeaway: '+ طلب جديد للأخذ',
   noTakeaways: 'ما كاين حتى طلب للأخذ حالياً.',
-  confirmToTakeaway: (label) => `تحويل طلب الطاولة ${label} إلى «للأخذ»؟ الطاولة ترجع حرة.`,
-  toTakeaway: 'تحويل للأخذ',
-  alreadyTakeaway: 'هذا الطلب راهو للأخذ.',
   newOrderTitle: 'طلب جديد',
   newOrderTable: 'على طاولة (مخطط الصالة)',
   newOrderTakeaway: 'للأخذ',
@@ -644,6 +638,8 @@ const ar: Dict = {
   errCancelPaid: 'ما يمكنش الإلغاء: كاين دفع مسجّل على هذا الطلب.',
   errTableOccupied: 'هذه الطاولة مشغولة.',
   errTableNotFound: 'الطاولة ما لقيناهاش (محذوفة؟).',
+  errTableLinkRequired: 'طلب الطاولة يبقى على طاولة: استعمل «تبديل الطاولة»، الدفع أو «إلغاء الطلب».',
+  errTableHasOrder: 'ما يمكنش الحذف: كاين طلب مفتوح على هذه الطاولة. خلّصو ولا ألغيه قبل.',
   errMigrationActions: 'قاعدة البيانات غير محدّثة: شغّل 20260928020000_order_actions.sql في Supabase (SQL Editor).',
 }
 

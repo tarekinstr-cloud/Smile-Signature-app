@@ -52,11 +52,11 @@ export interface Repo {
   /** Every table of every hall (Changement de Table). */
   listAllTables(): Promise<DiningTable[]>
   /**
-   * Changement de Table: moves an open order, with its lines (and their kitchen status) and payments, to a free table,
-   * or makes it a takeaway order (tableId null). The old table is freed and the move is logged in table_moves.
-   * Refused when the target table already has an open order.
+   * Changement de Table: moves an open order, with its lines (and their kitchen status) and payments, to another
+   * free table. The old table is freed and the move is logged in table_moves. Refused when the target table already
+   * has an open order. An order never leaves its table otherwise (only payment or cancellation close it).
    */
-  moveOrder(orderId: string, tableId: string | null): Promise<Order>
+  moveOrder(orderId: string, tableId: string): Promise<Order>
   /** Moves logged for an order, oldest first. */
   listTableMoves(orderId: string): Promise<TableMove[]>
   /** Facture: saves the optional customer on the order and gives it an invoice number the first time. */
@@ -157,6 +157,8 @@ function checkoutError(code: string): Error {
   if (code.includes('table_occupied') || code.includes('orders_one_open_per_table')) return new Error(t.errTableOccupied)
   if (code.includes('table_not_found')) return new Error(t.errTableNotFound)
   if (code.includes('cancel_paid')) return new Error(t.errCancelPaid)
+  if (code.includes('table_link_required')) return new Error(t.errTableLinkRequired)
+  if (code.includes('table_has_order')) return new Error(t.errTableHasOrder)
   // Takeaway, table moves and invoices need the order-actions migration.
   if (/order_type|takeaway|table_moves|move_order|issue_invoice|invoice_no|customer_/.test(code) && /does not exist|schema cache|Could not find/i.test(code)) {
     return new Error(t.errMigrationActions)
@@ -207,6 +209,12 @@ function sharedChannel(sb: SupabaseClient, topic: string, tables: string[]) {
 }
 
 function supabaseRepo(sb: SupabaseClient): Repo {
+  /** A table (or a hall's tables) with an open order cannot be deleted: the order would lose its table. */
+  const refuseOpenOrders = async (tableIds: string[]) => {
+    if (!tableIds.length) return
+    const open = check(await sb.from('orders').select('id').in('table_id', tableIds).eq('status', 'open').limit(1)) as { id: string }[]
+    if (open.length) throw checkoutError('table_has_order')
+  }
   const floorChannel = sharedChannel(sb, 'floor', ['halls', 'tables'])
   const ordersChannel = sharedChannel(sb, 'orders', ['orders', 'order_items', 'payments'])
   const insertRow = async (table: MenuTable, row: object) => check(await sb.from(table).insert(row).select().single()) as unknown
@@ -232,6 +240,8 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       check(await sb.from('halls').update(patch).eq('id', id))
     },
     async deleteHall(id) {
+      const tables = check(await sb.from('tables').select('id').eq('hall_id', id)) as { id: string }[]
+      await refuseOpenOrders(tables.map((t) => t.id))
       check(await sb.from('halls').delete().eq('id', id))
     },
     async listTables(hallId) {
@@ -244,6 +254,7 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       check(await sb.from('tables').update(patch).eq('id', id))
     },
     async deleteTable(id) {
+      await refuseOpenOrders([id])
       check(await sb.from('tables').delete().eq('id', id))
     },
     subscribe(onChange) {
@@ -698,6 +709,11 @@ function localRepo(): Repo {
     payments: (db.payments ?? []).filter((p) => p.order_id === order.id),
   })
 
+  /** Mirrors the database: a table with an open order cannot be deleted. */
+  const refuseOpenOrders = (tableIds: string[]) => {
+    if (loadOrders().orders.some((o) => o.status === 'open' && o.table_id && tableIds.includes(o.table_id))) throw checkoutError('table_has_order')
+  }
+
   return {
     mode: 'local',
     async listHalls() {
@@ -718,6 +734,7 @@ function localRepo(): Repo {
     },
     async deleteHall(id) {
       const db = load()
+      refuseOpenOrders(db.tables.filter((t) => t.hall_id === id).map((t) => t.id))
       db.halls = db.halls.filter((h) => h.id !== id)
       db.tables = db.tables.filter((t) => t.hall_id !== id)
       commit(db)
@@ -746,6 +763,7 @@ function localRepo(): Repo {
     },
     async deleteTable(id) {
       const db = load()
+      refuseOpenOrders([id])
       db.tables = db.tables.filter((t) => t.id !== id)
       commit(db)
     },
@@ -848,22 +866,19 @@ function localRepo(): Repo {
       const db = loadOrders()
       const order = db.orders.find((o) => o.id === orderId)
       if (!order || order.status !== 'open') throw checkoutError('order_not_open')
+      if (!tableId) throw checkoutError('table_link_required')
       if ((order.table_id ?? null) === tableId) return normalizeOrder(order)
       const floor = load()
-      const to = tableId ? floor.tables.find((x) => x.id === tableId) : null
-      if (tableId && !to) throw checkoutError('table_not_found')
-      if (tableId && db.orders.some((o) => o.table_id === tableId && o.status === 'open')) throw checkoutError('table_occupied')
+      const to = floor.tables.find((x) => x.id === tableId)
+      if (!to) throw checkoutError('table_not_found')
+      if (db.orders.some((o) => o.table_id === tableId && o.status === 'open')) throw checkoutError('table_occupied')
       const from = order.table_id ? floor.tables.find((x) => x.id === order.table_id) ?? null : null
       const fromId = order.table_id
       order.table_id = tableId
-      order.order_type = tableId ? 'dine_in' : 'takeaway'
-      if (!tableId && order.takeaway_no == null) {
-        order.takeaway_no = (db.lastTakeaway ?? 0) + 1
-        db.lastTakeaway = order.takeaway_no
-      }
+      order.order_type = 'dine_in'
       ;(db.tableMoves ??= []).push({
         id: crypto.randomUUID(), order_id: orderId, from_table_id: fromId, to_table_id: tableId,
-        from_label: from?.label ?? null, to_label: to?.label ?? null, moved_by_name: await this.waiterName(), moved_at: new Date().toISOString(),
+        from_label: from?.label ?? null, to_label: to.label, moved_by_name: await this.waiterName(), moved_at: new Date().toISOString(),
       })
       commitOrders(db)
       if (fromId && !db.orders.some((o) => o.table_id === fromId && o.status === 'open')) setTableStatus(fromId, 'free')
