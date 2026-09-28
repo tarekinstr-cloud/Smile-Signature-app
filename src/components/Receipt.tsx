@@ -1,16 +1,22 @@
-import type { OrderLine, PaidOrder, Payment, ReceiptSettings } from '../lib/types'
+import type { Order, OrderLine, PaidOrder, Payment, ReceiptSettings } from '../lib/types'
 import { money } from '../lib/format'
 import { computeBill, discountOf } from '../lib/billing'
 import { useI18n } from '../lib/i18n'
 
+/** receipt: after the last payment. bill: the running bill of an open order (Addition). invoice: Facture. */
+export type ReceiptKind = 'receipt' | 'bill' | 'invoice'
+
 interface Props {
   settings: ReceiptSettings
-  order: PaidOrder
+  /** A paid order for a receipt; any order (open or paid) for a bill or an invoice. */
+  order: Order & Partial<Pick<PaidOrder, 'ticket_no' | 'closed_at'>>
   lines: OrderLine[]
   /** Payments of the order, oldest first (several for a partial payment). */
   payments: Payment[]
-  tableLabel: string | null
+  /** "Table 4" or "À emporter n° 12". */
+  place: string | null
   hallName: string | null
+  kind?: ReceiptKind
 }
 
 const textLines = (text: string) => text.split('\n').map((line, i) => <div key={i} dir="auto">{line || '\u00a0'}</div>)
@@ -21,14 +27,16 @@ const minus = (n: number) => <bdi dir="ltr">−{money(n)}</bdi>
  * The printed ticket: logo and name, items with their discounts and offers, total, payments (with change given back)
  * and closing message. Sized for 80 mm receipt paper.
  */
-export default function Receipt({ settings, order, lines, payments, tableLabel, hallName }: Props) {
+export default function Receipt({ settings, order, lines, payments, place, hallName, kind = 'receipt' }: Props) {
   const { t } = useI18n()
-  const date = new Date(order.closed_at)
+  const date = order.closed_at ? new Date(order.closed_at) : new Date()
   const bill = computeBill(order, lines, payments)
   const adjusted = bill.offered > 0 || bill.lineDiscounts > 0 || bill.orderDiscount > 0
   const clock = (iso: string) => new Date(iso).toLocaleTimeString(t.locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
   const changeTotal = payments.reduce((s, p) => s + p.change_amount, 0)
-  const single = payments.length === 1 ? payments[0] : null
+  const single = payments.length === 1 && bill.remaining === 0 ? payments[0] : null
+  const number = (n: number | null | undefined) => String(n ?? '').padStart(6, '0')
+  const title = kind === 'invoice' ? t.invoiceNo(number(order.invoice_no)) : kind === 'bill' ? t.bill : t.ticketNo(number(order.ticket_no))
 
   return (
     <div className="receipt">
@@ -38,13 +46,20 @@ export default function Receipt({ settings, order, lines, payments, tableLabel, 
       {settings.header && <div className="receipt-header">{textLines(settings.header)}</div>}
       <div className="receipt-sep" />
       <div className="receipt-meta">
-        <span>{t.ticketNo(String(order.ticket_no).padStart(6, '0'))}</span>
+        <span>{title}</span>
         <span>{date.toLocaleDateString(t.locale)} {date.toLocaleTimeString(t.locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}</span>
       </div>
-      {tableLabel && (
+      {place && (
         <div className="receipt-meta">
-          <span>{t.table(tableLabel)}</span>
+          <span>{place}</span>
           {hallName && <bdi>{hallName}</bdi>}
+        </div>
+      )}
+      {kind === 'bill' && <div className="receipt-sub receipt-note">{t.billNote}</div>}
+      {kind === 'invoice' && (order.customer_name || order.customer_address) && (
+        <div className="receipt-customer">
+          <div><strong>{t.customer}</strong> : <bdi>{order.customer_name ?? ''}</bdi></div>
+          {order.customer_address && textLines(order.customer_address)}
         </div>
       )}
       <div className="receipt-sep" />
@@ -100,7 +115,7 @@ export default function Receipt({ settings, order, lines, payments, tableLabel, 
             </>
           )}
         </>
-      ) : payments.length > 1 ? (
+      ) : payments.length > 0 ? (
         <>
           <div className="receipt-subtitle">{t.payHistory} ({t.partial})</div>
           {payments.map((p) => (
@@ -115,6 +130,9 @@ export default function Receipt({ settings, order, lines, payments, tableLabel, 
           {changeTotal > 0 && <div className="receipt-row"><span>{t.change}</span><span>{money(changeTotal)}</span></div>}
         </>
       ) : null}
+      {kind !== 'receipt' && bill.remaining > 0 && bill.paid > 0 && (
+        <div className="receipt-row receipt-total"><span>{t.remaining}</span><span>{money(bill.remaining)}</span></div>
+      )}
       <div className="receipt-sep" />
       {settings.footer && <div className="receipt-footer">{textLines(settings.footer)}</div>}
     </div>

@@ -1,22 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { repo } from '../lib/repo'
-import type { ChosenOption, DiningTable, Hall, ItemOption, Menu, MenuItem, OptionGroup, Order, OrderLine, PaidOrder, Payment } from '../lib/types'
+import type {
+  AdjustmentsPatch, ChosenOption, Discount, DiningTable, Hall, ItemOption, Menu, MenuItem, OptionGroup, Order, OrderLine, PaidOrder, Payment,
+} from '../lib/types'
 import { money } from '../lib/format'
 import PaymentScreen, { minus } from './PaymentScreen'
 import { computeBill, discountOf } from '../lib/billing'
 import ReceiptDialog from './ReceiptDialog'
 import KitchenTicketsDialog from './KitchenTicketsDialog'
+import DiscountDialog from './DiscountDialog'
+import MoveTableDialog from './MoveTableDialog'
+import { BillDialog, InvoiceDialog } from './DocumentDialog'
 import { dispatchTickets, type SendResult } from '../lib/kitchen'
+import { placeText, ticketPlace } from '../lib/place'
 import { useDialog } from './Dialog'
 import LangToggle from './LangToggle'
 import { useI18n } from '../lib/i18n'
 
 interface Props {
-  table: DiningTable
-  hall: Hall
+  /** Table tapped on the floor plan; null for a takeaway order. */
+  table: DiningTable | null
+  hall: Hall | null
+  /** Open order to show (a takeaway order picked from the list). Otherwise the table's open order, or a new one. */
+  orderId?: string
   /** Opens the checkout as soon as the order is loaded (checkout started from the floor plan). */
   startCheckout?: boolean
   onBack(): void
+  /** Nouvelle CMD → À emporter: the floor screen opens a fresh takeaway order. */
+  onNewTakeaway(): void
 }
 
 const sameOptions = (a: ChosenOption[], b: ChosenOption[]) =>
@@ -54,23 +65,41 @@ interface GridButton {
   price: number
 }
 
-export default function OrderScreen({ table, hall, startCheckout, onBack }: Props) {
+/** How the payment screen was opened from the action bar. */
+interface PayMode {
+  partial?: boolean
+  /** Payer sans ticket: the payment is recorded, no receipt is shown or printed. */
+  noTicket?: boolean
+}
+
+type Modal = 'move' | 'invoice' | 'bill' | 'print' | 'new' | 'discount'
+
+export default function OrderScreen({ table, hall: startHall, orderId: startOrderId, startCheckout, onBack, onNewTakeaway }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null)
   const [categoryId, setCategoryId] = useState<string | null>(null)
+  /** Where the order is: a table (with its hall), or null for takeaway. Follows Changement de Table. */
+  const [place, setPlace] = useState<{ table: DiningTable; hall: Hall } | null>(table && startHall ? { table, hall: startHall } : null)
   const [order, setOrder] = useState<Order | null>(null)
   const [lines, setLines] = useState<OrderLine[]>([])
   /** Partial payments already made on the open order. */
   const [payments, setPayments] = useState<Payment[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [paying, setPaying] = useState(false)
-  const [paid, setPaid] = useState<{ order: PaidOrder; lines: OrderLine[]; payments: Payment[] } | null>(null)
-  /** Result of the last Valider, shown as kitchen ticket previews. */
-  const [sent, setSent] = useState<(SendResult & { sentCount: number }) | null>(null)
-  // Line that supplement buttons apply to: the one last added, or the one tapped in the order.
+  const [paying, setPaying] = useState<PayMode | null>(null)
+  const [paid, setPaid] = useState<{ order: PaidOrder; lines: OrderLine[]; payments: Payment[]; noTicket?: boolean } | null>(null)
+  /** Kitchen tickets on screen: the result of the last Valider, or a reprint. */
+  const [sent, setSent] = useState<(SendResult & { sentCount: number; reprint?: boolean }) | null>(null)
+  const [modal, setModal] = useState<Modal | null>(null)
+  // Line that supplement buttons, Remise and Offrir apply to: the one last added, or the one tapped in the order.
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const opening = useRef<Promise<Order> | null>(null)
+  /** The order being shown, once there is one; kept in a ref for the realtime reloads. */
+  const orderIdRef = useRef<string | null>(startOrderId ?? null)
+  const placeRef = useRef(place)
+  placeRef.current = place
+  const menuRef = useRef<HTMLElement | null>(null)
   const dialog = useDialog()
   const { t } = useI18n()
 
@@ -83,14 +112,34 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
     }
   }, [])
 
+  /** Keeps the header on the order's table when it was moved, here or on another device. */
+  const followTable = useCallback(async (o: Order) => {
+    const current = placeRef.current
+    if (!o.table_id) {
+      if (current) setPlace(null)
+      return
+    }
+    if (current?.table.id === o.table_id) return
+    const [halls, tables] = await Promise.all([repo.listHalls(), repo.listAllTables()])
+    const tbl = tables.find((x) => x.id === o.table_id)
+    const h = tbl && halls.find((x) => x.id === tbl.hall_id)
+    if (tbl && h) setPlace({ table: tbl, hall: h })
+  }, [])
+
   const reloadOrder = useCallback(async () => {
     await run(async () => {
-      const current = await repo.getOpenOrder(table.id)
+      const id = orderIdRef.current
+      const tbl = placeRef.current?.table
+      const current = id ? await repo.getOrder(id) : tbl ? await repo.getOpenOrder(tbl.id) : null
+      if (current) {
+        orderIdRef.current = current.order.id
+        await followTable(current.order)
+      }
       setOrder(current?.order ?? null)
       setLines(current?.lines ?? [])
       setPayments(current?.payments ?? [])
     })
-  }, [run, table.id])
+  }, [run, followTable])
 
   useEffect(() => {
     ;(async () => {
@@ -101,9 +150,9 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
       })
       await reloadOrder()
       setLoading(false)
-      if (startCheckout) setPaying(true)
+      if (startCheckout) setPaying({})
     })()
-    // Only on first load: a different table remounts this screen (keyed by table id).
+    // Only on first load: another table or order remounts this screen (keyed by it).
   }, [])
 
   useEffect(() => repo.subscribeOrders(() => reloadOrder()), [reloadOrder])
@@ -137,13 +186,20 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
   const selectedSent = !!selected?.sent_at
   const anySent = lines.some((l) => l.sent_at)
 
+  const where = placeText(t, order ?? { order_type: place ? 'dine_in' : 'takeaway', takeaway_no: null }, place?.table ?? null)
+  const hasItems = !!order && lines.length > 0
+  /** Change given back on the last cash payment, shown after a payment made on the keypad. */
+  const lastChange = payments.at(-1)?.change_amount ?? 0
+
   async function ensureOrder(): Promise<Order> {
     if (order) return order
     // Two quick taps must not open two orders.
-    opening.current ??= repo.openOrder(table.id).finally(() => {
+    const target = place?.table.id
+    opening.current ??= (target ? repo.openOrder(target) : repo.openTakeaway()).finally(() => {
       opening.current = null
     })
     const o = await opening.current
+    orderIdRef.current = o.id
     setOrder(o)
     return o
   }
@@ -238,7 +294,7 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
     if (!order || newCount === 0) return
     setBusy(true)
     await run(async () => {
-      const result = await repo.sendOrder(order.id, table.label)
+      const result = await repo.sendOrder(order.id, ticketPlace(order, place?.table ?? null))
       await reloadOrder()
       if (!result.tickets.length && !result.unrouted.length) throw new Error(t.nothingToSend)
       const printers = result.tickets.length ? await repo.listPrinters() : []
@@ -258,39 +314,156 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
     await reloadOrder()
   }
 
+  /** Runs an action of the bar with the buttons locked, then reloads the order. */
+  async function act(fn: () => Promise<unknown>) {
+    setBusy(true)
+    setNotice(null)
+    await run(async () => {
+      await fn()
+      await reloadOrder()
+    })
+    setBusy(false)
+  }
+
+  /** Suite (+): back to the categories and items to add more; the order stays open. */
+  function suite() {
+    setSelectedId(null)
+    setNotice(t.suiteHint)
+    menuRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }
+
+  /** Emporter: the order leaves its table (freed) and becomes a takeaway order. */
+  async function toTakeaway() {
+    if (!place) return
+    if (!order) {
+      setPlace(null)
+      return
+    }
+    if (!(await dialog.confirm(t.confirmToTakeaway(place.table.label), t.toTakeaway))) return
+    const from = t.table(place.table.label)
+    await act(async () => {
+      const o = await repo.moveOrder(order.id, null)
+      setPlace(null)
+      setNotice(t.moved(from, placeText(t, o, null)))
+    })
+  }
+
+  /** Changement de Table: the order, its lines, kitchen status and payments go to the chosen free table. */
+  async function moveTo(target: DiningTable, targetHall: Hall) {
+    if (!order) {
+      // Nothing saved yet: the next item simply opens the order on the new table.
+      setPlace({ table: target, hall: targetHall })
+      setModal(null)
+      return
+    }
+    const from = where
+    await act(async () => {
+      await repo.moveOrder(order.id, target.id)
+      setPlace({ table: target, hall: targetHall })
+      setModal(null)
+      setNotice(t.moved(from, t.table(target.label)))
+    })
+  }
+
+  /** Remise and Offrir apply to the selected line, or to the whole order when no line is selected. */
+  const adjust = (lineId: string | null, patch: AdjustmentsPatch) =>
+    act(async () => {
+      if (order) await repo.adjust(order.id, lineId, patch)
+      setModal(null)
+    })
+
+  const applyDiscount = (d: Discount | null) =>
+    adjust(selected?.id ?? null, d ? { discount_type: d.type, discount_value: d.value } : { discount_type: null, discount_value: 0 })
+
+  async function offer() {
+    if (!order) return
+    if (selected) return adjust(selected.id, { offered: !selected.offered })
+    const on = !order.offered
+    if (!(await dialog.confirm(on ? t.confirmOfferOrder(where) : t.confirmUnofferOrder(where), on ? t.offerOrder : t.unofferOrder))) return
+    await adjust(null, { offered: on })
+  }
+
+  /** Imprimer → Ticket cuisine: the kitchen tickets already sent for this order, again. */
+  async function reprintKitchen() {
+    if (!order) return
+    setModal(null)
+    await act(async () => {
+      const tickets = await repo.listKitchenTickets(order.id)
+      if (!tickets.length) throw new Error(t.noKitchenTickets)
+      setSent({ tickets, unrouted: [], sentCount: tickets.length, reprint: true })
+    })
+  }
+
   async function cancelOrder() {
     if (!order) return
-    if (!(await dialog.confirm(t.confirmCancelOrder(table.label), t.cancelOrder))) return
+    if (!(await dialog.confirm(t.confirmCancelOrder(where), t.actCancel))) return
     await run(async () => {
       await repo.cancelOrder(order.id)
       onBack()
     })
   }
 
-  async function back() {
-    // An order that was opened but never got an item should not keep the table occupied.
+  /** Leaves the screen; an order that was opened but never got an item does not keep its table occupied. */
+  async function leaveEmpty() {
     if (order && lines.length === 0) await run(() => repo.cancelOrder(order.id))
+  }
+
+  async function back() {
+    await leaveEmpty()
     onBack()
   }
 
-  if (paid) {
-    return <ReceiptDialog order={paid.order} lines={paid.lines} payments={paid.payments} tableLabel={table.label} hallName={hall.name} onDone={onBack} />
+  async function newOrder(kind: 'table' | 'takeaway') {
+    setModal(null)
+    await leaveEmpty()
+    if (kind === 'takeaway') onNewTakeaway()
+    else onBack()
   }
-  if (paying && order && lines.length > 0) {
+
+  // The paid order is no longer open: name it from the paid order itself (takeaway number included).
+  const paidWhere = paid ? placeText(t, paid.order, place?.table ?? null) : where
+  if (paid?.noTicket) {
+    const change = paid.payments.at(-1)?.change_amount ?? 0
     return (
-      <PaymentScreen table={table} hall={hall}
-        onBack={() => { setPaying(false); reloadOrder() }}
-        onPaid={(result) => { setPaying(false); setPaid(result) }} />
+      <div className="dialog-backdrop">
+        <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="paid-title">
+          <div className="panel-head">
+            <h2 id="paid-title">{t.paidNoTicket}</h2>
+            <span className="pill free">{t.paid}</span>
+          </div>
+          <p className="muted small">{paidWhere} · {t.paidNoTicketHint}</p>
+          <div className="due"><span>{t.total}</span><strong>{money(paid.order.total)}</strong></div>
+          {change > 0 && <div className="change"><span>{t.changeGiven}</span><strong>{money(change)}</strong></div>}
+          <div className="dialog-actions">
+            <button className="primary big" autoFocus onClick={onBack}>{t.doneBack}</button>
+          </div>
+        </div>
+      </div>
     )
   }
+  if (paid) {
+    return <ReceiptDialog order={paid.order} lines={paid.lines} payments={paid.payments} place={paidWhere} hallName={place?.hall.name ?? null} onDone={onBack} />
+  }
+  if (paying && order && lines.length > 0) {
+    const mode = paying
+    return (
+      <PaymentScreen orderId={order.id} place={where} hallName={place?.hall.name ?? null} startPartial={mode.partial} noTicket={mode.noTicket}
+        onBack={() => { setPaying(null); reloadOrder() }}
+        onPaid={(result) => { setPaying(null); setPaid({ ...result, noTicket: mode.noTicket }) }} />
+    )
+  }
+
+  const offerOn = selected ? selected.offered : !!order?.offered
+  const target = selected ? selected.name : t.wholeOrder
+  const selectedBill = selected ? bill.lines.find((b) => b.line.id === selected.id) : null
 
   return (
     <div className="app order-screen">
       <header className="topbar">
         <button className="ghost back" onClick={back} aria-label={t.backToFloor}>{t.back}</button>
         <div className="order-title">
-          <strong>{t.table(table.label)}</strong>
-          <span><bdi>{hall.name}</bdi> · {t.seatsCount(table.seats)}</span>
+          <strong>{where}</strong>
+          <span>{place ? <><bdi>{place.hall.name}</bdi> · {t.seatsCount(place.table.seats)}</> : t.takeaway}</span>
         </div>
         <div className="spacer" />
         {order && <span className="pill occupied">{t.openOrder}</span>}
@@ -298,6 +471,7 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
       </header>
 
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
+      {notice && <div className="banner ok" onClick={() => setNotice(null)}>{notice}</div>}
 
       {loading ? (
         <div className="center muted">{t.loading}</div>
@@ -315,7 +489,7 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
               </button>
             ))}
           </nav>
-          <section className="menu-area">
+          <section className="menu-area" ref={menuRef}>
             {menu && menu.categories.length === 0 ? (
               <div className="card empty">
                 <p>{t.emptyMenu}</p>
@@ -371,14 +545,15 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
                 <p className="muted small">{t.orderHint}</p>
               ) : (
                 <ul className="lines">
-                  {lines.map((l) => (
-                    <li key={l.id} className={l.id === selectedId ? 'line on' : 'line'} onClick={() => setSelectedId(l.id)} aria-selected={l.id === selectedId}>
+                  {bill.lines.map(({ line: l, offered }) => (
+                    <li key={l.id} className={l.id === selectedId ? 'line on' : 'line'} aria-selected={l.id === selectedId}
+                      onClick={() => setSelectedId(l.id === selectedId ? null : l.id)}>
                       <div className="line-main">
                         <span className="line-name">{l.name}</span>
-                        <span className="line-total">{money(l.unit_price * l.quantity)}</span>
+                        <span className="line-total">{offered ? <s className="muted">{money(l.unit_price * l.quantity)}</s> : money(l.unit_price * l.quantity)}</span>
                       </div>
-                      {(l.offered || order?.offered) && <span className="tag offered-tag">{t.offered}</span>}
-                      {discountOf(l) && !l.offered && !order?.offered && <span className="tag">{t.discount}</span>}
+                      {offered && <span className="tag offered-tag">{t.offered}</span>}
+                      {discountOf(l) && !offered && <span className="tag">{t.discount}</span>}
                       {l.sent_at ? (
                         <div className="line-sent">✓ {t.sentAt(clock(l.sent_at))}</div>
                       ) : (
@@ -404,33 +579,91 @@ export default function OrderScreen({ table, hall, startCheckout, onBack }: Prop
               {bill.total !== bill.gross && (
                 <div className="ticket-sub"><span>{t.subtotal}</span><span>{money(bill.gross)}</span></div>
               )}
-              <div className="ticket-total">
-                <span>{t.total}</span>
-                <strong>{money(bill.total)}</strong>
-              </div>
               {bill.paid > 0 && (
-                <>
-                  <div className="ticket-sub"><span>{t.alreadyPaid}</span><span>{minus(bill.paid)}</span></div>
-                  <div className="ticket-sub remaining"><span>{t.remaining}</span><strong>{money(bill.remaining)}</strong></div>
-                </>
+                <div className="ticket-sub"><span>{t.alreadyPaid}</span><span>{minus(bill.paid)}</span></div>
               )}
               {lines.length > 0 && (
                 <button className="validate-btn" onClick={validate} disabled={busy || newCount === 0} title={t.validateHint}>
                   {newCount > 0 ? t.validateCount(newCount) : t.validate}
                 </button>
               )}
-              {lines.length > 0 && (
-                <button className="primary checkout-btn" onClick={() => setPaying(true)}>{t.checkoutAmount(money(bill.remaining))}</button>
-              )}
               <button onClick={back}>{t.doneBack}</button>
-              {order && <button className="danger" onClick={cancelOrder}>{t.cancelOrder}</button>}
             </div>
           </aside>
         </main>
       )}
 
+      {!loading && (
+        <nav className="action-bar" aria-label={t.actions}>
+          <div className="action-sum" aria-live="polite">
+            <div className="sum-row sum-total"><span>{t.total}</span><strong>{money(bill.total)}</strong></div>
+            {bill.paid > 0 && <div className="sum-row sum-rest"><span>{t.remaining}</span><strong>{money(bill.remaining)}</strong></div>}
+            {lastChange > 0 && <div className="sum-row sum-change"><span>{t.changeGiven}</span><strong>{money(lastChange)}</strong></div>}
+          </div>
+          <div className="action-btns">
+            <button onClick={suite}><i aria-hidden>＋</i>{t.actSuite}</button>
+            <button onClick={toTakeaway} disabled={busy || !place} title={place ? undefined : t.alreadyTakeaway}><i aria-hidden>🥡</i>{t.actTakeaway}</button>
+            <button onClick={() => setModal('new')} disabled={busy}><i aria-hidden>🆕</i>{t.actNewOrder}</button>
+            <button onClick={() => setModal('move')} disabled={busy}><i aria-hidden>⇄</i>{t.actMoveTable}</button>
+            <button onClick={() => setModal('invoice')} disabled={busy || !hasItems}><i aria-hidden>🧾</i>{t.actInvoice}</button>
+            <button onClick={() => setPaying({ noTicket: true })} disabled={busy || !hasItems}><i aria-hidden>💵</i>{t.actPayNoTicket}</button>
+            <button onClick={() => setModal('print')} disabled={busy || !hasItems}><i aria-hidden>🖨</i>{t.actPrint}</button>
+            <button className="act-pay" onClick={() => setPaying({})} disabled={busy || !hasItems}><i aria-hidden>💳</i>{t.actPay}</button>
+            <button onClick={() => setModal('discount')} disabled={busy || !hasItems || !!order?.offered || !!selectedBill?.offered}>
+              <i aria-hidden>%</i>{t.actDiscount}<small><bdi>{target}</bdi></small>
+            </button>
+            <button onClick={() => setPaying({ partial: true })} disabled={busy || !hasItems || bill.remaining <= 0}><i aria-hidden>½</i>{t.actPartial}</button>
+            <button className="act-cancel" onClick={cancelOrder} disabled={busy || !order}><i aria-hidden>✕</i>{t.actCancel}</button>
+            <button className={offerOn ? 'act-offer on' : 'act-offer'} aria-pressed={offerOn} onClick={offer}
+              disabled={busy || !hasItems || (!!selected && !!order?.offered)}>
+              <i aria-hidden>🎁</i>{offerOn ? t.actUnoffer : t.actOffer}<small><bdi>{target}</bdi></small>
+            </button>
+          </div>
+        </nav>
+      )}
+
       {sent && (
-        <KitchenTicketsDialog tickets={sent.tickets} sentCount={sent.sentCount} unrouted={sent.unrouted} onClose={() => setSent(null)} />
+        <KitchenTicketsDialog tickets={sent.tickets} sentCount={sent.sentCount} unrouted={sent.unrouted} reprint={sent.reprint} onClose={() => setSent(null)} />
+      )}
+      {modal === 'move' && (
+        <MoveTableDialog currentTableId={place?.table.id ?? null} busy={busy} onCancel={() => setModal(null)} onPick={moveTo} />
+      )}
+      {modal === 'discount' && order && (
+        <DiscountDialog
+          target={target}
+          base={selectedBill ? selectedBill.gross : bill.subtotal}
+          current={selected ? discountOf(selected) : discountOf(order)}
+          busy={busy}
+          onCancel={() => setModal(null)}
+          onApply={applyDiscount}
+        />
+      )}
+      {modal === 'invoice' && order && (
+        <InvoiceDialog order={order} lines={lines} payments={payments} place={where} hallName={place?.hall.name ?? null} onClose={() => { setModal(null); reloadOrder() }} />
+      )}
+      {modal === 'bill' && order && (
+        <BillDialog order={order} lines={lines} payments={payments} place={where} hallName={place?.hall.name ?? null} onClose={() => setModal(null)} />
+      )}
+      {(modal === 'print' || modal === 'new') && (
+        <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setModal(null)}>
+          <div className="dialog table-actions" role="dialog" aria-modal="true" aria-labelledby="choice-title" onKeyDown={(e) => e.key === 'Escape' && setModal(null)}>
+            <div className="panel-head">
+              <h2 id="choice-title">{modal === 'print' ? t.printWhat : t.newOrderTitle}</h2>
+              <button className="ghost" onClick={() => setModal(null)} aria-label={t.close}>✕</button>
+            </div>
+            {modal === 'print' ? (
+              <>
+                <button className="big" autoFocus onClick={reprintKitchen}>🍳 {t.printKitchen}</button>
+                <button className="big" onClick={() => setModal('bill')}>🧾 {t.printBill}</button>
+              </>
+            ) : (
+              <>
+                <button className="big" autoFocus onClick={() => newOrder('table')}>🍽 {t.newOrderTable}</button>
+                <button className="big" onClick={() => newOrder('takeaway')}>🥡 {t.newOrderTakeaway}</button>
+              </>
+            )}
+          </div>
+        </div>
       )}
       {dialog.element}
     </div>

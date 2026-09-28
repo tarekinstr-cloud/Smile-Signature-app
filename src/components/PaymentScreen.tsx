@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { repo, type OpenOrder } from '../lib/repo'
-import type { AdjustmentsPatch, Discount, DiningTable, Hall, OrderLine, PaidOrder, Payment, PaymentMethod } from '../lib/types'
+import type { AdjustmentsPatch, Discount, OrderLine, PaidOrder, Payment, PaymentMethod } from '../lib/types'
 import { money } from '../lib/format'
 import { PAYMENT_METHODS, computeBill, discountOf } from '../lib/billing'
 import { useI18n } from '../lib/i18n'
@@ -9,8 +9,14 @@ import DiscountDialog from './DiscountDialog'
 import LangToggle from './LangToggle'
 
 interface Props {
-  table: DiningTable
-  hall: Hall
+  orderId: string
+  /** "Table 4" or "À emporter n° 12". */
+  place: string
+  hallName: string | null
+  /** Opens with "Paiement partiel" already on (Paiement Partiel button). */
+  startPartial?: boolean
+  /** Payer sans ticket: shown in the title; the order screen skips the receipt afterwards. */
+  noTicket?: boolean
   /** Back to the order screen; the order stays open. */
   onBack(): void
   /** Last payment done: the order is closed and its table freed. */
@@ -29,7 +35,7 @@ export const minus = (n: number) => <bdi dir="ltr">−{money(n)}</bdi>
  * Paiement: the order with its discounts and offers on one side, the cashier's keypad on the other.
  * Takes the whole remaining amount or a part of it (partial payment) and closes the order when nothing is left.
  */
-export default function PaymentScreen({ table, hall, onBack, onPaid }: Props) {
+export default function PaymentScreen({ orderId, place, hallName, startPartial, noTicket, onBack, onPaid }: Props) {
   const { t } = useI18n()
   const [data, setData] = useState<OpenOrder | null>(null)
   const [loading, setLoading] = useState(true)
@@ -37,24 +43,24 @@ export default function PaymentScreen({ table, hall, onBack, onPaid }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [method, setMethod] = useState<PaymentMethod>('cash')
-  const [partial, setPartial] = useState(false)
+  const [partial, setPartial] = useState(!!startPartial)
   /** Part to pay now (partial payment only; otherwise everything left). */
   const [amountStr, setAmountStr] = useState('')
   const [receivedStr, setReceivedStr] = useState('')
-  const [field, setField] = useState<Field>('received')
+  const [field, setField] = useState<Field>(startPartial ? 'amount' : 'received')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   /** Discount dialog: on a line (its id) or on the whole order (null). */
   const [discountFor, setDiscountFor] = useState<{ lineId: string | null } | null>(null)
 
   const reload = useCallback(async () => {
     try {
-      const current = await repo.getOpenOrder(table.id)
+      const current = await repo.getOrder(orderId)
       setData(current)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
     setLoading(false)
-  }, [table.id])
+  }, [orderId])
 
   useEffect(() => {
     reload()
@@ -156,8 +162,8 @@ export default function PaymentScreen({ table, hall, onBack, onPaid }: Props) {
       <header className="topbar">
         <button className="ghost back" onClick={onBack} disabled={busy} aria-label={t.back}>{t.back}</button>
         <div className="order-title">
-          <strong>{t.payTitle(table.label)}</strong>
-          <span><bdi>{hall.name}</bdi> · {t.itemCount(data?.lines.reduce((s, l) => s + l.quantity, 0) ?? 0)}</span>
+          <strong>{t.payTitle(place)}{noTicket && <> · {t.noTicket}</>}</strong>
+          <span>{hallName && <><bdi>{hallName}</bdi> · </>}{t.itemCount(data?.lines.reduce((s, l) => s + l.quantity, 0) ?? 0)}</span>
         </div>
         <div className="spacer" />
         <LangToggle />

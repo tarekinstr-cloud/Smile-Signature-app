@@ -3,7 +3,7 @@ import type {
   Category, CategoryPatch, DiningTable, Hall, HallPatch, ItemOption, ItemOptionPatch, Menu, MenuItem, MenuItemPatch, MenuTable,
   NewCategory, NewItemOption, NewMenuItem, NewOptionGroup, NewOrderLine, NewTable, OptionGroup, OptionGroupPatch, Order,
   OrderLine, OrderLinePatch, PaidOrder, Payment, PaymentMethod, ReceiptSettings, TablePatch, AdjustmentsPatch,
-  CategoryPrinters, KitchenTicket, NewPrinter, Printer, PrinterPatch,
+  CategoryPrinters, KitchenTicket, NewPrinter, Printer, PrinterPatch, InvoiceCustomer, TableMove,
 } from './types'
 import { demoMenu } from './demoMenu'
 import { buildKitchenTickets, type SendResult } from './kitchen'
@@ -41,9 +41,29 @@ export interface Repo {
   deleteOption(id: string): Promise<void>
   /** The table's open order, its lines and the payments already made (partial payments), or null when the table has none. */
   getOpenOrder(tableId: string): Promise<OpenOrder | null>
+  /** An open order by id, with its lines and payments; null once it is paid or cancelled. */
+  getOrder(orderId: string): Promise<OpenOrder | null>
   /** Opens an order on the table (marking it occupied), or returns the one already open. */
   openOrder(tableId: string): Promise<Order>
-  /** Cancels an open order and frees its table. */
+  /** Opens a takeaway order: no table, and the next takeaway number. */
+  openTakeaway(): Promise<Order>
+  /** Open takeaway orders, oldest first, with their lines and payments. */
+  listOpenTakeaways(): Promise<OpenOrder[]>
+  /** Every table of every hall (Changement de Table). */
+  listAllTables(): Promise<DiningTable[]>
+  /**
+   * Changement de Table: moves an open order, with its lines (and their kitchen status) and payments, to a free table,
+   * or makes it a takeaway order (tableId null). The old table is freed and the move is logged in table_moves.
+   * Refused when the target table already has an open order.
+   */
+  moveOrder(orderId: string, tableId: string | null): Promise<Order>
+  /** Moves logged for an order, oldest first. */
+  listTableMoves(orderId: string): Promise<TableMove[]>
+  /** Facture: saves the optional customer on the order and gives it an invoice number the first time. */
+  issueInvoice(orderId: string, customer: InvoiceCustomer): Promise<Order>
+  /** Kitchen tickets already sent for an order (reprint), oldest first. */
+  listKitchenTickets(orderId: string): Promise<KitchenTicket[]>
+  /** Cancels an open order and frees its table. Refused once a payment has been made on it. */
   cancelOrder(orderId: string): Promise<void>
   addLine(orderId: string, line: NewOrderLine): Promise<OrderLine>
   updateLine(id: string, patch: OrderLinePatch): Promise<void>
@@ -113,7 +133,8 @@ export interface OpenOrder {
   payments: Payment[]
 }
 
-const ORDER_COLS = 'id, table_id, status, note, created_at, discount_type, discount_value, offered'
+// All columns: the order-actions migration adds some, and the screens keep working before it is run.
+const ORDER_COLS = '*'
 
 function checkAdjustments(patch: AdjustmentsPatch) {
   const v = patch.discount_value
@@ -133,6 +154,13 @@ function checkoutError(code: string): Error {
   if (code.includes('amount_too_low')) return new Error(t.errAmountTooLow)
   if (code.includes('amount_invalid')) return new Error(t.errAmountInvalid)
   if (code.includes('below_paid')) return new Error(t.errBelowPaid)
+  if (code.includes('table_occupied') || code.includes('orders_one_open_per_table')) return new Error(t.errTableOccupied)
+  if (code.includes('table_not_found')) return new Error(t.errTableNotFound)
+  if (code.includes('cancel_paid')) return new Error(t.errCancelPaid)
+  // Takeaway, table moves and invoices need the order-actions migration.
+  if (/order_type|takeaway|table_moves|move_order|issue_invoice|invoice_no|customer_/.test(code) && /does not exist|schema cache|Could not find/i.test(code)) {
+    return new Error(t.errMigrationActions)
+  }
   // Payments need the payments migration; tell the user which file to run instead of a raw schema error.
   if (/add_payment|payments|discount_|offered/.test(code) && /does not exist|schema cache|Could not find/i.test(code)) return new Error(t.errMigration)
   return new Error(code)
@@ -251,6 +279,67 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       ])
       return { order, lines: (check(lines) as OrderLine[]).map(normalizeLine), payments }
     },
+    async getOrder(orderId) {
+      const res = await sb.from('orders').select(ORDER_COLS).eq('id', orderId).eq('status', 'open').maybeSingle()
+      if (res.error) throw checkoutError(res.error.message)
+      if (!res.data) return null
+      const order = normalizeOrder(res.data as Order)
+      const [lines, payments] = await Promise.all([
+        sb.from('order_items').select('*').eq('order_id', order.id).order('created_at'),
+        this.listPayments(order.id),
+      ])
+      return { order, lines: (check(lines) as OrderLine[]).map(normalizeLine), payments }
+    },
+    async openTakeaway() {
+      const res = await sb.from('orders').insert({ table_id: null, order_type: 'takeaway' }).select(ORDER_COLS).single()
+      if (res.error) throw checkoutError(res.error.message)
+      return normalizeOrder(res.data as Order)
+    },
+    async listOpenTakeaways() {
+      const res = await sb.from('orders').select(ORDER_COLS).eq('status', 'open').eq('order_type', 'takeaway').order('created_at')
+      if (res.error) {
+        // Before the order-actions migration there are no takeaway orders.
+        if (/does not exist|schema cache|Could not find/i.test(res.error.message)) return []
+        throw new Error(res.error.message)
+      }
+      const orders = (res.data as Order[]).map(normalizeOrder)
+      if (!orders.length) return []
+      const ids = orders.map((o) => o.id)
+      const [lines, payments] = await Promise.all([
+        sb.from('order_items').select('*').in('order_id', ids).order('created_at'),
+        sb.from('payments').select('id, order_id, method, amount, received, change_amount, created_at').in('order_id', ids).order('created_at'),
+      ])
+      const allLines = (check(lines) as OrderLine[]).map(normalizeLine)
+      const allPayments = payments.error ? [] : (payments.data as Payment[]).map(normalizePayment)
+      return orders.map((order) => ({
+        order,
+        lines: allLines.filter((l) => l.order_id === order.id),
+        payments: allPayments.filter((p) => p.order_id === order.id),
+      }))
+    },
+    async listAllTables() {
+      return check(await sb.from('tables').select('*').order('created_at')) as DiningTable[]
+    },
+    async moveOrder(orderId, tableId) {
+      const res = await sb.rpc('move_order', { p_order_id: orderId, p_table_id: tableId, p_user_name: await this.waiterName() })
+      if (res.error) throw checkoutError(res.error.message)
+      return normalizeOrder(res.data as Order)
+    },
+    async listTableMoves(orderId) {
+      const res = await sb.from('table_moves').select('*').eq('order_id', orderId).order('moved_at')
+      if (res.error) throw checkoutError(res.error.message)
+      return res.data as TableMove[]
+    },
+    async issueInvoice(orderId, customer) {
+      const res = await sb.rpc('issue_invoice', { p_order_id: orderId, p_name: customer.name, p_address: customer.address })
+      if (res.error) throw checkoutError(res.error.message)
+      return normalizeOrder(res.data as Order)
+    },
+    async listKitchenTickets(orderId) {
+      const res = await sb.from('kitchen_tickets').select('*').eq('order_id', orderId).order('created_at')
+      if (res.error) throw checkoutError(res.error.message)
+      return res.data as KitchenTicket[]
+    },
     async openOrder(tableId) {
       const res = await sb.from('orders').insert({ table_id: tableId }).select(ORDER_COLS).single()
       // 23505: another device opened an order on this table first.
@@ -261,6 +350,7 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       return normalizeOrder(check(res) as Order)
     },
     async cancelOrder(orderId) {
+      if ((await this.listPayments(orderId)).length) throw checkoutError('cancel_paid')
       check(await sb.from('orders').update({ status: 'cancelled' }).eq('id', orderId).eq('status', 'open'))
     },
     async addLine(orderId, line) {
@@ -389,7 +479,15 @@ function groupLinks(rows: { category_id: string; printer_id: string }[]): Catego
 }
 
 function normalizeOrder(o: Order): Order {
-  return normalizeAdjustments(o)
+  // Rows saved before the order-actions migration (or old demo data) have no type, number or customer.
+  return {
+    ...normalizeAdjustments(o),
+    order_type: o.order_type === 'takeaway' ? 'takeaway' : 'dine_in',
+    takeaway_no: o.takeaway_no == null ? null : Number(o.takeaway_no),
+    customer_name: o.customer_name ?? null,
+    customer_address: o.customer_address ?? null,
+    invoice_no: o.invoice_no == null ? null : Number(o.invoice_no),
+  }
 }
 
 function normalizePaid(o: PaidOrder): PaidOrder {
@@ -424,6 +522,12 @@ function buildMenu(categories: Category[], items: MenuItem[], groups: Omit<Optio
     groups: byItem,
   }
 }
+
+const newOrder = (tableId: string | null): Order => ({
+  id: crypto.randomUUID(), table_id: tableId, status: 'open', note: null, created_at: new Date().toISOString(),
+  discount_type: null, discount_value: 0, offered: false,
+  order_type: 'dine_in', takeaway_no: null, customer_name: null, customer_address: null, invoice_no: null,
+})
 
 const KEY = 'smile.floor.v1'
 
@@ -473,6 +577,10 @@ interface LocalOrdersDb {
   kitchenTickets?: KitchenTicket[]
   /** Missing in demo data saved before partial payments existed. */
   payments?: Payment[]
+  /** Missing in demo data saved before takeaway orders, table moves and invoices existed. */
+  lastTakeaway?: number
+  lastInvoice?: number
+  tableMoves?: TableMove[]
 }
 
 function localRepo(): Repo {
@@ -566,6 +674,12 @@ function localRepo(): Repo {
     db.tables = db.tables.map((t) => (t.id === tableId ? { ...t, status } : t))
     commit(db)
   }
+
+  const openOrderOf = (db: LocalOrdersDb, order: Order): OpenOrder => ({
+    order: normalizeOrder(order),
+    lines: db.lines.filter((l) => l.order_id === order.id).map((l) => normalizeAdjustments({ ...l, sent_at: l.sent_at ?? null })),
+    payments: (db.payments ?? []).filter((p) => p.order_id === order.id),
+  })
 
   return {
     mode: 'local',
@@ -686,18 +800,84 @@ function localRepo(): Repo {
     async getOpenOrder(tableId) {
       const db = loadOrders()
       const order = db.orders.find((o) => o.table_id === tableId && o.status === 'open')
-      if (!order) return null
-      return {
-        order: normalizeOrder(order),
-        lines: db.lines.filter((l) => l.order_id === order.id).map((l) => normalizeAdjustments({ ...l, sent_at: l.sent_at ?? null })),
-        payments: (db.payments ?? []).filter((p) => p.order_id === order.id),
+      return order ? openOrderOf(db, order) : null
+    },
+    async getOrder(orderId) {
+      const db = loadOrders()
+      const order = db.orders.find((o) => o.id === orderId && o.status === 'open')
+      return order ? openOrderOf(db, order) : null
+    },
+    async openTakeaway() {
+      const db = loadOrders()
+      const takeaway_no = (db.lastTakeaway ?? 0) + 1
+      const order: Order = { ...newOrder(null), order_type: 'takeaway', takeaway_no }
+      db.lastTakeaway = takeaway_no
+      db.orders.push(order)
+      commitOrders(db)
+      return order
+    },
+    async listOpenTakeaways() {
+      const db = loadOrders()
+      return db.orders
+        .filter((o) => o.status === 'open' && o.order_type === 'takeaway')
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        .map((o) => openOrderOf(db, o))
+    },
+    async listAllTables() {
+      return load().tables
+    },
+    // Mirrors public.move_order() in the order-actions migration.
+    async moveOrder(orderId, tableId) {
+      const db = loadOrders()
+      const order = db.orders.find((o) => o.id === orderId)
+      if (!order || order.status !== 'open') throw checkoutError('order_not_open')
+      if ((order.table_id ?? null) === tableId) return normalizeOrder(order)
+      const floor = load()
+      const to = tableId ? floor.tables.find((x) => x.id === tableId) : null
+      if (tableId && !to) throw checkoutError('table_not_found')
+      if (tableId && db.orders.some((o) => o.table_id === tableId && o.status === 'open')) throw checkoutError('table_occupied')
+      const from = order.table_id ? floor.tables.find((x) => x.id === order.table_id) ?? null : null
+      const fromId = order.table_id
+      order.table_id = tableId
+      order.order_type = tableId ? 'dine_in' : 'takeaway'
+      if (!tableId && order.takeaway_no == null) {
+        order.takeaway_no = (db.lastTakeaway ?? 0) + 1
+        db.lastTakeaway = order.takeaway_no
       }
+      ;(db.tableMoves ??= []).push({
+        id: crypto.randomUUID(), order_id: orderId, from_table_id: fromId, to_table_id: tableId,
+        from_label: from?.label ?? null, to_label: to?.label ?? null, moved_by_name: await this.waiterName(), moved_at: new Date().toISOString(),
+      })
+      commitOrders(db)
+      if (fromId && !db.orders.some((o) => o.table_id === fromId && o.status === 'open')) setTableStatus(fromId, 'free')
+      setTableStatus(tableId, 'occupied')
+      return normalizeOrder(order)
+    },
+    async listTableMoves(orderId) {
+      return (loadOrders().tableMoves ?? []).filter((m) => m.order_id === orderId)
+    },
+    async issueInvoice(orderId, customer) {
+      const db = loadOrders()
+      const order = db.orders.find((o) => o.id === orderId)
+      if (!order || order.status === 'cancelled') throw checkoutError('order_not_open')
+      if (!db.lines.some((l) => l.order_id === orderId)) throw checkoutError('order_empty')
+      order.customer_name = customer.name.trim() || null
+      order.customer_address = customer.address.trim() || null
+      if (order.invoice_no == null) {
+        order.invoice_no = (db.lastInvoice ?? 0) + 1
+        db.lastInvoice = order.invoice_no
+      }
+      commitOrders(db)
+      return normalizeOrder(order)
+    },
+    async listKitchenTickets(orderId) {
+      return (loadOrders().kitchenTickets ?? []).filter((k) => k.order_id === orderId)
     },
     async openOrder(tableId) {
       const db = loadOrders()
       let order = db.orders.find((o) => o.table_id === tableId && o.status === 'open')
       if (!order) {
-        order = { id: crypto.randomUUID(), table_id: tableId, status: 'open', note: null, created_at: new Date().toISOString(), discount_type: null, discount_value: 0, offered: false }
+        order = newOrder(tableId)
         db.orders.push(order)
         commitOrders(db)
       }
@@ -708,6 +888,7 @@ function localRepo(): Repo {
       const db = loadOrders()
       const order = db.orders.find((o) => o.id === orderId && o.status === 'open')
       if (!order) return
+      if ((db.payments ?? []).some((p) => p.order_id === orderId)) throw checkoutError('cancel_paid')
       order.status = 'cancelled'
       commitOrders(db)
       setTableStatus(order.table_id, 'free')
