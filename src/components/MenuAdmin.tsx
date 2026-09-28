@@ -89,12 +89,19 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
     await change(() => repo.deleteCategory(c.id))
   }
 
-  /** Adds the printer to the category, or removes it: a printer is never chosen twice. */
-  function togglePrinter(c: Category, printerId: string) {
-    const current = links[c.id] ?? []
-    const next = current.includes(printerId) ? current.filter((id) => id !== printerId) : [...current, printerId]
+  /** Saves the category's printers; duplicates are dropped, so a printer is never chosen twice. */
+  function savePrinters(c: Category, ids: string[]) {
+    const next = [...new Set(ids.filter(Boolean))]
     setLinks({ ...links, [c.id]: next })
     change(() => repo.setCategoryPrinters(c.id, next))
+  }
+
+  /** Changes the printer in one dropdown; "Aucune" removes it. */
+  function setPrinterAt(c: Category, index: number, printerId: string) {
+    const current = [...(links[c.id] ?? [])]
+    if (printerId) current[index] = printerId
+    else current.splice(index, 1)
+    savePrinters(c, current)
   }
 
   function moveCategory(index: number, dir: -1 | 1) {
@@ -195,7 +202,9 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
                       <span className="dot" style={{ background: c.color }} />
                       <span className="grow">{c.name}</span>
                       {!c.active && <span className="tag">{t.hiddenF}</span>}
-                      {printers.length > 0 && !links[c.id]?.length && <span className="tag warn">{t.noPrinterTag}</span>}
+                      {printers.length > 0 && (links[c.id]?.length
+                        ? <span className="tag">{links[c.id].map((id) => printers.find((p) => p.id === id)?.name).filter(Boolean).join(t.listSep)}</span>
+                        : <span className="tag warn">{t.noPrinterTag}</span>)}
                       <span className="muted small">{menu.items.filter((x) => x.category_id === c.id).length}</span>
                     </button>
                     <span className="order-btns">
@@ -236,17 +245,35 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
                       <span className="muted small">{t.noPrintersYet}</span>
                     ) : (
                       <>
-                        <div className="printer-chips">
-                          {printers.map((p) => {
-                            const on = links[category.id]?.includes(p.id) ?? false
-                            return (
-                              <button key={p.id} className={on ? 'supp-btn on' : 'supp-btn'} aria-pressed={on} disabled={busy}
-                                onClick={() => togglePrinter(category, p.id)}>
-                                {on ? '✓ ' : ''}<bdi>{p.name}</bdi>
-                              </button>
-                            )
-                          })}
-                        </div>
+                        {(() => {
+                          const chosen = links[category.id] ?? []
+                          const slots = chosen.length ? chosen : ['']
+                          return (
+                            <>
+                              {slots.map((id, i) => (
+                                <div key={i} className="printer-select-row">
+                                  <select value={id} disabled={busy} aria-label={t.categoryPrinters}
+                                    onChange={(e) => setPrinterAt(category, i, e.target.value)}>
+                                    <option value="">{t.noPrinter}</option>
+                                    {printers.filter((p) => p.id === id || !chosen.includes(p.id)).map((p) => (
+                                      <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                  </select>
+                                  {chosen.length > 1 && (
+                                    <button className="ghost icon" disabled={busy} title={t.removePrinter} aria-label={t.removePrinter}
+                                      onClick={() => setPrinterAt(category, i, '')}>✕</button>
+                                  )}
+                                </div>
+                              ))}
+                              {chosen.length > 0 && chosen.length < printers.length && (
+                                <button className="ghost add-option" disabled={busy}
+                                  onClick={() => savePrinters(category, [...chosen, printers.find((p) => !chosen.includes(p.id))!.id])}>
+                                  {t.addAnotherPrinter}
+                                </button>
+                              )}
+                            </>
+                          )
+                        })()}
                         <span className="muted small">{t.categoryPrintersHint}</span>
                       </>
                     )}

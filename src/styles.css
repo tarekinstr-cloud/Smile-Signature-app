@@ -296,3 +296,6 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .kt-note { font-style: italic; }
 .unrouted { display: flex; flex-direction: column; gap: 6px; border: 1px solid #fcd34d; background: #fffbeb; border-radius: 8px; padding: 10px 12px; }
 
+.printer-select-row { display: flex; gap: 6px; align-items: center; max-width: 360px; }
+.admin-list li.printer-item { flex-direction: column; align-items: stretch; padding-bottom: 10px; }
+.printer-links { display: flex; flex-direction: column; gap: 6px; padding-inline-start: 44px; }
