@@ -32,7 +32,7 @@ export default function ReceiptDialog({ order, lines, payments, place, hallName,
     try {
       setError(null)
       await repo.updateReceiptSettings(next)
-      setSettings(next)
+      setSettings({ ...editing, ...next })
       setEditing(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

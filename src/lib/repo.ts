@@ -152,6 +152,7 @@ export const defaultReceiptSettings = (): ReceiptSettings => ({
   name: 'Smile Signature',
   header: '',
   footer: 'Merci de votre visite — Bon Appétit !',
+  logo: null,
 })
 
 function checkoutError(code: string): Error {
@@ -459,8 +460,9 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       if (upd.error) throw checkoutError(upd.error.message)
     },
     async getReceiptSettings() {
-      const row = check(await sb.from('receipt_settings').select('name, header, footer').eq('id', 1).maybeSingle()) as ReceiptSettings | null
-      return row ?? defaultReceiptSettings()
+      // All columns: the logo column comes with a later migration.
+      const row = check(await sb.from('receipt_settings').select('*').eq('id', 1).maybeSingle()) as ReceiptSettings | null
+      return row ? { name: row.name, header: row.header, footer: row.footer, logo: row.logo ?? null } : defaultReceiptSettings()
     },
     async updateReceiptSettings(patch) {
       check(await sb.from('receipt_settings').upsert({ id: 1, ...patch }))

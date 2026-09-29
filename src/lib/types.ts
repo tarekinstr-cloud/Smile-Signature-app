@@ -226,6 +226,8 @@ export interface ReceiptSettings {
   header: string
   /** Closing message, e.g. "Merci de votre visite — Bon Appétit !". */
   footer: string
+  /** Logo printed at the top, as an image data URL. Empty: the app icon. */
+  logo?: string | null
 }
 
 /** A kitchen / bar / cashier printer. The IP address is only needed once tickets are really printed. */
@@ -300,6 +302,43 @@ export interface StaffAccount {
   email: string
   created_at: string | null
   last_sign_in_at: string | null
+}
+
+export type UserRole = 'admin' | 'manager' | 'cashier' | 'waiter'
+export const USER_ROLES: UserRole[] = ['admin', 'manager', 'cashier', 'waiter']
+
+/** A user of the app (page Utilisateurs): the name used to sign in, the name shown, the role. */
+export interface AppUser {
+  id: string
+  username: string
+  display_name: string
+  /** Null: an account created outside the app (Supabase dashboard) that has no profile yet. */
+  role: UserRole | null
+  active: boolean
+  email: string | null
+  created_at: string | null
+  last_sign_in_at: string | null
+}
+
+/** A new user (no id) or changes to one. An empty password keeps the current one. */
+export interface UserInput {
+  id?: string
+  username: string
+  display_name: string
+  role: UserRole
+  password: string
+  active: boolean
+}
+
+/** One export of the database (page Sauvegarder la base de données). */
+export interface BackupLogEntry {
+  id: string
+  created_at: string
+  user_label: string
+  format: 'json' | 'csv'
+  tables: string[]
+  row_count: number
+  size_bytes: number
 }
 
 export interface TopItem {

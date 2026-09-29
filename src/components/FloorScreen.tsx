@@ -211,12 +211,19 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
     setPrinterSettings(false)
   }
   const onBo = (page: BackOfficePage) => backOffice === page
+  const openBo = (page: BackOfficePage) => {
+    toFloor()
+    setBackOffice(page)
+  }
   const adminGroups: AdminMenuGroup[] = [
     {
-      id: 'file', label: t.navFile, items: [
-        { id: 'service', label: t.serviceMode, checked: !backOffice && mode === 'service', onSelect: () => { toFloor(); setMode('service') } },
+      id: 'file', label: t.navFile, current: onBo('users') || onBo('backup') || onBo('ticket'), items: [
+        { id: 'users', label: t.fileUsers, checked: onBo('users'), onSelect: () => openBo('users') },
+        { id: 'backup', label: t.fileBackup, checked: onBo('backup'), onSelect: () => openBo('backup') },
+        { id: 'ticket', label: t.fileTicket, checked: onBo('ticket'), onSelect: () => openBo('ticket') },
+        { id: 'service', label: t.serviceMode, separator: true, checked: !backOffice && mode === 'service', onSelect: () => { toFloor(); setMode('service') } },
         { id: 'lang', label: t.languageItem(t.switchTo), onSelect: () => setLang(lang === 'fr' ? 'ar' : 'fr') },
-        ...(onSignOut ? [{ id: 'signout', label: t.signOut, onSelect: onSignOut }] : []),
+        ...(onSignOut ? [{ id: 'signout', label: t.signOut, separator: true, onSelect: onSignOut }] : []),
       ],
     },
     { id: 'clients', label: t.navClients, items: [{ id: 'clients', label: t.clientsSoon, disabled: true }] },
@@ -272,7 +279,8 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
       <>
         <BackOffice page={backOffice} menu={adminMenu} onBack={() => setBackOffice(null)}
           onOpenMenu={() => { setBackOffice(null); setMenuAdmin(true) }}
-          onOpenPrinters={() => { setBackOffice(null); setPrinterSettings(true) }} />
+          onOpenPrinters={() => { setBackOffice(null); setPrinterSettings(true) }}
+          onOpenTicket={() => setBackOffice('ticket')} />
         {infoDialog}
       </>
     )
