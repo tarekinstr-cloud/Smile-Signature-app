@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { repo, type OpenOrder } from '../lib/repo'
+import { repo, supabase, type OpenOrder } from '../lib/repo'
 import type { DiningTable, Hall, TablePatch } from '../lib/types'
 import FloorPlan from './FloorPlan'
 import TablePanel from './TablePanel'
@@ -15,7 +15,8 @@ import { useI18n } from '../lib/i18n'
 import { deliveryContact, placeText } from '../lib/place'
 import DeliveryDialog from './DeliveryDialog'
 import BackOffice from './backoffice/BackOffice'
-import MenuBar from './backoffice/MenuBar'
+import AdminMenu, { type AdminMenuGroup } from './nav/AdminMenu'
+import ServiceTabs from './nav/ServiceTabs'
 import type { BackOfficePage } from './backoffice/pages'
 
 type Mode = 'service' | 'edit'
@@ -45,10 +46,14 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   const [menuAdmin, setMenuAdmin] = useState(false)
   const [printerSettings, setPrinterSettings] = useState(false)
   const [backOffice, setBackOffice] = useState<BackOfficePage | null>(null)
+  /** Small dialogs from the navigation: the account (Connexion tab) and Aide → À propos. */
+  const [info, setInfo] = useState<'account' | 'about' | null>(null)
+  const [restaurant, setRestaurant] = useState('Smile Signature')
+  const [email, setEmail] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const dialog = useDialog()
-  const { t } = useI18n()
+  const { t, lang, setLang } = useI18n()
 
   const hall = halls.find((h) => h.id === hallId) ?? null
   const selected = tables.find((t) => t.id === selectedId) ?? null
@@ -78,6 +83,13 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   }, [reload])
 
   useEffect(() => repo.subscribe(() => reload()), [reload])
+
+  useEffect(() => {
+    repo.getReceiptSettings().then((r) => r.name && setRestaurant(r.name), () => {})
+  }, [backOffice])
+  useEffect(() => {
+    supabase?.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null), () => setEmail(null))
+  }, [])
 
   const reloadTakeaways = useCallback(() => {
     repo.listOpenOrders('takeaway').then(setTakeaways, () => setTakeaways([]))
@@ -192,13 +204,77 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
     })
   }
 
+  /** Leaves the back-office and any open screen, back to the floor plan. */
+  const toFloor = () => {
+    setBackOffice(null)
+    setMenuAdmin(false)
+    setPrinterSettings(false)
+  }
+  const onBo = (page: BackOfficePage) => backOffice === page
+  const adminGroups: AdminMenuGroup[] = [
+    {
+      id: 'file', label: t.navFile, items: [
+        { id: 'service', label: t.serviceMode, checked: !backOffice && mode === 'service', onSelect: () => { toFloor(); setMode('service') } },
+        { id: 'lang', label: t.languageItem(t.switchTo), onSelect: () => setLang(lang === 'fr' ? 'ar' : 'fr') },
+        ...(onSignOut ? [{ id: 'signout', label: t.signOut, onSelect: onSignOut }] : []),
+      ],
+    },
+    { id: 'clients', label: t.navClients, items: [{ id: 'clients', label: t.clientsSoon, disabled: true }] },
+    {
+      id: 'edit', label: t.navEdit, items: [
+        { id: 'plan', label: t.editPlanItem, checked: !backOffice && mode === 'edit', onSelect: () => { toFloor(); setMode('edit') } },
+        { id: 'hall', label: t.addHall, onSelect: () => { toFloor(); addHall() } },
+        { id: 'menu', label: t.menuTitle, onSelect: () => { toFloor(); setMenuAdmin(true) } },
+      ],
+    },
+    { id: 'staff', label: t.staff, current: onBo('staff'), onSelect: () => setBackOffice('staff') },
+    {
+      id: 'stock', label: t.stock, current: onBo('stock') || onBo('suppliers'), items: [
+        { id: 'stock', label: t.stockSub, checked: onBo('stock'), onSelect: () => setBackOffice('stock') },
+        { id: 'suppliers', label: t.suppliers, checked: onBo('suppliers'), onSelect: () => setBackOffice('suppliers') },
+      ],
+    },
+    {
+      id: 'stats', label: t.navStats, current: onBo('stats'), items: [
+        { id: 'sales', label: t.statsSales, checked: onBo('stats'), onSelect: () => setBackOffice('stats') },
+        { id: 'profit', label: t.profitSoon, disabled: true },
+      ],
+    },
+    {
+      id: 'settings', label: t.settings, current: onBo('settings'), items: [
+        { id: 'general', label: t.settingsGeneral, checked: onBo('settings'), onSelect: () => setBackOffice('settings') },
+        { id: 'printers', label: t.printers, onSelect: () => { toFloor(); setPrinterSettings(true) } },
+      ],
+    },
+    { id: 'help', label: t.navHelp, items: [{ id: 'about', label: t.about, onSelect: () => setInfo('about') }] },
+  ]
+  const adminMenu = <AdminMenu groups={adminGroups} end={<LangToggle />} />
+  const infoDialog = info && (
+    <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setInfo(null)}>
+      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="info-title" onKeyDown={(e) => e.key === 'Escape' && setInfo(null)}>
+        <div className="panel-head">
+          <h2 id="info-title">{info === 'account' ? t.account : t.about}</h2>
+          <button className="ghost" onClick={() => setInfo(null)} aria-label={t.close}>✕</button>
+        </div>
+        {info === 'about' && <p className="small">{t.aboutText}</p>}
+        <p className="muted small">
+          {repo.mode === 'local' ? t.aboutDemo : info === 'account' && email ? t.signedInAs(email) : t.aboutOnline}
+        </p>
+        {info === 'account' && onSignOut && <button className="danger" onClick={onSignOut}>{t.signOut}</button>}
+      </div>
+    </div>
+  )
+
   if (menuAdmin) return <MenuAdmin onBack={() => setMenuAdmin(false)} />
   if (printerSettings) return <PrinterSettings onBack={() => setPrinterSettings(false)} />
   if (backOffice) {
     return (
-      <BackOffice page={backOffice} onBack={() => setBackOffice(null)}
-        onOpenMenu={() => { setBackOffice(null); setMenuAdmin(true) }}
-        onOpenPrinters={() => { setBackOffice(null); setPrinterSettings(true) }} />
+      <>
+        <BackOffice page={backOffice} menu={adminMenu} onBack={() => setBackOffice(null)}
+          onOpenMenu={() => { setBackOffice(null); setMenuAdmin(true) }}
+          onOpenPrinters={() => { setBackOffice(null); setPrinterSettings(true) }} />
+        {infoDialog}
+      </>
     )
   }
 
@@ -224,36 +300,10 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
 
   return (
     <div className={`app mode-${mode}`}>
-      <header className="topbar">
-        <div className="brand">
-          <img src="/icon.svg" alt="" width={28} height={28} />
-          <span>Smile Signature</span>
-        </div>
-        <nav className="tabs" aria-label={t.halls}>
-          {halls.map((h) => (
-            <button key={h.id} className={h.id === hallId ? 'tab active' : 'tab'} onClick={() => { setHallId(h.id); setSelectedId(null) }}>
-              {h.name}
-            </button>
-          ))}
-          <button className="tab add" onClick={addHall} title={t.addHall}>{t.addHallTab}</button>
-        </nav>
-        <div className="spacer" />
-        <div className="segmented" role="group" aria-label={t.mode}>
-          <button className={mode === 'service' ? 'on' : ''} onClick={() => setMode('service')}>{t.service}</button>
-          <button className={mode === 'edit' ? 'on' : ''} onClick={() => setMode('edit')}>{t.editPlan}</button>
-        </div>
-        <button className="takeaway-btn" onClick={() => setOpenList('takeaway')} title={t.takeawayOrders}>
-          🥡 {t.takeawayBtn}{takeaways.length > 0 && <span className="count">{takeaways.length}</span>}
-        </button>
-        <button className="takeaway-btn" onClick={() => setOpenList('delivery')} title={t.deliveryOrders}>
-          🛵 {t.deliveryBtn}{deliveries.length > 0 && <span className="count">{deliveries.length}</span>}
-        </button>
-        <button className="ghost" onClick={() => setMenuAdmin(true)} title={t.menuTitle}>{t.menu}</button>
-        <button className="ghost" onClick={() => setPrinterSettings(true)} title={t.printersTitle}>{t.printers}</button>
-        {onSignOut && <button className="ghost" onClick={onSignOut}>{t.signOut}</button>}
-        <LangToggle />
-      </header>
-      <MenuBar onOpen={setBackOffice} />
+      {adminMenu}
+      <ServiceTabs restaurant={restaurant} halls={halls} hallId={hallId} takeaways={takeaways.length} deliveries={deliveries.length}
+        onAccount={() => setInfo('account')} onHall={(id) => { setHallId(id); setSelectedId(null) }} onAddHall={addHall}
+        onTakeaway={() => setOpenList('takeaway')} onDelivery={() => setOpenList('delivery')} />
 
       {repo.mode === 'local' && (
         <div className="banner">{t.demoBanner}</div>
@@ -280,6 +330,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
                   {mode === 'service' ? t.hintService : t.hintEdit}
                 </span>
                 {mode === 'edit' && <button className="primary" onClick={addTable}>{t.addTable}</button>}
+                {mode === 'edit' && <button onClick={() => setMode('service')}>✓ {t.doneEditing}</button>}
               </div>
               <FloorPlan
                 hall={hall}
@@ -367,6 +418,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
             openTakeaway(order.id)
           }} />
       )}
+      {infoDialog}
       {dialog.element}
     </div>
   )
