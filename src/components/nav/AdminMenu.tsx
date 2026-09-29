@@ -9,6 +9,8 @@ export interface AdminMenuItem {
   disabled?: boolean
   /** Shown with a check mark (current mode or page). */
   checked?: boolean
+  /** A line above the item, to group the menu's entries. */
+  separator?: boolean
 }
 
 export interface AdminMenuGroup {
@@ -61,7 +63,7 @@ export default function AdminMenu({ groups, end }: { groups: AdminMenuGroup[]; e
   }
 
   const itemButton = (it: AdminMenuItem) => (
-    <button key={it.id} role="menuitem" className="admin-item" disabled={it.disabled} aria-checked={it.checked}
+    <button key={it.id} role="menuitem" className={`admin-item${it.separator ? ' sep' : ''}`} disabled={it.disabled} aria-checked={it.checked}
       onClick={() => pick(it.onSelect)}>
       <span className="check" aria-hidden>{it.checked ? '✓' : ''}</span>
       {it.label}

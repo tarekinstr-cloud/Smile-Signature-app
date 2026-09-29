@@ -41,7 +41,7 @@ export default function Receipt({ settings, order, lines, payments, place, hallN
 
   return (
     <div className="receipt">
-      <img className="receipt-logo" src="/icon.svg" alt="" width={64} height={64} />
+      <img className="receipt-logo" src={settings.logo || '/icon.svg'} alt="" width={64} height={64} />
       <div className="receipt-name" dir="auto">{settings.name}</div>
       {/* Each line picks its own direction, so French text stays readable on an Arabic ticket and vice versa. */}
       {settings.header && <div className="receipt-header">{textLines(settings.header)}</div>}
