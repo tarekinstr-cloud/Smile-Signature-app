@@ -304,8 +304,9 @@ export interface StaffAccount {
   last_sign_in_at: string | null
 }
 
-export type UserRole = 'admin' | 'manager' | 'cashier' | 'waiter'
-export const USER_ROLES: UserRole[] = ['admin', 'manager', 'cashier', 'waiter']
+/** Admin: everything. Employé (server, cashier): the service screen only. */
+export type UserRole = 'admin' | 'employe'
+export const USER_ROLES: UserRole[] = ['admin', 'employe']
 
 /** A user of the app (page Utilisateurs): the name used to sign in, the name shown, the role. */
 export interface AppUser {

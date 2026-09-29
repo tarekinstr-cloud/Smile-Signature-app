@@ -155,10 +155,13 @@ async function sha256(text: string): Promise<string> {
 /** Demo administrator: admin / 1234. */
 export const DEMO_ADMIN = { username: 'admin', password: '1234' }
 
+const toRole = (r: string | null): UserRole => (r === 'admin' || r === 'manager' ? 'admin' : 'employe')
+
 export function loadLocalUsers(): LocalUser[] {
   try {
     const raw = localStorage.getItem(USERS_KEY)
-    if (raw) return JSON.parse(raw) as LocalUser[]
+    // Older demo data had four roles: Gérant became admin, Caissier and Serveur became employé.
+    if (raw) return (JSON.parse(raw) as LocalUser[]).map((u) => ({ ...u, role: toRole(u.role as string | null) }))
   } catch {
     // Storage blocked or unreadable: start again from the demo administrator.
   }
@@ -220,8 +223,8 @@ function localAdmin(): Admin {
     async isAdmin() {
       const me = localStorage.getItem('smile.session.v1')
       const users = loadLocalUsers()
-      // Before the login screen exists, the demo device is used as its administrator.
-      return !me || users.some((u) => u.id === me && u.role === 'admin' && u.active)
+      // The signed-in demo account (login screen), when it is an active admin.
+      return users.some((u) => u.id === me && u.role === 'admin' && u.active)
     },
     async currentUserId() {
       try {

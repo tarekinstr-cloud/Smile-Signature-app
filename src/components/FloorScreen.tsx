@@ -15,7 +15,7 @@ import { useI18n } from '../lib/i18n'
 import { deliveryContact, placeText } from '../lib/place'
 import DeliveryDialog from './DeliveryDialog'
 import BackOffice from './backoffice/BackOffice'
-import AdminMenu, { type AdminMenuGroup } from './nav/AdminMenu'
+import AdminMenu, { type AdminMenuGroup, type AdminMenuItem } from './nav/AdminMenu'
 import ServiceTabs from './nav/ServiceTabs'
 import type { BackOfficePage } from './backoffice/pages'
 import type { SessionUser } from '../lib/auth'
@@ -28,7 +28,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   const [halls, setHalls] = useState<Hall[]>([])
   const [hallId, setHallId] = useState<string | null>(null)
   const [tables, setTables] = useState<DiningTable[]>([])
-  const [mode, setMode] = useState<Mode>('service')
+  const [modeState, setMode] = useState<Mode>('service')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [orderTableId, setOrderTableId] = useState<string | null>(null)
   const [checkoutFirst, setCheckoutFirst] = useState(false)
@@ -54,6 +54,9 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   const [loading, setLoading] = useState(true)
   const dialog = useDialog()
   const { t, lang, setLang } = useI18n()
+  const isAdmin = user.role === 'admin'
+  /** Editing the floor plan is an admin task. */
+  const mode: Mode = isAdmin ? modeState : 'service'
 
   const hall = halls.find((h) => h.id === hallId) ?? null
   const selected = tables.find((t) => t.id === selectedId) ?? null
@@ -158,6 +161,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   }
 
   async function addHall() {
+    if (!isAdmin) return
     const name = await dialog.askText(t.newHallName)
     if (!name) return
     await run(async () => {
@@ -212,7 +216,20 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     toFloor()
     setBackOffice(page)
   }
-  const adminGroups: AdminMenuGroup[] = [
+  const signOutItem: AdminMenuItem = {
+    id: 'signout', label: t.signOutAs(user.display_name || user.username, t.roles[user.role]), separator: true, onSelect: onSignOut,
+  }
+  // An Employé only has the service screen: the administration menus are left out, not just greyed.
+  const adminGroups: AdminMenuGroup[] = !isAdmin ? [
+    {
+      id: 'file', label: t.navFile, items: [
+        { id: 'service', label: t.serviceMode, checked: true, onSelect: () => setMode('service') },
+        { id: 'lang', label: t.languageItem(t.switchTo), onSelect: () => setLang(lang === 'fr' ? 'ar' : 'fr') },
+        signOutItem,
+      ],
+    },
+    { id: 'help', label: t.navHelp, items: [{ id: 'about', label: t.about, onSelect: () => setInfo('about') }] },
+  ] : [
     {
       id: 'file', label: t.navFile, current: onBo('users') || onBo('backup') || onBo('ticket'), items: [
         { id: 'users', label: t.fileUsers, checked: onBo('users'), onSelect: () => openBo('users') },
@@ -220,7 +237,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
         { id: 'ticket', label: t.fileTicket, checked: onBo('ticket'), onSelect: () => openBo('ticket') },
         { id: 'service', label: t.serviceMode, separator: true, checked: !backOffice && mode === 'service', onSelect: () => { toFloor(); setMode('service') } },
         { id: 'lang', label: t.languageItem(t.switchTo), onSelect: () => setLang(lang === 'fr' ? 'ar' : 'fr') },
-        { id: 'signout', label: t.signOutAs(user.display_name || user.username), separator: true, onSelect: onSignOut },
+        signOutItem,
       ],
     },
     { id: 'clients', label: t.navClients, items: [{ id: 'clients', label: t.clientsSoon, disabled: true }] },
@@ -264,15 +281,15 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
         <p className="muted small">
           {info === 'account' ? t.signedInAs(user.display_name ? `${user.display_name} (${user.username})` : user.username) : repo.mode === 'local' ? t.aboutDemo : t.aboutOnline}
         </p>
-        {info === 'account' && user.role && <p className="small"><span className="tag">{t.roles[user.role]}</span></p>}
+        {info === 'account' && <p className="small"><span className="tag">{t.roles[user.role]}</span></p>}
         {info === 'account' && <button className="danger" onClick={onSignOut}>{t.signOut}</button>}
       </div>
     </div>
   )
 
-  if (menuAdmin) return <MenuAdmin onBack={() => setMenuAdmin(false)} />
-  if (printerSettings) return <PrinterSettings onBack={() => setPrinterSettings(false)} />
-  if (backOffice) {
+  if (menuAdmin && isAdmin) return <MenuAdmin onBack={() => setMenuAdmin(false)} />
+  if (printerSettings && isAdmin) return <PrinterSettings onBack={() => setPrinterSettings(false)} />
+  if (backOffice && isAdmin) {
     return (
       <>
         <BackOffice page={backOffice} menu={adminMenu} onBack={() => setBackOffice(null)}
@@ -308,7 +325,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     <div className={`app mode-${mode}`}>
       {adminMenu}
       <ServiceTabs restaurant={restaurant} halls={halls} hallId={hallId} takeaways={takeaways.length} deliveries={deliveries.length}
-        onAccount={() => setInfo('account')} onHall={(id) => { setHallId(id); setSelectedId(null) }} onAddHall={addHall}
+        onAccount={() => setInfo('account')} onHall={(id) => { setHallId(id); setSelectedId(null) }} onAddHall={isAdmin ? addHall : undefined}
         onTakeaway={() => setOpenList('takeaway')} onDelivery={() => setOpenList('delivery')} />
 
       {repo.mode === 'local' && (
@@ -323,7 +340,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
           <div className="center">
             <div className="card empty">
               <p>{t.noHalls}</p>
-              <button className="primary" onClick={addHall}>{t.addFirstHall}</button>
+              {isAdmin && <button className="primary" onClick={addHall}>{t.addFirstHall}</button>}
             </div>
           </div>
         ) : (

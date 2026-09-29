@@ -5,7 +5,7 @@ import { USER_ROLES, type AppUser, type UserInput } from '../../lib/types'
 import { useI18n } from '../../lib/i18n'
 import { errorText, locale, useLoad } from './useLoad'
 
-const empty: UserInput = { username: '', display_name: '', role: 'cashier', password: '', active: true }
+const empty: UserInput = { username: '', display_name: '', role: 'employe', password: '', active: true }
 
 /** Fichier → Utilisateurs: the accounts, their role and password. Only administrators can change them. */
 export default function UsersPage() {
@@ -29,7 +29,7 @@ export default function UsersPage() {
     setFormError(null)
     setConfirm('')
     setDraft(u === 'new' ? empty : {
-      id: u.id, username: u.username, display_name: u.display_name, role: u.role ?? 'cashier', password: '', active: u.active,
+      id: u.id, username: u.username, display_name: u.display_name, role: u.role ?? 'employe', password: '', active: u.active,
     })
     setEditing(u)
   }
@@ -125,6 +125,7 @@ export default function UsersPage() {
                   </button>
                 ))}
               </div>
+              <span className="small">{t.roleHint}</span>
             </div>
             <label>
               {isNew ? t.passwordLabel : t.passwordKeep}
