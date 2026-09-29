@@ -32,7 +32,7 @@ const fr = {
   email: 'E-mail',
   password: 'Mot de passe',
   signIn: 'Connexion',
-  badLogin: 'E-mail ou mot de passe incorrect',
+  badLogin: 'Nom d’utilisateur ou mot de passe incorrect',
 
   // Floor
   halls: 'Salles',
@@ -44,6 +44,7 @@ const fr = {
   menu: 'Menu',
   menuTitle: 'Gérer les catégories, articles et prix',
   signOut: 'Déconnexion',
+  signOutAs: (name: string) => `Déconnexion (${name})`,
   demoBanner: 'Mode démo : les données sont enregistrées sur cet appareil uniquement tant que Supabase n’est pas connecté.',
   noHalls: 'Aucune salle pour le moment.',
   addFirstHall: 'Ajouter la première salle',
@@ -518,6 +519,25 @@ const fr = {
   sampleItem1: 'Pizza Margherita',
   sampleItem2: 'Coca-Cola 33 cl',
   sampleOption: 'Grande',
+
+  // Écran de connexion et clavier tactile
+  loginTitle: 'Ouverture de session',
+  username: 'Nom d’utilisateur',
+  usernamePh: 'Nom d’utilisateur ou e-mail',
+  usernamePickPh: 'Choisir ou saisir',
+  userList: 'Liste des utilisateurs',
+  loginBtn: 'Login',
+  loginMissing: 'Saisissez le nom d’utilisateur et le mot de passe.',
+  loginDemo: (u: string, p: string) => `Mode démo : ${u} / ${p}`,
+  kbLabel: 'Clavier à l’écran',
+  kbShow: 'Clavier',
+  kbHide: 'Masquer le clavier',
+  kbTab: 'Tab',
+  kbShift: 'Maj',
+  kbCaps: 'Verr. Maj',
+  kbBack: 'Suppr',
+  kbEnter: 'Entrée',
+  kbSpace: 'Espace',
 }
 
 type Dict = typeof fr
@@ -550,7 +570,7 @@ const ar: Dict = {
   email: 'البريد الإلكتروني',
   password: 'كلمة السر',
   signIn: 'دخول',
-  badLogin: 'البريد أو كلمة السر غير صحيحة',
+  badLogin: 'اسم المستخدم أو كلمة السر غير صحيحة',
 
   halls: 'الصالات',
   addHall: 'إضافة صالة',
@@ -561,6 +581,7 @@ const ar: Dict = {
   menu: 'القائمة',
   menuTitle: 'إدارة الفئات والأصناف والأسعار',
   signOut: 'خروج',
+  signOutAs: (name: string) => `خروج (${name})`,
   demoBanner: 'وضع تجريبي: البيانات محفوظة على هذا الجهاز فقط إلى أن يتم ربط Supabase.',
   noHalls: 'لا توجد صالات بعد.',
   addFirstHall: 'إضافة أول صالة',
@@ -1023,6 +1044,25 @@ const ar: Dict = {
   sampleItem1: 'بيتزا مارغريتا',
   sampleItem2: 'كوكا كولا 33 سل',
   sampleOption: 'كبيرة',
+
+  // Écran de connexion et clavier tactile
+  loginTitle: 'فتح الجلسة',
+  username: 'اسم المستخدم',
+  usernamePh: 'اسم المستخدم أو البريد',
+  usernamePickPh: 'اختر أو اكتب',
+  userList: 'قائمة المستخدمين',
+  loginBtn: 'دخول',
+  loginMissing: 'أدخل اسم المستخدم وكلمة السر.',
+  loginDemo: (u: string, p: string) => `الوضع التجريبي: ${u} / ${p}`,
+  kbLabel: 'لوحة المفاتيح على الشاشة',
+  kbShow: 'لوحة المفاتيح',
+  kbHide: 'إخفاء لوحة المفاتيح',
+  kbTab: 'Tab',
+  kbShift: 'Maj',
+  kbCaps: 'Verr. Maj',
+  kbBack: 'Suppr',
+  kbEnter: 'Entrée',
+  kbSpace: 'مسافة',
 }
 
 const dicts: Record<Lang, Dict> = { fr, ar }

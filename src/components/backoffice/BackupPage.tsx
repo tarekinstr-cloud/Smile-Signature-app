@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { admin, download, stamp, toCsv } from '../../lib/admin'
-import { repo, supabase } from '../../lib/repo'
+import { repo } from '../../lib/repo'
+import { auth } from '../../lib/auth'
 import { useI18n } from '../../lib/i18n'
 import { errorText, locale, useLoad } from './useLoad'
 
@@ -27,7 +28,7 @@ export default function BackupPage() {
 
   useEffect(() => {
     admin.backupTables().then(setTables, () => setTables([]))
-    supabase?.auth.getUser().then(({ data }) => setWho(data.user?.email ?? ''), () => setWho(''))
+    auth.current().then((u) => setWho(u?.username ?? ''), () => setWho(''))
   }, [])
 
   async function run(key: string, fn: () => Promise<{ rows: number; bytes: number; tables: string[]; format: 'json' | 'csv' }>) {
@@ -104,7 +105,7 @@ export default function BackupPage() {
                 <th>{t.colFormat}</th>
                 <th className="num">{t.colRows}</th>
                 <th className="num hide-phone">{t.colSize}</th>
-                {repo.mode === 'supabase' && <th className="hide-phone">{t.colBy}</th>}
+                <th className="hide-phone">{t.colBy}</th>
               </tr>
             </thead>
             <tbody>
@@ -116,7 +117,7 @@ export default function BackupPage() {
                   </td>
                   <td className="num">{b.row_count}</td>
                   <td className="num hide-phone">{size(b.size_bytes, lang)}</td>
-                  {repo.mode === 'supabase' && <td className="hide-phone small"><bdi>{b.user_label || '—'}</bdi></td>}
+                  <td className="hide-phone small"><bdi>{b.user_label || '—'}</bdi></td>
                 </tr>
               ))}
             </tbody>

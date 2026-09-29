@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { repo, supabase, type OpenOrder } from '../lib/repo'
+import { repo, type OpenOrder } from '../lib/repo'
 import type { DiningTable, Hall, TablePatch } from '../lib/types'
 import FloorPlan from './FloorPlan'
 import TablePanel from './TablePanel'
@@ -18,12 +18,13 @@ import BackOffice from './backoffice/BackOffice'
 import AdminMenu, { type AdminMenuGroup } from './nav/AdminMenu'
 import ServiceTabs from './nav/ServiceTabs'
 import type { BackOfficePage } from './backoffice/pages'
+import type { SessionUser } from '../lib/auth'
 
 type Mode = 'service' | 'edit'
 /** Orders without a table, each with its button and list in the top bar. */
 type NoTable = 'takeaway' | 'delivery'
 
-export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
+export default function FloorScreen({ user, onSignOut }: { user: SessionUser; onSignOut: () => void }) {
   const [halls, setHalls] = useState<Hall[]>([])
   const [hallId, setHallId] = useState<string | null>(null)
   const [tables, setTables] = useState<DiningTable[]>([])
@@ -49,7 +50,6 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   /** Small dialogs from the navigation: the account (Connexion tab) and Aide → À propos. */
   const [info, setInfo] = useState<'account' | 'about' | null>(null)
   const [restaurant, setRestaurant] = useState('Smile Signature')
-  const [email, setEmail] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const dialog = useDialog()
@@ -87,9 +87,6 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
   useEffect(() => {
     repo.getReceiptSettings().then((r) => r.name && setRestaurant(r.name), () => {})
   }, [backOffice])
-  useEffect(() => {
-    supabase?.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null), () => setEmail(null))
-  }, [])
 
   const reloadTakeaways = useCallback(() => {
     repo.listOpenOrders('takeaway').then(setTakeaways, () => setTakeaways([]))
@@ -223,7 +220,7 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
         { id: 'ticket', label: t.fileTicket, checked: onBo('ticket'), onSelect: () => openBo('ticket') },
         { id: 'service', label: t.serviceMode, separator: true, checked: !backOffice && mode === 'service', onSelect: () => { toFloor(); setMode('service') } },
         { id: 'lang', label: t.languageItem(t.switchTo), onSelect: () => setLang(lang === 'fr' ? 'ar' : 'fr') },
-        ...(onSignOut ? [{ id: 'signout', label: t.signOut, separator: true, onSelect: onSignOut }] : []),
+        { id: 'signout', label: t.signOutAs(user.display_name || user.username), separator: true, onSelect: onSignOut },
       ],
     },
     { id: 'clients', label: t.navClients, items: [{ id: 'clients', label: t.clientsSoon, disabled: true }] },
@@ -265,9 +262,10 @@ export default function FloorScreen({ onSignOut }: { onSignOut?: () => void }) {
         </div>
         {info === 'about' && <p className="small">{t.aboutText}</p>}
         <p className="muted small">
-          {repo.mode === 'local' ? t.aboutDemo : info === 'account' && email ? t.signedInAs(email) : t.aboutOnline}
+          {info === 'account' ? t.signedInAs(user.display_name ? `${user.display_name} (${user.username})` : user.username) : repo.mode === 'local' ? t.aboutDemo : t.aboutOnline}
         </p>
-        {info === 'account' && onSignOut && <button className="danger" onClick={onSignOut}>{t.signOut}</button>}
+        {info === 'account' && user.role && <p className="small"><span className="tag">{t.roles[user.role]}</span></p>}
+        {info === 'account' && <button className="danger" onClick={onSignOut}>{t.signOut}</button>}
       </div>
     </div>
   )

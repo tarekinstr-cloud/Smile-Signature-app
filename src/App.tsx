@@ -1,22 +1,23 @@
-import { useEffect, useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
-import { supabase } from './lib/repo'
+import { useCallback, useEffect, useState } from 'react'
+import { auth, type SessionUser } from './lib/auth'
 import Login from './components/Login'
 import FloorScreen from './components/FloorScreen'
 import { useI18n } from './lib/i18n'
 
+/** Écran de connexion until a user signs in, then the service screen. */
 export default function App() {
   const { t } = useI18n()
-  const [session, setSession] = useState<Session | null | undefined>(supabase ? undefined : null)
+  const [user, setUser] = useState<SessionUser | null | undefined>(undefined)
 
-  useEffect(() => {
-    if (!supabase) return
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
-    return () => data.subscription.unsubscribe()
+  const refresh = useCallback(() => {
+    auth.current().then(setUser, () => setUser(null))
   }, [])
+  useEffect(() => {
+    refresh()
+    return auth.subscribe(refresh)
+  }, [refresh])
 
-  if (supabase && session === undefined) return <div className="center muted">{t.loading}</div>
-  if (supabase && !session) return <Login />
-  return <FloorScreen onSignOut={supabase ? () => supabase!.auth.signOut() : undefined} />
+  if (user === undefined) return <div className="center muted">{t.loading}</div>
+  if (!user) return <Login />
+  return <FloorScreen key={user.id} user={user} onSignOut={() => auth.signOut()} />
 }
