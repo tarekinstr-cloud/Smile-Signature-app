@@ -184,6 +184,8 @@ const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 export const supabase: SupabaseClient | null = url && anonKey ? createClient(url, anonKey) : null
 
 function check<T>(res: { data: T; error: { message: string } | null }): T {
+  // Refused by the database permissions (Fichier > Permissions): a readable message rather than the SQL error.
+  if (res.error && /permission_denied|row-level security/i.test(res.error.message)) throw new Error(tr().errNoPermission)
   if (res.error) throw new Error(res.error.message)
   return res.data
 }

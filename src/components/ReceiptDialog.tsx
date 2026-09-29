@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { defaultReceiptSettings, repo } from '../lib/repo'
 import type { OrderLine, PaidOrder, Payment, ReceiptSettings } from '../lib/types'
 import Receipt from './Receipt'
-import { admin } from '../lib/admin'
+import { usePermissions } from '../lib/permissions'
 import { useI18n } from '../lib/i18n'
 
 interface Props {
@@ -23,12 +23,11 @@ export default function ReceiptDialog({ order, lines, payments, place, hallName,
   const [editing, setEditing] = useState<ReceiptSettings | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  /** Customizing the ticket is for admins; an employé only prints it. */
-  const [canCustomize, setCanCustomize] = useState(false)
+  /** Customizing the ticket needs the « Modifier le Ticket » permission; otherwise the ticket is only printed. */
+  const canCustomize = usePermissions().can('ticket')
 
   useEffect(() => {
     repo.getReceiptSettings().then(setSettings, () => setSettings(defaultReceiptSettings()))
-    admin.isAdmin().then(setCanCustomize, () => setCanCustomize(false))
   }, [])
 
   async function saveSettings() {

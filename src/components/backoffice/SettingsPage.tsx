@@ -1,15 +1,17 @@
 import { useI18n } from '../../lib/i18n'
 
 /** Paramètres: language and currency in one place, and links to the other settings (ticket, menu, printers). */
-export default function SettingsPage({ onOpenMenu, onOpenPrinters, onOpenTicket }: { onOpenMenu(): void; onOpenPrinters(): void; onOpenTicket(): void }) {
+export default function SettingsPage({ onOpenMenu, onOpenPrinters, onOpenTicket }: { onOpenMenu?(): void; onOpenPrinters(): void; onOpenTicket?(): void }) {
   const { t, lang, setLang } = useI18n()
 
   return (
     <main className="content bo-content settings-content">
-      <section className="panel">
-        <h2>{t.restaurantInfo}</h2>
-        <button className="big" onClick={onOpenTicket}>🧾 {t.fileTicket} <span className="muted small">{t.ticketSub}</span></button>
-      </section>
+      {onOpenTicket && (
+        <section className="panel">
+          <h2>{t.restaurantInfo}</h2>
+          <button className="big" onClick={onOpenTicket}>🧾 {t.fileTicket} <span className="muted small">{t.ticketSub}</span></button>
+        </section>
+      )}
 
       <section className="panel">
         <h2>{t.language}</h2>
@@ -24,7 +26,7 @@ export default function SettingsPage({ onOpenMenu, onOpenPrinters, onOpenTicket 
 
       <section className="panel">
         <h2>{t.otherSettings}</h2>
-        <button className="big" onClick={onOpenMenu}>🍽 {t.menu} <span className="muted small">{t.menuTitle}</span></button>
+        {onOpenMenu && <button className="big" onClick={onOpenMenu}>🍽 {t.menu} <span className="muted small">{t.menuTitle}</span></button>}
         <button className="big" onClick={onOpenPrinters}>🖨 {t.printers} <span className="muted small">{t.printersTitle}</span></button>
       </section>
     </main>
