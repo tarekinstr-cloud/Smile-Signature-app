@@ -32,6 +32,11 @@ export interface Auth {
 
 const badLogin = () => new Error(tr().badLogin)
 
+/** Address used by Supabase Auth for an account created in the app (see save_user). */
+export const internalEmail = (username: string) => `${username.trim().toLowerCase()}@smile-signature.local`
+
+const missingFunction = (message: string) => /login_email/.test(message) && /does not exist|schema cache|Could not find/i.test(message)
+
 function supabaseAuth(sb: SupabaseClient): Auth {
   return {
     async loginUsers() {
@@ -39,15 +44,32 @@ function supabaseAuth(sb: SupabaseClient): Auth {
       return res.error ? [] : (res.data as LoginUser[])
     },
     async signIn(username, password) {
+      const t = tr()
       const name = username.trim()
       let email = name
+      let missingRpc = false
       if (!name.includes('@')) {
+        // Supabase Auth signs in with an e-mail: the username gives the account's address (agent1 →
+        // agent1@smile-signature.local for accounts created in the app, or the address of an older account).
         const res = await sb.rpc('login_email', { p_username: name })
-        if (res.error || !res.data) throw badLogin()
-        email = res.data as string
+        if (res.error) {
+          if (!missingFunction(res.error.message)) throw new Error(res.error.message)
+          // Database without the login migration: try the address the app gives the accounts it creates.
+          missingRpc = true
+          email = internalEmail(name)
+        } else if (!res.data) {
+          throw new Error(t.errUnknownUser)
+        } else {
+          email = res.data as string
+        }
       }
       const { error } = await sb.auth.signInWithPassword({ email, password })
-      if (error) throw badLogin()
+      if (!error) return
+      if (missingRpc) throw new Error(t.errMigrationLogin)
+      if (/invalid login credentials/i.test(error.message)) throw badLogin()
+      if (/email not confirmed/i.test(error.message)) throw new Error(t.errEmailNotConfirmed)
+      // Anything else (account refused by Supabase, network…) is shown as is, so it can be fixed.
+      throw new Error(`${t.errLoginOther} ${error.message}`)
     },
     async signOut() {
       await sb.auth.signOut()

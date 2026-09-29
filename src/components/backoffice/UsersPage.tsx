@@ -110,6 +110,7 @@ export default function UsersPage() {
               <input autoFocus={isNew} dir="ltr" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="off"
                 value={draft.username} onChange={(e) => setDraft({ ...draft, username: e.target.value.toLowerCase() })} />
               <span className="small">{t.usernameHint}</span>
+              {editing !== 'new' && editing.email && <span className="small">{t.loginAddress} <bdi dir="ltr">{editing.email}</bdi></span>}
             </label>
             <label>
               {t.colDisplayName}
