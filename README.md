@@ -56,6 +56,7 @@ npm run build      # نسخة الإنتاج في dist/ (مع Service Worker و 
    - `supabase/migrations/20260928060000_back_office.sql` (back-office: stock_items + adjust_stock, suppliers, list_staff pour « Gestion des employés »)
    - `supabase/migrations/20260929000000_users_backup.sql` (menu Fichier: app_users + rôles, list_users / save_user, backups_log, logo du ticket)
    - `supabase/migrations/20260929010000_login.sql` (écran de connexion: login_users pour la liste déroulante, login_email pour se connecter avec le nom d'utilisateur)
+   - `supabase/migrations/20260929020000_roles.sql` (rôles Admin / Employé, RLS: stock, fournisseurs, comptes, sauvegardes et modification du ticket réservés à l'admin)
    - (اختياري) `supabase/seed.sql` لطاولات تجريبية.
 3. في **Authentication → Users** أضف مستخدماً للطاقم (بريد + كلمة سر).
 4. انسخ `.env.example` إلى `.env` وضع فيه `Project URL` و `anon public key` من **Project Settings → API**.

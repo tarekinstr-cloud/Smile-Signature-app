@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { defaultReceiptSettings, repo } from '../lib/repo'
 import type { OrderLine, PaidOrder, Payment, ReceiptSettings } from '../lib/types'
 import Receipt from './Receipt'
+import { admin } from '../lib/admin'
 import { useI18n } from '../lib/i18n'
 
 interface Props {
@@ -22,8 +23,12 @@ export default function ReceiptDialog({ order, lines, payments, place, hallName,
   const [editing, setEditing] = useState<ReceiptSettings | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  /** Customizing the ticket is for admins; an employé only prints it. */
+  const [canCustomize, setCanCustomize] = useState(false)
+
   useEffect(() => {
     repo.getReceiptSettings().then(setSettings, () => setSettings(defaultReceiptSettings()))
+    admin.isAdmin().then(setCanCustomize, () => setCanCustomize(false))
   }, [])
 
   async function saveSettings() {
@@ -76,7 +81,7 @@ export default function ReceiptDialog({ order, lines, payments, place, hallName,
             </>
           ) : (
             <>
-              <button type="button" className="ghost" onClick={() => settings && setEditing(settings)} disabled={!settings}>{t.customize}</button>
+              {canCustomize && <button type="button" className="ghost" onClick={() => settings && setEditing(settings)} disabled={!settings}>{t.customize}</button>}
               <div className="spacer" />
               <button type="button" onClick={() => window.print()} disabled={!settings}>{t.print}</button>
               <button type="button" className="primary" onClick={onDone}>{t.doneBack}</button>

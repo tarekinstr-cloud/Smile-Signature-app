@@ -9,7 +9,7 @@ export interface SessionUser {
   id: string
   username: string
   display_name: string
-  role: UserRole | null
+  role: UserRole
 }
 
 /** A name in the login screen's drop-down list. */
@@ -57,8 +57,11 @@ function supabaseAuth(sb: SupabaseClient): Auth {
       const u = data.session?.user
       if (!u) return null
       const profile = await sb.from('app_users').select('username, display_name, role').eq('user_id', u.id).maybeSingle()
-      const p = profile.error ? null : (profile.data as Omit<SessionUser, 'id'> | null)
-      return { id: u.id, username: p?.username ?? u.email?.split('@')[0] ?? '', display_name: p?.display_name ?? '', role: p?.role ?? null }
+      const p = profile.error ? null : (profile.data as { username: string; display_name: string; role: string } | null)
+      // No app_users table yet (users migration not run): the database has no roles, the account keeps full access.
+      // An account with no profile (created in the Supabase dashboard) is an employé until an admin gives it a role.
+      const role: UserRole = profile.error && /app_users/.test(profile.error.message) ? 'admin' : p?.role === 'admin' || p?.role === 'manager' ? 'admin' : 'employe'
+      return { id: u.id, username: p?.username ?? u.email?.split('@')[0] ?? '', display_name: p?.display_name ?? '', role }
     },
     subscribe(onChange) {
       const { data } = sb.auth.onAuthStateChange((event) => {
@@ -113,7 +116,7 @@ function localAuth(): Auth {
         // Storage blocked: the session lives in memory for this visit.
       }
       const u = id ? loadLocalUsers().find((x) => x.id === id && x.active) : undefined
-      return u ? { id: u.id, username: u.username, display_name: u.display_name, role: u.role } : null
+      return u ? { id: u.id, username: u.username, display_name: u.display_name, role: u.role ?? 'employe' } : null
     },
     subscribe(onChange) {
       listeners.add(onChange)

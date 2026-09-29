@@ -503,7 +503,7 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .admin-panel .admin-item.sep { border-top: 0; margin-top: 0; }
 .users-table tr.inactive td { opacity: 0.6; }
 .tag.role-admin { background: #1f2937; color: #fff; }
-.tag.role-manager { background: #dbeafe; color: #1e40af; }
+
 .tag.role-none { background: #fef3c7; color: #92400e; }
 .user-dialog { width: min(440px, 100%); max-height: 94vh; overflow-y: auto; }
 .role-picker { display: grid; grid-template-columns: repeat(2, 1fr); align-self: stretch; }
@@ -564,3 +564,4 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
   .login-screen.kb-open .login img, .login-screen.kb-open .login > .muted { display: none; }
 }
 .field input { color: var(--ink); }
+.tag.role-employe { background: #dbeafe; color: #1e40af; }
