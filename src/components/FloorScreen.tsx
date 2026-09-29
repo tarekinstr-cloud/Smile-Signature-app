@@ -19,6 +19,7 @@ import AdminMenu, { type AdminMenuGroup, type AdminMenuItem } from './nav/AdminM
 import ServiceTabs from './nav/ServiceTabs'
 import type { BackOfficePage } from './backoffice/pages'
 import type { SessionUser } from '../lib/auth'
+import { usePermissions, type Permission } from '../lib/permissions'
 
 type Mode = 'service' | 'edit'
 /** Orders without a table, each with its button and list in the top bar. */
@@ -54,9 +55,11 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   const [loading, setLoading] = useState(true)
   const dialog = useDialog()
   const { t, lang, setLang } = useI18n()
+  const { can } = usePermissions()
+  /** Utilisateurs and Permissions stay with the Admin role, so no one can give themselves more rights. */
   const isAdmin = user.role === 'admin'
-  /** Editing the floor plan is an admin task. */
-  const mode: Mode = isAdmin ? modeState : 'service'
+  /** Editing the floor plan needs the Édition permission. */
+  const mode: Mode = can('edit') ? modeState : 'service'
 
   const hall = halls.find((h) => h.id === hallId) ?? null
   const selected = tables.find((t) => t.id === selectedId) ?? null
@@ -161,7 +164,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   }
 
   async function addHall() {
-    if (!isAdmin) return
+    if (!can('edit')) return
     const name = await dialog.askText(t.newHallName)
     if (!name) return
     await run(async () => {
@@ -219,54 +222,51 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   const signOutItem: AdminMenuItem = {
     id: 'signout', label: t.signOutAs(user.display_name || user.username, t.roles[user.role]), separator: true, onSelect: onSignOut,
   }
-  // An Employé only has the service screen: the administration menus are left out, not just greyed.
-  const adminGroups: AdminMenuGroup[] = !isAdmin ? [
+  /** Permission each back-office page needs (Utilisateurs and Permissions: the Admin role). */
+  const pageAllowed = (page: BackOfficePage) => (page === 'users' || page === 'permissions' ? isAdmin : can(page as Permission))
+  const shown = (items: (AdminMenuItem | false)[]) => items.filter((i): i is AdminMenuItem => !!i)
+  // Menus and entries the account has no permission for are left out, not just greyed.
+  const stockItems = shown([
+    can('stock') && { id: 'stock', label: t.stockSub, checked: onBo('stock'), onSelect: () => setBackOffice('stock') },
+    can('suppliers') && { id: 'suppliers', label: t.suppliers, checked: onBo('suppliers'), onSelect: () => setBackOffice('suppliers') },
+  ])
+  const adminGroups: AdminMenuGroup[] = [
     {
-      id: 'file', label: t.navFile, items: [
-        { id: 'service', label: t.serviceMode, checked: true, onSelect: () => setMode('service') },
+      id: 'file', label: t.navFile, current: onBo('users') || onBo('permissions') || onBo('backup') || onBo('ticket'), items: shown([
+        isAdmin && { id: 'users', label: t.fileUsers, checked: onBo('users'), onSelect: () => openBo('users') },
+        isAdmin && { id: 'permissions', label: t.filePermissions, checked: onBo('permissions'), onSelect: () => openBo('permissions') },
+        can('backup') && { id: 'backup', label: t.fileBackup, checked: onBo('backup'), onSelect: () => openBo('backup') },
+        can('ticket') && { id: 'ticket', label: t.fileTicket, checked: onBo('ticket'), onSelect: () => openBo('ticket') },
+        {
+          id: 'service', label: t.serviceMode, separator: isAdmin || can('backup') || can('ticket'),
+          checked: !backOffice && mode === 'service', onSelect: () => { toFloor(); setMode('service') },
+        },
         { id: 'lang', label: t.languageItem(t.switchTo), onSelect: () => setLang(lang === 'fr' ? 'ar' : 'fr') },
         signOutItem,
-      ],
+      ]),
     },
-    { id: 'help', label: t.navHelp, items: [{ id: 'about', label: t.about, onSelect: () => setInfo('about') }] },
-  ] : [
-    {
-      id: 'file', label: t.navFile, current: onBo('users') || onBo('backup') || onBo('ticket'), items: [
-        { id: 'users', label: t.fileUsers, checked: onBo('users'), onSelect: () => openBo('users') },
-        { id: 'backup', label: t.fileBackup, checked: onBo('backup'), onSelect: () => openBo('backup') },
-        { id: 'ticket', label: t.fileTicket, checked: onBo('ticket'), onSelect: () => openBo('ticket') },
-        { id: 'service', label: t.serviceMode, separator: true, checked: !backOffice && mode === 'service', onSelect: () => { toFloor(); setMode('service') } },
-        { id: 'lang', label: t.languageItem(t.switchTo), onSelect: () => setLang(lang === 'fr' ? 'ar' : 'fr') },
-        signOutItem,
-      ],
-    },
-    { id: 'clients', label: t.navClients, items: [{ id: 'clients', label: t.clientsSoon, disabled: true }] },
-    {
+    ...(isAdmin ? [{ id: 'clients', label: t.navClients, items: [{ id: 'clients', label: t.clientsSoon, disabled: true }] }] : []),
+    ...(can('edit') ? [{
       id: 'edit', label: t.navEdit, items: [
         { id: 'plan', label: t.editPlanItem, checked: !backOffice && mode === 'edit', onSelect: () => { toFloor(); setMode('edit') } },
         { id: 'hall', label: t.addHall, onSelect: () => { toFloor(); addHall() } },
         { id: 'menu', label: t.menuTitle, onSelect: () => { toFloor(); setMenuAdmin(true) } },
       ],
-    },
-    { id: 'staff', label: t.staff, current: onBo('staff'), onSelect: () => setBackOffice('staff') },
-    {
-      id: 'stock', label: t.stock, current: onBo('stock') || onBo('suppliers'), items: [
-        { id: 'stock', label: t.stockSub, checked: onBo('stock'), onSelect: () => setBackOffice('stock') },
-        { id: 'suppliers', label: t.suppliers, checked: onBo('suppliers'), onSelect: () => setBackOffice('suppliers') },
-      ],
-    },
-    {
+    }] : []),
+    ...(can('staff') ? [{ id: 'staff', label: t.staff, current: onBo('staff'), onSelect: () => setBackOffice('staff') }] : []),
+    ...(stockItems.length ? [{ id: 'stock', label: t.stock, current: onBo('stock') || onBo('suppliers'), items: stockItems }] : []),
+    ...(can('stats') ? [{
       id: 'stats', label: t.navStats, current: onBo('stats'), items: [
         { id: 'sales', label: t.statsSales, checked: onBo('stats'), onSelect: () => setBackOffice('stats') },
         { id: 'profit', label: t.profitSoon, disabled: true },
       ],
-    },
-    {
+    }] : []),
+    ...(can('settings') ? [{
       id: 'settings', label: t.settings, current: onBo('settings'), items: [
         { id: 'general', label: t.settingsGeneral, checked: onBo('settings'), onSelect: () => setBackOffice('settings') },
         { id: 'printers', label: t.printers, onSelect: () => { toFloor(); setPrinterSettings(true) } },
       ],
-    },
+    }] : []),
     { id: 'help', label: t.navHelp, items: [{ id: 'about', label: t.about, onSelect: () => setInfo('about') }] },
   ]
   const adminMenu = <AdminMenu groups={adminGroups} end={<LangToggle />} />
@@ -287,15 +287,16 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     </div>
   )
 
-  if (menuAdmin && isAdmin) return <MenuAdmin onBack={() => setMenuAdmin(false)} />
-  if (printerSettings && isAdmin) return <PrinterSettings onBack={() => setPrinterSettings(false)} />
-  if (backOffice && isAdmin) {
+  if (menuAdmin && can('edit')) return <MenuAdmin onBack={() => setMenuAdmin(false)} />
+  if (printerSettings && can('settings')) return <PrinterSettings onBack={() => setPrinterSettings(false)} />
+  if (backOffice && pageAllowed(backOffice)) {
     return (
       <>
         <BackOffice page={backOffice} menu={adminMenu} onBack={() => setBackOffice(null)}
-          onOpenMenu={() => { setBackOffice(null); setMenuAdmin(true) }}
           onOpenPrinters={() => { setBackOffice(null); setPrinterSettings(true) }}
-          onOpenTicket={() => setBackOffice('ticket')} />
+          onOpenTicket={can('ticket') ? () => setBackOffice('ticket') : undefined}
+          onOpenMenu={can('edit') ? () => { setBackOffice(null); setMenuAdmin(true) } : undefined}
+          onPage={(page) => setBackOffice(page)} />
         {infoDialog}
       </>
     )
@@ -325,7 +326,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     <div className={`app mode-${mode}`}>
       {adminMenu}
       <ServiceTabs restaurant={restaurant} halls={halls} hallId={hallId} takeaways={takeaways.length} deliveries={deliveries.length}
-        onAccount={() => setInfo('account')} onHall={(id) => { setHallId(id); setSelectedId(null) }} onAddHall={isAdmin ? addHall : undefined}
+        onAccount={() => setInfo('account')} onHall={(id) => { setHallId(id); setSelectedId(null) }} onAddHall={can('edit') ? addHall : undefined}
         onTakeaway={() => setOpenList('takeaway')} onDelivery={() => setOpenList('delivery')} />
 
       {repo.mode === 'local' && (
@@ -340,7 +341,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
           <div className="center">
             <div className="card empty">
               <p>{t.noHalls}</p>
-              {isAdmin && <button className="primary" onClick={addHall}>{t.addFirstHall}</button>}
+              {can('edit') && <button className="primary" onClick={addHall}>{t.addFirstHall}</button>}
             </div>
           </div>
         ) : (

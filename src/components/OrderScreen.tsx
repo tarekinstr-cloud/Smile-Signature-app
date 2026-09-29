@@ -17,6 +17,7 @@ import DeliveryDialog from './DeliveryDialog'
 import { useDialog } from './Dialog'
 import LangToggle from './LangToggle'
 import { useI18n } from '../lib/i18n'
+import { usePermissions } from '../lib/permissions'
 
 interface Props {
   /** Table tapped on the floor plan; null for a takeaway order. */
@@ -107,6 +108,8 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
   const menuRef = useRef<HTMLElement | null>(null)
   const dialog = useDialog()
   const { t } = useI18n()
+  /** Annuler la CMD, Offrir and Remise are shown only with their permission (Fichier > Permissions). */
+  const { can } = usePermissions()
 
   const run = useCallback(async (fn: () => Promise<unknown>) => {
     try {
@@ -641,15 +644,21 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
             <button onClick={() => setPaying({ noTicket: true })} disabled={busy || !hasItems}><i aria-hidden>💵</i>{t.actPayNoTicket}</button>
             <button onClick={() => setModal('print')} disabled={busy || !hasItems}><i aria-hidden>🖨</i>{t.actPrint}</button>
             <button className="act-pay" onClick={() => setPaying({})} disabled={busy || !hasItems}><i aria-hidden>💳</i>{t.actPay}</button>
-            <button onClick={() => setModal('discount')} disabled={busy || !hasItems || !!order?.offered || !!selectedBill?.offered}>
-              <i aria-hidden>%</i>{t.actDiscount}<small><bdi>{target}</bdi></small>
-            </button>
+            {can('discount') && (
+              <button onClick={() => setModal('discount')} disabled={busy || !hasItems || !!order?.offered || !!selectedBill?.offered}>
+                <i aria-hidden>%</i>{t.actDiscount}<small><bdi>{target}</bdi></small>
+              </button>
+            )}
             <button onClick={() => setPaying({ partial: true })} disabled={busy || !hasItems || bill.remaining <= 0}><i aria-hidden>½</i>{t.actPartial}</button>
-            <button className="act-cancel" onClick={cancelOrder} disabled={busy || !order}><i aria-hidden>✕</i>{t.actCancel}</button>
-            <button className={offerOn ? 'act-offer on' : 'act-offer'} aria-pressed={offerOn} onClick={offer}
-              disabled={busy || !hasItems || (!!selected && !!order?.offered)}>
-              <i aria-hidden>🎁</i>{offerOn ? t.actUnoffer : t.actOffer}<small><bdi>{target}</bdi></small>
-            </button>
+            {can('cancel_order') && (
+              <button className="act-cancel" onClick={cancelOrder} disabled={busy || !order}><i aria-hidden>✕</i>{t.actCancel}</button>
+            )}
+            {can('offer') && (
+              <button className={offerOn ? 'act-offer on' : 'act-offer'} aria-pressed={offerOn} onClick={offer}
+                disabled={busy || !hasItems || (!!selected && !!order?.offered)}>
+                <i aria-hidden>🎁</i>{offerOn ? t.actUnoffer : t.actOffer}<small><bdi>{target}</bdi></small>
+              </button>
+            )}
           </div>
         </nav>
       )}

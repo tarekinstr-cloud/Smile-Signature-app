@@ -565,3 +565,16 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 }
 .field input { color: var(--ink); }
 .tag.role-employe { background: #dbeafe; color: #1e40af; }
+
+/* Fichier > Permissions */
+.bo-tabs { margin: 12px 16px 0; align-self: flex-start; }
+.perm-table td, .perm-table th { vertical-align: middle; }
+.perm-table .perm-cell { text-align: center; width: 90px; }
+.perm-table .perm-cell input { width: 22px; height: 22px; }
+.perm-table .perm-group th { background: var(--surface-2, #f3f4f6); font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+.perm-table tr.perm-override td:first-child { font-weight: 600; }
+.perm-choice button { padding: 6px 10px; min-height: 36px; }
+.perm-yes { color: #15803d; font-weight: 700; font-size: 18px; }
+.perm-no { color: #b91c1c; font-weight: 700; font-size: 18px; }
+.perm-user { display: flex; flex-direction: column; gap: 4px; max-width: 360px; margin-bottom: 12px; }
+.perm-user select { min-height: 40px; }

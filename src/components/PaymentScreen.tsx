@@ -4,6 +4,7 @@ import type { AdjustmentsPatch, Discount, OrderLine, PaidOrder, Payment, Payment
 import { money } from '../lib/format'
 import { PAYMENT_METHODS, computeBill, discountOf } from '../lib/billing'
 import { useI18n } from '../lib/i18n'
+import { usePermissions } from '../lib/permissions'
 import Keypad, { amountText, parseAmount } from './Keypad'
 import DiscountDialog from './DiscountDialog'
 import LangToggle from './LangToggle'
@@ -37,6 +38,7 @@ export const minus = (n: number) => <bdi dir="ltr">−{money(n)}</bdi>
  */
 export default function PaymentScreen({ orderId, place, hallName, startPartial, noTicket, onBack, onPaid }: Props) {
   const { t } = useI18n()
+  const { can } = usePermissions()
   const [data, setData] = useState<OpenOrder | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -216,20 +218,28 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
               {selected ? (
                 <>
                   <span className="adjust-target"><bdi>{selected.line.name}</bdi></span>
-                  <button onClick={() => setDiscountFor({ lineId: selected.line.id })} disabled={busy || selected.offered}>% {t.discount}</button>
-                  <button className={selected.line.offered ? 'on' : ''} aria-pressed={selected.line.offered} disabled={busy || orderOffered}
-                    onClick={() => adjust(selected.line.id, { offered: !selected.line.offered })}>
-                    🎁 {selected.line.offered ? t.unoffer : t.offer}
-                  </button>
+                  {can('discount') && (
+                    <button onClick={() => setDiscountFor({ lineId: selected.line.id })} disabled={busy || selected.offered}>% {t.discount}</button>
+                  )}
+                  {can('offer') && (
+                    <button className={selected.line.offered ? 'on' : ''} aria-pressed={selected.line.offered} disabled={busy || orderOffered}
+                      onClick={() => adjust(selected.line.id, { offered: !selected.line.offered })}>
+                      🎁 {selected.line.offered ? t.unoffer : t.offer}
+                    </button>
+                  )}
                 </>
               ) : (
                 <>
                   <span className="adjust-target muted small">{t.lineActionsHint}</span>
-                  <button onClick={() => setDiscountFor({ lineId: null })} disabled={busy || orderOffered}>% {t.discountOrder}</button>
-                  <button className={orderOffered ? 'on' : ''} aria-pressed={orderOffered} disabled={busy}
-                    onClick={() => adjust(null, { offered: !orderOffered })}>
-                    🎁 {orderOffered ? t.unofferOrder : t.offerOrder}
-                  </button>
+                  {can('discount') && (
+                    <button onClick={() => setDiscountFor({ lineId: null })} disabled={busy || orderOffered}>% {t.discountOrder}</button>
+                  )}
+                  {can('offer') && (
+                    <button className={orderOffered ? 'on' : ''} aria-pressed={orderOffered} disabled={busy}
+                      onClick={() => adjust(null, { offered: !orderOffered })}>
+                      🎁 {orderOffered ? t.unofferOrder : t.offerOrder}
+                    </button>
+                  )}
                 </>
               )}
             </div>
