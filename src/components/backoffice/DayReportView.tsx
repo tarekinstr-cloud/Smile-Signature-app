@@ -47,8 +47,15 @@ export function DayReportView({ report, day }: { report: DayReport; day: CashDay
               <tr><td>{t.dayOffered}</td><td className="num">{report.offered ? <bdi dir="ltr">−{money(report.offered)}</bdi> : money(0)}</td></tr>
               {report.delivery > 0 && <tr><td>{t.dayDelivery}</td><td className="num">+{money(report.delivery)}</td></tr>}
               <tr className="total"><td>{t.dayNet}</td><td className="num">{money(report.net)}</td></tr>
+              {report.closedSales && (
+                <tr className="closed-sales">
+                  <td>{t.dayClosedSales} ({report.closedSales.orders})</td>
+                  <td className="num">{money(report.closedSales.amount)}</td>
+                </tr>
+              )}
             </tbody>
           </table>
+          {report.closedSales && <p className="muted small">{t.dayClosedSalesHint(money(report.closedSales.cash))}</p>}
           <h3 className="day-sub">{t.dayPayments}</h3>
           <table className="bo-table day-summary">
             <tbody>
@@ -179,6 +186,7 @@ export function ZTicket({ day, report, settings }: { day: CashDay; report: DayRe
       {row(t.dayNet, money(report.net), true)}
       {row(t.paidOrders, String(report.orders))}
       {row(t.avgTicket, money(report.avgTicket))}
+      {report.closedSales && row(`${t.dayClosedSales} (${report.closedSales.orders})`, money(report.closedSales.amount))}
       <div className="receipt-sep" />
       <div className="receipt-subtitle">{t.dayPayments}</div>
       {Object.entries(report.payments).map(([m, v]) => row((t.payMethod as Record<string, string>)[m] ?? m, money(v)))}

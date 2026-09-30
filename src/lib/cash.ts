@@ -15,6 +15,8 @@ import type { CashDay, CashMovement, DayReport, NewCashMovement, NumberReset, Or
 export interface CashService {
   /** The working day in progress, or null when the drawer is not open. */
   currentDay(): Promise<CashDay | null>
+  /** Whether a working day is open, for every account (payments need one; employees cannot read the days). */
+  isOpen(): Promise<boolean>
   /** Closed days whose closing falls in [from, to), newest first. */
   closedDays(from: Date, to: Date): Promise<CashDay[]>
   /** Fond de caisse: opens the day (and resets the order numbers to 1). */
@@ -88,6 +90,12 @@ function supabaseCash(sb: SupabaseClient): CashService {
     return res.data
   }
   return {
+    async isOpen() {
+      const res = await sb.rpc('cash_day_is_open')
+      // Before migration 20260930130000_payments_need_open_day.sql the server does not check: do not block the service.
+      if (res.error) return /does not exist|schema cache|Could not find/i.test(res.error.message) ? true : Promise.reject(cashError(res.error.message))
+      return !!res.data
+    },
     async currentDay() {
       const rows = check(await sb.from('cash_days').select('*').is('closed_at', null).limit(1)) as CashDay[]
       return rows[0] ? normDay(rows[0]) : null
@@ -219,6 +227,9 @@ function localCash(): CashService {
   return {
     async currentDay() {
       return openDay(read())
+    },
+    async isOpen() {
+      return !!openDay(read())
     },
     async closedDays(from, to) {
       return read().days

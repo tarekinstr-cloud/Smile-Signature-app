@@ -167,8 +167,22 @@ export const defaultReceiptSettings = (): ReceiptSettings => ({
   logo: null,
 })
 
+/** A payment refused because no working day is open (Fond de caisse not entered, or the day was just closed). */
+/** Demo: whether a working day is open in the demo cash store (cash.ts, key smile.cash.v1). */
+function localDayOpen(): boolean {
+  try {
+    const saved = JSON.parse(localStorage.getItem('smile.cash.v1') ?? 'null') as { days?: { closed_at: string | null }[] } | null
+    return !!saved?.days?.some((d) => !d.closed_at)
+  } catch {
+    return false
+  }
+}
+
+export class CashClosedError extends Error {}
+
 function checkoutError(code: string): Error {
   const t = tr()
+  if (code.includes('no_open_day')) return new CashClosedError(t.errCashClosedPay)
   if (code.includes('order_not_open') || code.includes('order_not_found')) return new Error(t.errOrderClosed)
   if (code.includes('order_empty')) return new Error(t.errOrderEmpty)
   if (code.includes('amount_too_low')) return new Error(t.errAmountTooLow)
@@ -1063,6 +1077,8 @@ function localRepo(): Repo {
       if (i < 0 || db.orders[i].status !== 'open') throw checkoutError('order_not_open')
       const lines = db.lines.filter((l) => l.order_id === orderId).map(normalizeAdjustments)
       if (!lines.length) throw checkoutError('order_empty')
+      // Like the database trigger: no payment while the drawer is closed.
+      if (!localDayOpen()) throw checkoutError('no_open_day')
       const payments = (db.payments ??= [])
       const bill = computeBill(normalizeOrder(db.orders[i]), lines, payments.filter((p) => p.order_id === orderId))
       const pay = Math.round(amount * 100) / 100

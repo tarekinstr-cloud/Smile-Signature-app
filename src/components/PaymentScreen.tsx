@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { repo, type OpenOrder } from '../lib/repo'
+import { CashClosedError, repo, type OpenOrder } from '../lib/repo'
+import { cash } from '../lib/cash'
 import type { AdjustmentsPatch, Discount, OrderLine, PaidOrder, Payment, PaymentMethod } from '../lib/types'
 import { money } from '../lib/format'
 import { PAYMENT_METHODS, computeBill, discountOf } from '../lib/billing'
@@ -7,6 +8,7 @@ import { useI18n } from '../lib/i18n'
 import { usePermissions } from '../lib/permissions'
 import Keypad, { amountText, parseAmount } from './Keypad'
 import DiscountDialog from './DiscountDialog'
+import OpenCashDialog from './OpenCashDialog'
 import LangToggle from './LangToggle'
 
 interface Props {
@@ -53,6 +55,8 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   /** Discount dialog: on a line (its id) or on the whole order (null). */
   const [discountFor, setDiscountFor] = useState<{ lineId: string | null } | null>(null)
+  /** Caisse fermée: the payment waits for the drawer to be opened (Fond de caisse). */
+  const [cashClosed, setCashClosed] = useState(false)
 
   const reload = useCallback(async () => {
     try {
@@ -119,11 +123,27 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
     setBusy(false)
   }
 
+  /** Every payment needs an open working day: checked first, and again by the server (the day may close meanwhile). */
   async function pay() {
     if (!data || !canPay) return
+    setBusy(true)
+    const open = await cash.isOpen().catch(() => true)
+    setBusy(false)
+    if (!open) return setCashClosed(true)
+    await payNow()
+  }
+
+  async function payNow() {
+    if (!data) return
     const snapshot = data
     await run(async () => {
-      const done = await repo.addPayment(snapshot.order.id, method, amount, cashLike ? received : null)
+      let done
+      try {
+        done = await repo.addPayment(snapshot.order.id, method, amount, cashLike ? received : null)
+      } catch (e) {
+        if (e instanceof CashClosedError) return setCashClosed(true)
+        throw e
+      }
       if (done) {
         const payments = await repo.listPayments(done.id)
         onPaid({ order: done, lines: snapshot.lines, payments })
@@ -343,6 +363,9 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
         </main>
       )}
 
+      {cashClosed && (
+        <OpenCashDialog onCancel={() => setCashClosed(false)} onOpened={() => { setCashClosed(false); payNow() }} />
+      )}
       {discountFor && data && (
         <DiscountDialog
           target={discountLine ? discountLine.line.name : t.wholeOrder}
