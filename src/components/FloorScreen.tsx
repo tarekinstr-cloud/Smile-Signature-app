@@ -264,6 +264,8 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       : page === 'menuCsv' ? can('edit')
       : page === 'zones' || page === 'zoneNew' ? can('delivery_zones')
       : page === 'purchases' || page === 'purchaseNew' ? can('purchases')
+      : page === 'stockTransfer' ? can('stock_transfer')
+      : page === 'kitchenCharges' ? can('kitchen_charges')
       : can(page as Permission)
   const shown = (items: (AdminMenuItem | false)[]) => items.filter((i): i is AdminMenuItem => !!i)
   // Menus and entries the account has no permission for are left out, not just greyed.
@@ -284,6 +286,14 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       id: 'purchase-new', label: t.purNewItem, separator: can('stock') || can('suppliers'), checked: onBo('purchaseNew'), onSelect: () => openBo('purchaseNew'),
     },
     can('purchases') && { id: 'purchases', label: t.purInvoicesItem, checked: onBo('purchases'), onSelect: () => openBo('purchases') },
+    can('stock_transfer') && {
+      id: 'stock-transfer', label: t.transferItem, separator: can('stock') || can('suppliers') || can('purchases'),
+      checked: onBo('stockTransfer'), onSelect: () => openBo('stockTransfer'),
+    },
+    can('kitchen_charges') && {
+      id: 'kitchen-charges', label: t.chargesItem, separator: !can('stock_transfer') && (can('stock') || can('suppliers') || can('purchases')),
+      checked: onBo('kitchenCharges'), onSelect: () => openBo('kitchenCharges'),
+    },
   ])
   const staffItems = shown([
     can('staff') && { id: 'staff-list', label: t.staffListItem, checked: onBo('staff'), onSelect: () => openBo('staff') },
@@ -313,7 +323,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     }] : []),
     ...(editItems.length ? [{ id: 'edit', label: t.navEdit, current: onBo('zones') || onBo('zoneNew') || onBo('menuCsv'), items: editItems }] : []),
     ...(staffItems.length ? [{ id: 'staff', label: t.staff, current: onBo('staff') || onBo('payroll') || onBo('devices'), items: staffItems }] : []),
-    ...(stockItems.length ? [{ id: 'stock', label: t.stock, current: onBo('stock') || onBo('suppliers') || onBo('purchaseNew') || onBo('purchases'), items: stockItems }] : []),
+    ...(stockItems.length ? [{ id: 'stock', label: t.stock, current: onBo('stock') || onBo('suppliers') || onBo('purchaseNew') || onBo('purchases') || onBo('stockTransfer') || onBo('kitchenCharges'), items: stockItems }] : []),
     ...(can('stats') ? [{
       id: 'stats', label: t.navStats, current: onBo('stats'), items: [
         { id: 'sales', label: t.statsSales, checked: onBo('stats'), onSelect: () => setBackOffice('stats') },

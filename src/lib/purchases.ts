@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { sharedChannel, supabase } from './repo'
-import { backOffice } from './backoffice'
+import { backOffice, editLocalStock, localMovement, localUserName } from './backoffice'
 import { tr } from './i18n'
 import type { NewPurchase, SupplierInvoice, SupplierInvoiceItem, SupplierPayment, SupplierPaymentStatus } from './types'
 import { newId } from './id'
@@ -161,14 +161,23 @@ function localPurchases(): PurchasesService {
         id: newId(), supplier_id: supplier.id, supplier_name: supplier.name, date: p.date,
         total_amount: total, paid_amount: paid, payment_status: paymentStatus(total, paid), created_at: now(),
       }
-      for (const l of p.lines) {
-        const item = byId.get(l.stock_item_id)!
-        await backOffice.adjustStock(item.id, l.quantity)
-        if (!item.unit && l.unit.trim()) {
-          await backOffice.updateStockItem(item.id, { unit: l.unit })
-          item.unit = l.unit.trim()
+      // + quantité achetée au Dépôt, traced as purchase movements, in one write.
+      const user = await localUserName()
+      const batch = newId()
+      editLocalStock((db) => {
+        for (const l of p.lines) {
+          const item = db.stock.find((s) => s.id === l.stock_item_id)
+          if (!item) throw new Error(tr().errStockGone)
+          item.quantity = Math.round((item.quantity + l.quantity) * 1000) / 1000
+          if (!item.unit && l.unit.trim()) item.unit = l.unit.trim()
+          item.updated_at = now()
+          byId.set(item.id, { ...item })
+          db.movements.push(localMovement({
+            type: 'purchase', item, quantity: l.quantity, to_location: 'depot', unit_cost: round2(l.unit_price), invoice_id: invoice.id,
+            batch_id: batch, user_name: user,
+          }))
         }
-      }
+      })
       const db = read()
       db.invoices.push(invoice)
       db.items.push(...p.lines.map((l) => ({

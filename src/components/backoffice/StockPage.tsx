@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { backOffice } from '../../lib/backoffice'
+import { backOffice, insufficientStock } from '../../lib/backoffice'
 import type { StockItem } from '../../lib/types'
 import { useI18n } from '../../lib/i18n'
 import { useDialog } from '../Dialog'
@@ -17,7 +17,10 @@ const parseQty = (v: string) => {
 
 type Editing = { kind: 'new' } | { kind: 'edit'; item: StockItem } | { kind: 'adjust'; item: StockItem }
 
-/** Gestion du Stock: ingredients and products with their quantity, adjusted by hand (not linked to sales yet). */
+/**
+ * Gestion du Stock: ingredients and products with their quantity at the Dépôt and in the Cuisine. The ± adjustment
+ * works on the Dépôt; the Cuisine changes through Transfert dépôt / cuisine and Charges cuisine. Not linked to sales yet.
+ */
 export default function StockPage() {
   const { t, lang } = useI18n()
   const load = useCallback(() => backOffice.listStock(), [])
@@ -49,6 +52,10 @@ export default function StockPage() {
     const n = parseQty(qty)
     if (editing.kind !== 'edit' && (n === null || (editing.kind === 'adjust' && n <= 0))) return setFormError(t.errQuantity)
     if (editing.kind !== 'adjust' && !name.trim()) return setFormError(t.errNameEmpty)
+    if (editing.kind === 'new' && n! < 0) return setFormError(t.errQuantity)
+    if (editing.kind === 'adjust' && direction === -1 && n! > editing.item.quantity) {
+      return setFormError(insufficientStock(editing.item.name, editing.item.unit, 'depot', editing.item.quantity, n!).message)
+    }
     setBusy(true)
     try {
       setFormError(null)
@@ -94,11 +101,13 @@ export default function StockPage() {
         ) : shown.length === 0 ? (
           <p className="muted small">{t.noMatch}</p>
         ) : (
-          <table className="bo-table">
+          <table className="bo-table stock-table">
             <thead>
               <tr>
                 <th>{t.colName}</th>
-                <th className="num">{t.colQuantity}</th>
+                <th className="num">{t.colDepot}</th>
+                <th className="num">{t.colKitchen}</th>
+                <th className="num">{t.colTotal}</th>
                 <th className="hide-phone">{t.colUpdated}</th>
                 <th aria-label={t.adjust} />
               </tr>
@@ -109,9 +118,11 @@ export default function StockPage() {
                   <td>
                     <button className="ghost link" onClick={() => open({ kind: 'edit', item: s })}><bdi>{s.name}</bdi></button>
                   </td>
-                  <td className="num">
-                    <strong className={s.quantity < 0 ? 'neg' : ''} title={s.quantity < 0 ? t.negativeStock : undefined}><bdi>{qtyText(s)}</bdi></strong>
+                  <td className="num" data-label={t.colDepot}>
+                    <span className={s.quantity < 0 ? 'neg' : ''} title={s.quantity < 0 ? t.negativeStock : undefined}><bdi>{qtyText(s)}</bdi></span>
                   </td>
+                  <td className="num" data-label={t.colKitchen}><bdi>{qtyText(s, s.kitchen_quantity)}</bdi></td>
+                  <td className="num" data-label={t.colTotal}><strong><bdi>{qtyText(s, Math.round((s.quantity + s.kitchen_quantity) * 1000) / 1000)}</bdi></strong></td>
                   <td className="hide-phone muted small">{when(s.updated_at)}</td>
                   <td className="end">
                     <button onClick={() => open({ kind: 'adjust', item: s })} aria-label={`${t.adjust} ${s.name}`}>±<span className="hide-phone"> {t.adjust}</span></button>
@@ -134,7 +145,8 @@ export default function StockPage() {
             {formError && <p className="error small">{formError}</p>}
             {editing.kind === 'adjust' ? (
               <>
-                <p className="muted small">{t.currentStock(`\u2068${qtyText(editing.item)}\u2069`)}</p>
+                <p className="muted small">{t.currentStock(`\u2068${t.stockLocation.depot} : ${qtyText(editing.item)}\u2069`)}</p>
+                <p className="muted small">{t.adjustDepotHint}</p>
                 <div className="segmented stock-dir" role="group">
                   <button type="button" className={direction === 1 ? 'on' : ''} aria-pressed={direction === 1} onClick={() => setDirection(1)}>{t.stockIn}</button>
                   <button type="button" className={direction === -1 ? 'on' : ''} aria-pressed={direction === -1} onClick={() => setDirection(-1)}>{t.stockOut}</button>
