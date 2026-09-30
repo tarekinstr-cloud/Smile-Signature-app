@@ -634,3 +634,31 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .zones-table tr.highlight td { background: #fffbeb; }
 .zones-table .row-actions { text-align: end; white-space: nowrap; }
 .zones-table .row-actions button + button { margin-inline-start: 6px; }
+
+/* ───────────── Salaires et acomptes ───────────── */
+.payroll-table .num.strong { font-weight: 700; }
+.payroll-table .num-link { font-weight: 500; font-variant-numeric: tabular-nums; }
+.payroll-table tr.muted td { color: var(--muted); }
+.payroll-table .row-actions { text-align: end; white-space: nowrap; }
+.payroll-table .row-actions button { min-height: 40px; }
+.payroll-history td { background: var(--bg, #f8fafc); padding-top: 4px; }
+.advance-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.advance-list li { display: grid; grid-template-columns: 150px 110px 1fr auto; align-items: center; gap: 10px; padding: 4px 0; }
+.advance-amount { font-variant-numeric: tabular-nums; text-align: end; }
+.advance-note { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .advance-list li { grid-template-columns: 1fr auto; }
+  .advance-note { grid-column: 1 / -1; }
+}
+/* Phone: one card per employee (name, then salary / advances / remaining with their labels, then the button). */
+@media (max-width: 600px) {
+  .payroll-table thead { display: none; }
+  .payroll-table tbody tr:not(.payroll-history) { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .payroll-table tbody tr:not(.payroll-history) td { border: 0; padding: 2px 0; }
+  .payroll-table .payroll-name, .payroll-table .row-actions { grid-column: 1 / -1; }
+  .payroll-table .row-actions { text-align: start; }
+  .payroll-table td.num { text-align: start; display: flex; flex-direction: column; }
+  .payroll-table td.num::before { content: attr(data-label); font-size: 11px; font-weight: 600; color: var(--muted); }
+  .payroll-table .num-link { text-align: start; }
+  .payroll-history, .payroll-history td { display: block; }
+}

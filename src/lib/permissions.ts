@@ -6,10 +6,10 @@ import { USER_ROLES, type UserRole } from './types'
 
 /**
  * What an account may open or do beyond the service screen (plan de salle, commandes, encaissement, à emporter,
- * livraison), which every account has. Same keys as the database (migrations 20260930000000_permissions.sql, 20260930010000_reservations.sql and
- * 20260930030000_delivery_zones.sql).
+ * livraison), which every account has. Same keys as the database (migrations 20260930000000_permissions.sql, 20260930010000_reservations.sql,
+ * 20260930030000_delivery_zones.sql and 20260930050000_payroll.sql).
  */
-export const SECTION_PERMISSIONS = ['staff', 'stock', 'suppliers', 'stats', 'settings', 'edit', 'backup', 'ticket', 'reservations', 'delivery_zones'] as const
+export const SECTION_PERMISSIONS = ['staff', 'payroll', 'stock', 'suppliers', 'stats', 'settings', 'edit', 'backup', 'ticket', 'reservations', 'delivery_zones'] as const
 export const ACTION_PERMISSIONS = ['cancel_order', 'offer', 'discount'] as const
 export const PERMISSIONS = [...SECTION_PERMISSIONS, ...ACTION_PERMISSIONS] as const
 export type Permission = (typeof PERMISSIONS)[number]
