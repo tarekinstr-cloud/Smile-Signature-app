@@ -783,6 +783,19 @@ export interface DayReport {
   categories: SalesRow[]
   employees: SalesRow[]
   cash: CashSummary | null
+  /**
+   * Sales paid while the drawer was closed (before this day was opened), counted in this day. Reports made before
+   * this was recorded have none.
+   */
+  closedSales?: ClosedSales | null
+}
+
+export interface ClosedSales {
+  orders: number
+  /** What those orders brought in. */
+  amount: number
+  /** Part paid in cash (in the expected cash of the day). */
+  cash: number
 }
 
 /** Raw sales of a period, from which reports are computed. */
