@@ -11,6 +11,7 @@ import BackupPage from './BackupPage'
 import TicketPage from './TicketPage'
 import PermissionsPage from './PermissionsPage'
 import { NewReservationPage, ReservationsList } from './ReservationsPage'
+import MenuCsvPage from './MenuCsvPage'
 import { NewZonePage, ZonesList } from './DeliveryZonesPage'
 
 interface Props {
@@ -51,6 +52,7 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     ticket: [t.ticketTitle, t.ticketSub],
     reservations: [t.reservationsTitle, t.reservationsSub],
     reservationNew: [t.resNewItem, t.resNewSub],
+    menuCsv: [t.csvTitle, t.csvSub],
     zones: [t.zonesEditItem, t.zonesSub],
     zoneNew: [t.zoneNewItem, t.zonesSub],
   }
@@ -102,6 +104,7 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'ticket' && <TicketPage />}
       {page === 'reservationNew' && <NewReservationPage onSaved={(r) => { setCreated(r.id); onPage('reservations') }} />}
       {page === 'reservations' && <ReservationsList onOpenOrder={onOpenOrder} highlight={created} />}
+      {page === 'menuCsv' && <MenuCsvPage />}
       {page === 'zoneNew' && <NewZonePage onSaved={(z) => { setCreatedZone(z.id); onPage('zones') }} />}
       {page === 'zones' && <ZonesList highlight={createdZone} />}
     </div>
