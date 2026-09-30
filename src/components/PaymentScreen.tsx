@@ -245,7 +245,7 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
             </div>
 
             <dl className="bill-sum">
-              {(bill.offered > 0 || bill.lineDiscounts > 0 || bill.orderDiscount > 0) && (
+              {(bill.offered > 0 || bill.lineDiscounts > 0 || bill.orderDiscount > 0 || bill.delivery > 0) && (
                 <div><dt>{t.subtotal}</dt><dd>{money(bill.gross)}</dd></div>
               )}
               {bill.offered > 0 && <div><dt>{t.offered}</dt><dd>{minus(bill.offered)}</dd></div>}
@@ -256,6 +256,7 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
                   <dd>{minus(bill.orderDiscount)}</dd>
                 </div>
               )}
+              {bill.delivery > 0 && <div><dt>{t.deliveryFee}</dt><dd>{money(bill.delivery)}</dd></div>}
               <div className="sum-total"><dt>{t.total}</dt><dd>{money(bill.total)}</dd></div>
               {bill.paid > 0 && <div><dt>{t.alreadyPaid}</dt><dd>{minus(bill.paid)}</dd></div>}
             </dl>

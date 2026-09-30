@@ -262,9 +262,20 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     page === 'users' || page === 'permissions' ? isAdmin
       : page === 'reservations' || page === 'reservationNew' ? can('reservations')
       : page === 'menuCsv' ? can('edit')
+      : page === 'zones' || page === 'zoneNew' ? can('delivery_zones')
       : can(page as Permission)
   const shown = (items: (AdminMenuItem | false)[]) => items.filter((i): i is AdminMenuItem => !!i)
   // Menus and entries the account has no permission for are left out, not just greyed.
+  const editItems = shown([
+    can('edit') && { id: 'plan', label: t.editPlanItem, checked: !backOffice && mode === 'edit', onSelect: () => { toFloor(); setMode('edit') } },
+    can('edit') && { id: 'hall', label: t.addHall, onSelect: () => { toFloor(); addHall() } },
+    can('edit') && { id: 'menu', label: t.menuTitle, onSelect: () => { toFloor(); setMenuAdmin(true) } },
+    can('edit') && { id: 'menu-csv', label: t.csvTitle, checked: onBo('menuCsv'), onSelect: () => openBo('menuCsv') },
+    can('delivery_zones') && {
+      id: 'zone-new', label: t.zoneNewItem, separator: can('edit'), checked: onBo('zoneNew'), onSelect: () => openBo('zoneNew'),
+    },
+    can('delivery_zones') && { id: 'zones', label: t.zonesEditItem, checked: onBo('zones'), onSelect: () => openBo('zones') },
+  ])
   const stockItems = shown([
     can('stock') && { id: 'stock', label: t.stockSub, checked: onBo('stock'), onSelect: () => setBackOffice('stock') },
     can('suppliers') && { id: 'suppliers', label: t.suppliers, checked: onBo('suppliers'), onSelect: () => setBackOffice('suppliers') },
@@ -290,14 +301,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
         { id: 'res-list', label: t.resListItem, checked: onBo('reservations'), onSelect: () => openBo('reservations') },
       ],
     }] : []),
-    ...(can('edit') ? [{
-      id: 'edit', label: t.navEdit, current: onBo('menuCsv'), items: [
-        { id: 'plan', label: t.editPlanItem, checked: !backOffice && mode === 'edit', onSelect: () => { toFloor(); setMode('edit') } },
-        { id: 'hall', label: t.addHall, onSelect: () => { toFloor(); addHall() } },
-        { id: 'menu', label: t.menuTitle, onSelect: () => { toFloor(); setMenuAdmin(true) } },
-        { id: 'menu-csv', label: t.csvTitle, checked: onBo('menuCsv'), onSelect: () => openBo('menuCsv') },
-      ],
-    }] : []),
+    ...(editItems.length ? [{ id: 'edit', label: t.navEdit, current: onBo('zones') || onBo('zoneNew') || onBo('menuCsv'), items: editItems }] : []),
     ...(can('staff') ? [{ id: 'staff', label: t.staff, current: onBo('staff'), onSelect: () => setBackOffice('staff') }] : []),
     ...(stockItems.length ? [{ id: 'stock', label: t.stock, current: onBo('stock') || onBo('suppliers'), items: stockItems }] : []),
     ...(can('stats') ? [{

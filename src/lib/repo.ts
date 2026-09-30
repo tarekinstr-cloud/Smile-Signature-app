@@ -167,6 +167,9 @@ function checkoutError(code: string): Error {
   if (code.includes('cancel_paid')) return new Error(t.errCancelPaid)
   if (code.includes('table_link_required')) return new Error(t.errTableLinkRequired)
   if (code.includes('table_has_order')) return new Error(t.errTableHasOrder)
+  // Delivery zones need their own migration.
+  if (code.includes('delivery_zone_not_found')) return new Error(t.errZoneGone)
+  if (/delivery_zone|delivery_fee/.test(code)) return new Error(t.errMigrationZones)
   // Deliveries need the delivery migration.
   if (/delivery_|customer_phone|orders_order_type_check/.test(code)) return new Error(t.errMigrationDelivery)
   // Takeaway, table moves and invoices need the order-actions migration.
@@ -541,13 +544,26 @@ function normalizeOrder(o: Order): Order {
     customer_phone: o.customer_phone ?? null,
     delivery_status: o.order_type === 'delivery' ? o.delivery_status ?? 'preparing' : null,
     invoice_no: o.invoice_no == null ? null : Number(o.invoice_no),
+    // Rows saved before the delivery-zones migration have no zone and no fee.
+    delivery_zone_id: o.delivery_zone_id ?? null,
+    delivery_zone_name: o.delivery_zone_name ?? null,
+    delivery_fee: Number(o.delivery_fee ?? 0),
   }
 }
 
-/** Delivery fields to write: only those given, trimmed, empty text saved as null. */
-function deliveryRow(patch: DeliveryPatch): Partial<Pick<Order, 'customer_name' | 'customer_phone' | 'customer_address' | 'delivery_status'>> {
+type DeliveryRow = Partial<Pick<Order, 'customer_name' | 'customer_phone' | 'customer_address' | 'delivery_status'
+  | 'delivery_zone_id' | 'delivery_zone_name' | 'delivery_fee'>>
+
+/**
+ * Delivery fields to write: only those given, trimmed, empty text saved as null. The zone's name and fee are copied onto
+ * the order (in Supabase a trigger copies them again from the delivery_zones table).
+ */
+function deliveryRow(patch: DeliveryPatch): DeliveryRow {
   const text = (v: string) => v.trim() || null
   return {
+    ...(patch.zone !== undefined && {
+      delivery_zone_id: patch.zone?.id ?? null, delivery_zone_name: patch.zone?.name ?? null, delivery_fee: patch.zone?.fee ?? 0,
+    }),
     ...(patch.name !== undefined && { customer_name: text(patch.name) }),
     ...(patch.phone !== undefined && { customer_phone: text(patch.phone) }),
     ...(patch.address !== undefined && { customer_address: text(patch.address) }),
@@ -595,6 +611,7 @@ const newOrder = (tableId: string | null): Order => ({
   discount_type: null, discount_value: 0, offered: false,
   order_type: 'dine_in', takeaway_no: null, customer_name: null, customer_address: null, invoice_no: null,
   delivery_no: null, customer_phone: null, delivery_status: null,
+  delivery_zone_id: null, delivery_zone_name: null, delivery_fee: 0,
 })
 
 const KEY = 'smile.floor.v1'

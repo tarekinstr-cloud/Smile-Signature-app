@@ -62,6 +62,7 @@ export default function Receipt({ settings, order, lines, payments, place, hallN
           <div><strong>[{t.delivery}]</strong></div>
           {deliveryContact(order) && <div dir="auto">{deliveryContact(order)}</div>}
           {order.customer_address && textLines(order.customer_address)}
+          {order.delivery_zone_name && <div>{t.deliveryZone} : <bdi>{order.delivery_zone_name}</bdi></div>}
         </div>
       ) : kind === 'invoice' && (order.customer_name || order.customer_address) && (
         <div className="receipt-customer">
@@ -104,6 +105,12 @@ export default function Receipt({ settings, order, lines, payments, place, hallN
               <span>{minus(bill.orderDiscount)}</span>
             </div>
           )}
+        </>
+      )}
+      {bill.delivery > 0 && (
+        <>
+          {!adjusted && <div className="receipt-row"><span>{t.subtotal}</span><span>{money(bill.gross)}</span></div>}
+          <div className="receipt-row"><span>{t.deliveryFee}</span><span>{money(bill.delivery)}</span></div>
         </>
       )}
       <div className="receipt-row receipt-total">

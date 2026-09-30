@@ -631,3 +631,7 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .csv-result { margin-top: 16px; padding: 12px; border-radius: 10px; background: #f0fdf4; }
 .csv-errors td:nth-child(2) { color: #b91c1c; }
 .dialog-actions.start { justify-content: flex-start; }
+/* Zones de livraison (Édition) */
+.zones-table tr.highlight td { background: #fffbeb; }
+.zones-table .row-actions { text-align: end; white-space: nowrap; }
+.zones-table .row-actions button + button { margin-inline-start: 6px; }
