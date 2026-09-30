@@ -756,3 +756,25 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
   .moves-table td:not(.num)[data-label]::before { content: attr(data-label); font-size: 11px; font-weight: 600; color: var(--muted); }
   .stock-table thead th.num { font-size: 11px; }
 }
+
+/* ───────────── État du stock ───────────── */
+.state-tabs { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.state-filters { align-items: flex-end; }
+.state-filters .spacer { flex: 1; }
+.state-count { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 999px; font-size: 12px; background: var(--line); color: var(--ink); }
+.state-count.low, .state-count.out { background: var(--occ-bg); color: var(--occ); }
+.segmented button.on .state-count { background: rgba(255, 255, 255, 0.6); }
+.tag.state-level { margin-inline-start: 6px; font-weight: 700; }
+.tag.state-level.low { background: var(--occ-bg); color: var(--occ); }
+.tag.state-level.out { background: var(--occ); color: #fff; }
+.state-table tr.state-out td { background: #fef2f2; }
+.state-table .pos { color: #15803d; }
+.state-table .neg, .stat-tile .neg { color: var(--occ); }
+.report-transfers bdi { display: block; font-size: 13px; }
+.state-table td.state-unit { white-space: nowrap; }
+.check-row { flex-direction: row !important; align-items: center; gap: 6px !important; }
+.check-row input { width: auto; }
+.inv-input input { width: 90px; text-align: end; }
+.inventory-table tr.inv-counted td { background: #fffbeb; }
+.inv-lines { font-size: 14px; }
+.inv-lines td, .inv-lines th { padding: 4px 6px; }

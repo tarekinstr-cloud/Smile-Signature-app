@@ -32,6 +32,7 @@ export default function StockPage() {
   const [name, setName] = useState('')
   const [unit, setUnit] = useState('')
   const [qty, setQty] = useState('')
+  const [minQty, setMinQty] = useState('')
   const [direction, setDirection] = useState<1 | -1>(1)
   const [formError, setFormError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -42,6 +43,7 @@ export default function StockPage() {
     setName(e.kind === 'new' ? '' : e.item.name)
     setUnit(e.kind === 'new' ? '' : e.item.unit)
     setQty(e.kind === 'new' ? '0' : '')
+    setMinQty(e.kind === 'edit' && e.item.min_quantity != null ? String(e.item.min_quantity) : '')
     setDirection(1)
     setEditing(e)
   }
@@ -53,14 +55,21 @@ export default function StockPage() {
     if (editing.kind !== 'edit' && (n === null || (editing.kind === 'adjust' && n <= 0))) return setFormError(t.errQuantity)
     if (editing.kind !== 'adjust' && !name.trim()) return setFormError(t.errNameEmpty)
     if (editing.kind === 'new' && n! < 0) return setFormError(t.errQuantity)
+    // Stock minimum: empty (no alert) or a quantity ≥ 0.
+    const min = minQty.trim() ? parseQty(minQty) : null
+    if (editing.kind !== 'adjust' && minQty.trim() && (min === null || min < 0)) return setFormError(t.errQuantity)
     if (editing.kind === 'adjust' && direction === -1 && n! > editing.item.quantity) {
       return setFormError(insufficientStock(editing.item.name, editing.item.unit, 'depot', editing.item.quantity, n!).message)
     }
     setBusy(true)
     try {
       setFormError(null)
-      if (editing.kind === 'new') await backOffice.createStockItem({ name, unit, quantity: n! })
-      else if (editing.kind === 'edit') await backOffice.updateStockItem(editing.item.id, { name, unit })
+      if (editing.kind === 'new') await backOffice.createStockItem({ name, unit, quantity: n!, ...(min !== null && { min_quantity: min }) })
+      else if (editing.kind === 'edit') {
+        await backOffice.updateStockItem(editing.item.id, {
+          name, unit, ...((min ?? null) !== editing.item.min_quantity && { min_quantity: min }),
+        })
+      }
       else await backOffice.adjustStock(editing.item.id, direction * n!)
       setEditing(null)
       await reload()
@@ -177,6 +186,11 @@ export default function StockPage() {
                     <input value={unit} placeholder={t.stockUnitPh} onChange={(e) => setUnit(e.target.value)} />
                   </label>
                 </div>
+                <label>
+                  {t.stockMinLabel}{unit.trim() ? ` (${unit.trim()})` : ''}
+                  <input dir="ltr" inputMode="decimal" value={minQty} placeholder="—" onChange={(e) => setMinQty(e.target.value)} />
+                </label>
+                <p className="muted small">{t.stockMinHint}</p>
               </>
             )}
             <div className="dialog-actions">

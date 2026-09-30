@@ -302,10 +302,12 @@ export interface StockItem {
   kitchen_quantity: number
   /** Free text: kg, L, pièce… */
   unit: string
+  /** Stock minimum (Dépôt + Cuisine): at or below it, « Stock bas ». null: no alert. */
+  min_quantity: number | null
   updated_at: string
 }
 
-export type NewStockItem = Pick<StockItem, 'name' | 'quantity' | 'unit'>
+export type NewStockItem = Pick<StockItem, 'name' | 'quantity' | 'unit'> & Partial<Pick<StockItem, 'min_quantity'>>
 
 /** Where stock is kept. */
 export type StockLocation = 'depot' | 'kitchen'
@@ -337,6 +339,8 @@ export interface StockMovement {
   unit_cost: number | null
   /** Purchase: the supplier invoice it came from. */
   invoice_id?: string | null
+  /** Adjustment: the inventaire physique it came from. */
+  inventory_id?: string | null
   /** Signed-in employee. */
   user_name: string
   created_at: string
@@ -355,7 +359,72 @@ export interface MovementFilter {
   stock_item_id?: string
   reason?: ChargeReason
 }
-export type StockItemPatch = Partial<Pick<StockItem, 'name' | 'unit'>>
+export type StockItemPatch = Partial<Pick<StockItem, 'name' | 'unit' | 'min_quantity'>>
+
+/** État du stock: an item with its last purchase (price and supplier) and every supplier it was bought from. */
+export interface StockStateRow extends StockItem {
+  last_price: number | null
+  last_supplier_id: string | null
+  last_supplier_name: string | null
+  suppliers: { id: string; name: string }[]
+}
+
+/**
+ * Mouvements par période, for one item over [from, to[: quantities at the start and at the end of the period (Dépôt and
+ * Cuisine), and what moved in between. initial + purchases − charges + adjustments = final (Dépôt + Cuisine).
+ */
+export interface StockReportRow {
+  id: string
+  name: string
+  unit: string
+  initial_depot: number
+  initial_kitchen: number
+  /** Entrées (achats), at the Dépôt. */
+  purchases: number
+  /** Dépôt → Cuisine. */
+  transfers: number
+  /** Cuisine → Dépôt. */
+  returns: number
+  /** Sorties (charges cuisine). */
+  charges: number
+  /** Ajustements ± and inventory gaps, signed. */
+  adjustments: number
+  final_depot: number
+  final_kitchen: number
+}
+
+/** One count of an inventaire physique: what was counted for an item at one place. */
+export interface InventoryCount {
+  stock_item_id: string
+  location: StockLocation
+  counted: number
+  /** Theoretical quantity shown while counting: the database refuses the inventory if the stock moved since. */
+  expected: number
+}
+
+/** An inventaire physique (history). gap_value: the valued gaps (lines without a purchase price not counted). */
+export interface StockInventory {
+  id: string
+  note: string
+  line_count: number
+  gap_value: number
+  user_name: string
+  created_at: string
+}
+
+export interface StockInventoryLine {
+  id: string
+  inventory_id: string
+  stock_item_id: string | null
+  item_name: string
+  unit: string
+  location: StockLocation
+  theoretical: number
+  counted: number
+  /** counted − theoretical. */
+  gap: number
+  unit_cost: number | null
+}
 
 export interface Supplier {
   id: string
