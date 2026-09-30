@@ -377,6 +377,8 @@ export interface Reservation {
   reserved_at: string
   status: ReservationStatus
   note: string
+  /** Order opened when the booking was marked Honorée (null before, or after that order was deleted). */
+  order_id?: string | null
   created_at: string
 }
 

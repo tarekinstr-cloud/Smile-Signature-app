@@ -627,6 +627,9 @@ const fr = {
   errResHall: 'Choisissez une salle.',
   errResTableHall: 'La table choisie n’est pas dans cette salle.',
   errResNoTable: 'Aucune table libre dans cette salle.',
+  errMigrationHonor: 'Honorée indisponible : exécutez 20260930020000_honor_reservation.sql dans Supabase (SQL Editor).',
+  errResTableBusy: 'Cette table a déjà une commande ouverte : choisissez une table libre.',
+  errResNotConfirmed: 'Cette réservation n’est plus « Confirmée ».',
   errMigrationReservations: 'Réservations indisponibles : exécutez 20260930010000_reservations.sql dans Supabase (SQL Editor).',
 }
 
@@ -1242,6 +1245,9 @@ const ar: Dict = {
   errResHall: 'اختر صالة.',
   errResTableHall: 'الطاولة المختارة ليست في هذه الصالة.',
   errResNoTable: 'لا توجد طاولة حرة في هذه الصالة.',
+  errMigrationHonor: '«تم الحضور» غير متوفر: نفّذ 20260930020000_honor_reservation.sql في Supabase (SQL Editor).',
+  errResTableBusy: 'هذه الطاولة عليها طلب مفتوح: اختر طاولة حرة.',
+  errResNotConfirmed: 'هذا الحجز لم يعد «مؤكداً».',
   errMigrationReservations: 'الحجوزات غير متوفرة: نفّذ 20260930010000_reservations.sql في Supabase (SQL Editor).',
 }
 
