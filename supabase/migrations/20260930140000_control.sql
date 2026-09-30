@@ -119,6 +119,7 @@ declare
   o public.orders;
   v_day uuid;
   v_cash numeric(10,2);
+  v_available numeric;
 begin
   if not public.has_permission('cancel_invoice') then
     raise exception 'no_permission';
@@ -130,12 +131,18 @@ begin
   if o.status <> 'paid' then
     raise exception 'order_not_paid';
   end if;
-  -- L'argent rendu sort de la caisse de la journée ouverte (verrou partagé comme un paiement).
-  select id into v_day from public.cash_days where closed_at is null for share;
+  -- L'argent rendu sort de la caisse de la journée ouverte : verrou comme un Fond de sortie, jamais au-delà des
+  -- espèces attendues.
+  select id into v_day from public.cash_days where closed_at is null for update;
   if not found then
     raise exception 'no_open_day';
   end if;
   select coalesce(sum(amount), 0) into v_cash from public.payments where order_id = p_order_id and method = 'cash';
+  select round(d.opening_float + t.cash_sales + t.cash_in - t.cash_out, 2) into v_available
+    from public.cash_days d, public.cash_day_totals(d.id, now()) t where d.id = v_day;
+  if v_cash > v_available then
+    raise exception 'insufficient_cash:%', v_available;
+  end if;
   perform set_config('smile.void', 'on', true);
   update public.orders set
     status        = 'cancelled',

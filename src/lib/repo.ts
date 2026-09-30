@@ -222,6 +222,24 @@ function localOpenDayId(): string | null {
   }
 }
 
+/** Demo: cash expected in the drawer of the open day (float + cash payments − cash given back + entrées − sorties). */
+function localDrawerCash(dayId: string, db: LocalOrdersDb): number {
+  try {
+    const saved = JSON.parse(localStorage.getItem('smile.cash.v1') ?? 'null') as {
+      days: { id: string; period_start: string; opening_float: number }[]
+      movements: { day_id: string; kind: 'in' | 'out'; amount: number }[]
+    }
+    const day = saved.days.find((d) => d.id === dayId)
+    if (!day) return 0
+    const sales = (db.payments ?? []).filter((p) => p.method === 'cash' && p.created_at >= day.period_start).reduce((n, p) => n + Number(p.amount), 0)
+    const back = db.orders.filter((o) => o.voided && o.voided_day_id === dayId).reduce((n, o) => n + Number(o.void_cash ?? 0), 0)
+    const moves = saved.movements.filter((m) => m.day_id === dayId).reduce((n, m) => n + (m.kind === 'in' ? m.amount : -m.amount), 0)
+    return Math.round((day.opening_float + sales - back + moves) * 100) / 100
+  } catch {
+    return 0
+  }
+}
+
 /** Demo: whether a working day is open in the demo cash store (cash.ts, key smile.cash.v1). */
 function localDayOpen(): boolean {
   try {
@@ -241,6 +259,8 @@ function checkoutError(code: string): Error {
   if (code.includes('cancel_note_required')) return new Error(t.errCancelNote)
   if (code.includes('permission_denied:cancel_invoice')) return new Error(t.errCancelInvoice)
   if (code.includes('void_by_rpc_only')) return new Error(t.errCancelPaid)
+  const short = /insufficient_cash:(-?[\d.]+)/.exec(code)
+  if (short) return new Error(t.errCashShort(`${Number(short[1]).toLocaleString('fr-FR')} ${t.currency}`))
   if (code.includes('order_not_open') || code.includes('order_not_found')) return new Error(t.errOrderClosed)
   if (code.includes('order_empty')) return new Error(t.errOrderEmpty)
   if (code.includes('amount_too_low')) return new Error(t.errAmountTooLow)
@@ -1027,6 +1047,8 @@ function localRepo(): Repo {
       if (!why.reason) throw checkoutError('cancel_reason_required')
       if (why.reason === 'other' && !why.note.trim()) throw checkoutError('cancel_note_required')
       const cash = (db.payments ?? []).filter((p) => p.order_id === orderId && p.method === 'cash').reduce((s, p) => s + p.amount, 0)
+      const available = localDrawerCash(dayId, db)
+      if (cash > available) throw checkoutError(`insufficient_cash:${available}`)
       Object.assign(order, {
         status: 'cancelled', cancel_reason: why.reason, cancel_note: why.note.trim().slice(0, 300), cancelled_at: new Date().toISOString(),
         cancelled_by_name: demoUserName ?? '', cancelled_total: (order as PaidOrder).total ?? 0, voided: true, voided_day_id: dayId,
