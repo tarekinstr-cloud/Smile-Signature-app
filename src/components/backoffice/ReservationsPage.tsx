@@ -246,7 +246,7 @@ export function ReservationsList({ onOpenOrder, highlight }: ListProps) {
   async function seat(r: Reservation, table: DiningTable) {
     try {
       setError(null)
-      await reservations.update(r.id, { status: 'honored', hall_id: table.hall_id, table_id: table.id })
+      await reservations.honor(r.id, table.id)
       setHonoring(null)
       onOpenOrder(table.hall_id, table.id)
     } catch (err) {

@@ -18,6 +18,7 @@ import { useDialog } from './Dialog'
 import LangToggle from './LangToggle'
 import { useI18n } from '../lib/i18n'
 import { usePermissions } from '../lib/permissions'
+import { reservations } from '../lib/reservations'
 
 interface Props {
   /** Table tapped on the floor plan; null for a takeaway order. */
@@ -407,9 +408,13 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
     })
   }
 
-  /** Leaves the screen; an order that was opened but never got an item does not keep its table occupied. */
+  /**
+   * Leaves the screen; an order that was opened but never got an item does not keep its table occupied. Except the
+   * order of a booking marked Honorée: the customer is seated, so the table stays occupied until items are added or
+   * the order is cancelled (Annuler la CMD).
+   */
   async function leaveEmpty() {
-    if (order && lines.length === 0) await run(() => repo.cancelOrder(order.id))
+    if (order && lines.length === 0 && !(await reservations.hasOrder(order.id))) await run(() => repo.cancelOrder(order.id))
   }
 
   async function back() {

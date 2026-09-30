@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { sharedChannel, supabase } from './repo'
+import { repo, sharedChannel, supabase } from './repo'
 import { tr } from './i18n'
 import type { NewReservation, Reservation, ReservationPatch } from './types'
 
@@ -14,6 +14,13 @@ export interface ReservationsService {
   listBetween(from: Date, to: Date): Promise<Reservation[]>
   create(r: NewReservation): Promise<Reservation>
   update(id: string, patch: ReservationPatch): Promise<void>
+  /**
+   * Honorée: opens an order on the table (which turns occupied at once) and marks the booking honored with that order,
+   * in one step. The table must be free. Returns the order id.
+   */
+  honor(id: string, tableId: string): Promise<string>
+  /** Whether an order was opened by Honorée: such an order keeps its table occupied even with no item yet. */
+  hasOrder(orderId: string): Promise<boolean>
   subscribe(onChange: () => void): () => void
 }
 
@@ -67,6 +74,10 @@ function resError(message: string): Error {
   if (/reservations/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return new Error(t.errMigrationReservations)
   if (/row-level security|permission denied/i.test(message)) return new Error(t.errNoPermission)
   if (message.includes('reservation_table_hall')) return new Error(t.errResTableHall)
+  if (/honor_reservation|order_id/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return new Error(t.errMigrationHonor)
+  if (message.includes('permission_denied')) return new Error(t.errNoPermission)
+  if (message.includes('table_has_order')) return new Error(t.errResTableBusy)
+  if (message.includes('reservation_not_confirmed')) return new Error(t.errResNotConfirmed)
   return new Error(message)
 }
 
@@ -90,6 +101,14 @@ function supabaseReservations(sb: SupabaseClient): ReservationsService {
     },
     async update(id, patch) {
       check(await sb.from('reservations').update(clean(patch)).eq('id', id))
+    },
+    async honor(id, tableId) {
+      return check(await sb.rpc('honor_reservation', { p_reservation_id: id, p_table_id: tableId })) as string
+    },
+    async hasOrder(orderId) {
+      const res = await sb.from('reservations').select('id').eq('order_id', orderId).limit(1)
+      // Before the migration no order can come from a booking.
+      return !res.error && (res.data?.length ?? 0) > 0
     },
     subscribe: channel,
   }
@@ -128,6 +147,19 @@ function localReservations(): ReservationsService {
     },
     async update(id, patch) {
       write(read().map((r) => (r.id === id ? { ...r, ...clean(patch) } : r)))
+    },
+    async honor(id, tableId) {
+      const t = tr()
+      const r = read().find((x) => x.id === id)
+      if (!r || r.status !== 'confirmed') throw new Error(t.errResNotConfirmed)
+      if (await repo.getOpenOrder(tableId)) throw new Error(t.errResTableBusy)
+      const table = (await repo.listAllTables()).find((x) => x.id === tableId)
+      const order = await repo.openOrder(tableId)
+      write(read().map((x) => (x.id === id ? { ...x, status: 'honored', hall_id: table?.hall_id ?? x.hall_id, table_id: tableId, order_id: order.id } : x)))
+      return order.id
+    },
+    async hasOrder(orderId) {
+      return read().some((r) => r.order_id === orderId)
     },
     subscribe(onChange) {
       const l = () => onChange()
