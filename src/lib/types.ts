@@ -431,3 +431,20 @@ export interface SalaryAdvance {
 }
 
 export type NewSalaryAdvance = Pick<SalaryAdvance, 'user_id' | 'amount' | 'date' | 'note'>
+
+/** A tablet or PC that uses the app (page Appareils connectés): its last account and last activity. */
+export interface DeviceSession {
+  id: string
+  user_id: string
+  username: string
+  display_name: string
+  /** Name typed on the login screen ("Tablette Caisse"); null when none was given. */
+  device_name: string | null
+  user_agent: string | null
+  started_at: string
+  last_seen_at: string
+  /** Set by Déconnexion. */
+  ended_at: string | null
+  /** Seconds since the last signal, measured by the database. */
+  idle_seconds: number
+}

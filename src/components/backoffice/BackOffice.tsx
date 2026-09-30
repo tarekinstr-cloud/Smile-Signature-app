@@ -14,6 +14,7 @@ import { NewReservationPage, ReservationsList } from './ReservationsPage'
 import MenuCsvPage from './MenuCsvPage'
 import { NewZonePage, ZonesList } from './DeliveryZonesPage'
 import PayrollPage from './PayrollPage'
+import DevicesPage from './DevicesPage'
 
 interface Props {
   page: BackOfficePage
@@ -33,7 +34,7 @@ interface Props {
 
 /**
  * Back-office screen under the administration menus: Statistiques, Stock, Fournisseurs, Employés, Paramètres, and the
- * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket), Clients (réservations), Édition > Zones de livraison and Gestion des employés > Salaires et acomptes.
+ * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket), Clients (réservations), Édition > Zones de livraison and Gestion des employés (Salaires et acomptes, Appareils connectés).
  */
 export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrinters, onOpenTicket, onPage, onOpenOrder }: Props) {
   const { t } = useI18n()
@@ -57,6 +58,7 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     zones: [t.zonesEditItem, t.zonesSub],
     zoneNew: [t.zoneNewItem, t.zonesSub],
     payroll: [t.payrollTitle, t.payrollSub],
+    devices: [t.devicesTitle, t.devicesSub],
   }
   return (
     <div className="app back-office">
@@ -100,6 +102,7 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'suppliers' && <SuppliersPage />}
       {page === 'staff' && <StaffPage />}
       {page === 'payroll' && <PayrollPage />}
+      {page === 'devices' && <DevicesPage />}
       {page === 'settings' && <SettingsPage onOpenMenu={onOpenMenu} onOpenPrinters={onOpenPrinters} onOpenTicket={onOpenTicket} />}
       {page === 'users' && <UsersPage />}
       {page === 'permissions' && <PermissionsPage />}

@@ -5,6 +5,7 @@ import { repo } from '../lib/repo'
 import { useI18n } from '../lib/i18n'
 import LangToggle from './LangToggle'
 import TouchKeyboard from './TouchKeyboard'
+import { setDeviceName, thisDevice } from '../lib/devices'
 
 /**
  * Écran de connexion, before the service screen: user name (drop-down list of the users, or typed), password and
@@ -15,6 +16,8 @@ export default function Login() {
   const [users, setUsers] = useState<LoginUser[]>([])
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  /** Optional name of this tablet or PC, remembered on the device (page Appareils connectés). */
+  const [deviceName, setDeviceNameText] = useState(() => thisDevice().name)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [list, setList] = useState(false)
@@ -40,6 +43,7 @@ export default function Login() {
     setBusy(true)
     setError(null)
     try {
+      setDeviceName(deviceName)
       await auth.signIn(username, password)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -102,6 +106,12 @@ export default function Login() {
           {t.password}
           <input ref={passwordRef} type="password" dir="ltr" value={password} autoComplete="current-password"
             onChange={(e) => { setPassword(e.target.value); setError(null) }} {...fieldProps} />
+        </label>
+
+        <label>
+          {t.deviceNameLabel}
+          <input value={deviceName} maxLength={40} placeholder={t.deviceNamePh} autoComplete="off"
+            onChange={(e) => setDeviceNameText(e.target.value)} {...fieldProps} />
         </label>
 
         {error && <p className="error">{error}</p>}

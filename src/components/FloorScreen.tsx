@@ -283,6 +283,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   const staffItems = shown([
     can('staff') && { id: 'staff-list', label: t.staffListItem, checked: onBo('staff'), onSelect: () => openBo('staff') },
     can('payroll') && { id: 'payroll', label: t.payrollTitle, checked: onBo('payroll'), onSelect: () => openBo('payroll') },
+    can('devices') && { id: 'devices', label: t.devicesTitle, checked: onBo('devices'), onSelect: () => openBo('devices') },
   ])
   const adminGroups: AdminMenuGroup[] = [
     {
@@ -306,7 +307,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       ],
     }] : []),
     ...(editItems.length ? [{ id: 'edit', label: t.navEdit, current: onBo('zones') || onBo('zoneNew') || onBo('menuCsv'), items: editItems }] : []),
-    ...(staffItems.length ? [{ id: 'staff', label: t.staff, current: onBo('staff') || onBo('payroll'), items: staffItems }] : []),
+    ...(staffItems.length ? [{ id: 'staff', label: t.staff, current: onBo('staff') || onBo('payroll') || onBo('devices'), items: staffItems }] : []),
     ...(stockItems.length ? [{ id: 'stock', label: t.stock, current: onBo('stock') || onBo('suppliers'), items: stockItems }] : []),
     ...(can('stats') ? [{
       id: 'stats', label: t.navStats, current: onBo('stats'), items: [

@@ -1,4 +1,4 @@
-import { useCallback, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { backOffice } from '../../lib/backoffice'
 import type { StockItem } from '../../lib/types'
 import { useI18n } from '../../lib/i18n'
@@ -22,6 +22,8 @@ export default function StockPage() {
   const { t, lang } = useI18n()
   const load = useCallback(() => backOffice.listStock(), [])
   const { data: items, error, setError, reload } = useLoad(load)
+  // Another tablet adjusting the stock updates this list too.
+  useEffect(() => backOffice.subscribeStock(() => reload()), [reload])
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<Editing | null>(null)
   const [name, setName] = useState('')
