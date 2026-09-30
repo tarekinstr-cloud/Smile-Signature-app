@@ -44,6 +44,9 @@ export function stockLevel(s: { quantity: number; kitchen_quantity: number; min_
   return 'ok'
 }
 
+/** Stock négatif: the sales took more than the Cuisine held (a sale is never refused), or the Dépôt is below 0. */
+export const isNegative = (s: { quantity: number; kitchen_quantity: number }) => s.quantity < 0 || s.kitchen_quantity < 0
+
 /** Quantity × last purchase price; null when the item was never bought. */
 export const stockValue = (qty: number, price: number | null) => (price == null ? null : round2(qty * price))
 
@@ -80,7 +83,7 @@ export function computeReport(
   const e = to.toISOString()
   const rows = new Map<string, StockReportRow>(items.map((s) => [s.id, {
     id: s.id, name: s.name, unit: s.unit, initial_depot: s.quantity, initial_kitchen: s.kitchen_quantity,
-    purchases: 0, transfers: 0, returns: 0, charges: 0, adjustments: 0, final_depot: s.quantity, final_kitchen: s.kitchen_quantity,
+    purchases: 0, transfers: 0, returns: 0, charges: 0, consumption: 0, adjustments: 0, final_depot: s.quantity, final_kitchen: s.kitchen_quantity,
   }]))
   for (const m of movements) {
     const r = m.stock_item_id ? rows.get(m.stock_item_id) : undefined
@@ -96,12 +99,14 @@ export function computeReport(
     else if (m.type === 'transfer') r.transfers += m.quantity
     else if (m.type === 'return') r.returns += m.quantity
     else if (m.type === 'charge') r.charges += m.quantity
+    else if (m.type === 'consumption') r.consumption += m.quantity
     else r.adjustments += delta(m, 'depot') + delta(m, 'kitchen')
   }
   return [...rows.values()]
     .map((r) => ({
       ...r, initial_depot: round3(r.initial_depot), initial_kitchen: round3(r.initial_kitchen), purchases: round3(r.purchases),
-      transfers: round3(r.transfers), returns: round3(r.returns), charges: round3(r.charges), adjustments: round3(r.adjustments),
+      transfers: round3(r.transfers), returns: round3(r.returns), charges: round3(r.charges), consumption: round3(r.consumption),
+      adjustments: round3(r.adjustments),
       final_depot: round3(r.final_depot), final_kitchen: round3(r.final_kitchen),
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -164,7 +169,7 @@ function supabaseState(sb: SupabaseClient): StockStateService {
       const rows = check(await sb.rpc('stock_report', { p_from: from.toISOString(), p_to: to.toISOString() })) as StockReportRow[]
       return rows.map((r) => ({
         ...r, unit: r.unit ?? '', initial_depot: num(r.initial_depot), initial_kitchen: num(r.initial_kitchen), purchases: num(r.purchases),
-        transfers: num(r.transfers), returns: num(r.returns), charges: num(r.charges), adjustments: num(r.adjustments),
+        transfers: num(r.transfers), returns: num(r.returns), charges: num(r.charges), consumption: num(r.consumption), adjustments: num(r.adjustments),
         final_depot: num(r.final_depot), final_kitchen: num(r.final_kitchen),
       }))
     },

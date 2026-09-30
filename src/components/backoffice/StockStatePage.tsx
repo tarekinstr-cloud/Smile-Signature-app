@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { INVENTORY_LIMIT, InventoryStaleError, stockLevel, stockState, stockValue, totalQty } from '../../lib/stockState'
+import { INVENTORY_LIMIT, InventoryStaleError, isNegative, stockLevel, stockState, stockValue, totalQty } from '../../lib/stockState'
+import { recipes } from '../../lib/recipes'
 import { download, stamp, toCsv } from '../../lib/admin'
 import { usePermissions } from '../../lib/permissions'
 import { todayIso } from '../../lib/payroll'
-import type { StockInventory, StockInventoryLine, StockLocation, StockReportRow, StockStateRow } from '../../lib/types'
+import type { ConsumptionRow, StockInventory, StockInventoryLine, StockLocation, StockReportRow, StockStateRow } from '../../lib/types'
 import { useI18n } from '../../lib/i18n'
 import { money } from '../../lib/format'
 import { useDialog } from '../Dialog'
 import { qtyText } from './StockPage'
 import { errorText, locale, useLoad } from './useLoad'
 
-type Tab = 'overview' | 'moves' | 'inventories' | 'count'
-type LevelFilter = 'all' | 'low' | 'out'
+type Tab = 'overview' | 'moves' | 'consumption' | 'inventories' | 'count'
+type LevelFilter = 'all' | 'low' | 'out' | 'negative'
 type Period = 'today' | 'week' | 'month' | 'custom'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -60,6 +61,28 @@ export default function StockStatePage() {
   useEffect(() => stockState.subscribe(() => { reload(); setVersion((v) => v + 1) }), [reload])
   const [notice, setNotice] = useState<string | null>(null)
   const dialog = useDialog()
+  const [level, setLevel] = useState<LevelFilter>('all')
+  /** Paid orders whose automatic consumption failed (Supabase only), waiting for Réessayer. */
+  const [failed, setFailed] = useState(0)
+  useEffect(() => {
+    let live = true
+    recipes.failures().then((n) => live && setFailed(n), () => {})
+    return () => {
+      live = false
+    }
+  }, [version])
+  const negatives = (items ?? []).filter(isNegative).length
+
+  async function retry() {
+    try {
+      const n = await recipes.retry()
+      setNotice(t.consumptionRetried(n))
+      setFailed(await recipes.failures())
+      await reload()
+    } catch (e) {
+      setError(errorText(e))
+    }
+  }
 
   async function leaveCount(next: Tab) {
     if (tab === 'count' && next !== 'count' && !(await dialog.confirm(t.invConfirmLeave, t.invAbandon))) return
@@ -70,9 +93,21 @@ export default function StockStatePage() {
     <main className="content bo-content">
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
       {notice && <div className="banner ok" role="status" onClick={() => setNotice(null)}>{notice}</div>}
+      {negatives > 0 && tab !== 'count' && (
+        <div className="banner warn-banner" role="alert">
+          <span>{t.negativeAlert(negatives)}</span>
+          <button type="button" onClick={() => { setLevel('negative'); setTab('overview') }}>{t.negativeShow}</button>
+        </div>
+      )}
+      {failed > 0 && (
+        <div className="banner error" role="alert">
+          <span>{t.consumptionFailed(failed)}</span>
+          <button type="button" onClick={retry}>{t.consumptionRetry}</button>
+        </div>
+      )}
       <div className="state-tabs">
         <div className="segmented" role="tablist" aria-label={t.stateItem}>
-          {(['overview', 'moves', 'inventories'] as const).map((k) => (
+          {(['overview', 'moves', 'consumption', 'inventories'] as const).map((k) => (
             <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => leaveCount(k)}>
               {t.stateTabs[k]}
             </button>
@@ -82,8 +117,9 @@ export default function StockStatePage() {
           <button className="primary" onClick={() => { setNotice(null); setTab('count') }}>{t.stateDoInventory}</button>
         )}
       </div>
-      {tab === 'overview' && <Overview items={items} />}
+      {tab === 'overview' && <Overview items={items} level={level} setLevel={setLevel} />}
       {tab === 'moves' && <Moves version={version} />}
+      {tab === 'consumption' && <Consumption version={version} />}
       {tab === 'inventories' && <Inventories version={version} />}
       {tab === 'count' && items && (
         <InventoryForm items={items} onReload={reload}
@@ -97,11 +133,10 @@ export default function StockStatePage() {
 
 // ───────────── Vue d'ensemble ─────────────
 
-function Overview({ items }: { items: StockStateRow[] | null }) {
+function Overview({ items, level, setLevel }: { items: StockStateRow[] | null; level: LevelFilter; setLevel(l: LevelFilter): void }) {
   const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [supplier, setSupplier] = useState('')
-  const [level, setLevel] = useState<LevelFilter>('all')
 
   const all = items ?? []
   const suppliers = useMemo(() => {
@@ -115,8 +150,9 @@ function Overview({ items }: { items: StockStateRow[] | null }) {
     all: bySearch.length,
     low: bySearch.filter((s) => stockLevel(s) === 'low').length,
     out: bySearch.filter((s) => stockLevel(s) === 'out').length,
+    negative: bySearch.filter(isNegative).length,
   }
-  const shown = bySearch.filter((s) => level === 'all' || stockLevel(s) === level)
+  const shown = bySearch.filter((s) => level === 'all' || (level === 'negative' ? isNegative(s) : stockLevel(s) === level))
 
   const sum = (f: (s: StockStateRow) => number | null) => round2(shown.reduce((a, s) => a + (f(s) ?? 0), 0))
   const depotValue = sum((s) => stockValue(s.quantity, s.last_price))
@@ -138,7 +174,7 @@ function Overview({ items }: { items: StockStateRow[] | null }) {
         [t.stateValueKitchen]: csvNum(stockValue(s.kitchen_quantity, s.last_price)),
         [t.stateColValue]: csvNum(stockValue(totalQty(s), s.last_price)),
         [t.stateSupplier]: s.last_supplier_name ?? '',
-        [t.stateColAlert]: lv === 'ok' ? '' : t.stateLevelFilter[lv],
+        [t.stateColAlert]: [lv === 'ok' ? '' : t.stateLevelFilter[lv], isNegative(s) ? t.stateLevelFilter.negative : ''].filter(Boolean).join(', '),
       }
     })), 'text/csv;charset=utf-8')
   }
@@ -160,7 +196,7 @@ function Overview({ items }: { items: StockStateRow[] | null }) {
           </label>
         )}
         <div className="segmented state-levels" role="radiogroup" aria-label={t.stateLevelFilter.all}>
-          {(['all', 'low', 'out'] as const).map((l) => (
+          {(['all', 'low', 'out', 'negative'] as const).map((l) => (
             <button key={l} type="button" role="radio" aria-checked={level === l} className={level === l ? 'on' : ''} onClick={() => setLevel(l)}>
               {t.stateLevelFilter[l]} <span className={`state-count ${l}`}>{counts[l]}</span>
             </button>
@@ -197,11 +233,12 @@ function Overview({ items }: { items: StockStateRow[] | null }) {
                   <td className="payroll-name">
                     <bdi>{s.name}</bdi>
                     {lv !== 'ok' && <span className={`tag state-level ${lv}`}>{t.stateLevelFilter[lv]}</span>}
+                    {isNegative(s) && <span className="tag state-level negative">{t.stateLevelFilter.negative}</span>}
                     {s.last_supplier_name && <div className="muted small"><bdi>{t.stateLastSupplier(s.last_supplier_name)}</bdi></div>}
                   </td>
                   <td className="state-unit" data-label={t.colUnit}>{s.unit || '—'}</td>
-                  <td className="num" data-label={t.colDepot}><bdi>{qtyText({ quantity: s.quantity, unit: '' })}</bdi></td>
-                  <td className="num" data-label={t.colKitchen}><bdi>{qtyText({ quantity: s.kitchen_quantity, unit: '' })}</bdi></td>
+                  <td className={`num${s.quantity < 0 ? ' neg' : ''}`} data-label={t.colDepot}><bdi>{qtyText({ quantity: s.quantity, unit: '' })}</bdi></td>
+                  <td className={`num${s.kitchen_quantity < 0 ? ' neg strong' : ''}`} data-label={t.colKitchen}><bdi>{qtyText({ quantity: s.kitchen_quantity, unit: '' })}</bdi></td>
                   <td className="num strong" data-label={t.stateColTotal}><bdi>{qtyText({ quantity: totalQty(s), unit: '' })}</bdi></td>
                   <td className="num" data-label={t.stateColMin}>{s.min_quantity == null ? '—' : <bdi>{qtyText({ quantity: s.min_quantity, unit: '' })}</bdi>}</td>
                   <td className="num" data-label={t.stateColPrice}>{s.last_price == null ? '—' : money(s.last_price)}</td>
@@ -241,17 +278,54 @@ function Overview({ items }: { items: StockStateRow[] | null }) {
 
 // ───────────── Mouvements par période ─────────────
 
-function Moves({ version }: { version: number }) {
-  const { t } = useI18n()
+/** Period of a report (Aujourd'hui, 7 jours, Ce mois, Personnalisé) and its fields. */
+function usePeriod() {
   const [period, setPeriod] = useState<Period>('week')
   const [from, setFrom] = useState(() => isoDay(midnight(todayIso(), -6)))
   const [to, setTo] = useState(todayIso)
+  const [start, end] = periodRange(period, from, to)
+  return { period, setPeriod, from, setFrom, to, setTo, start, end }
+}
+
+function PeriodFields({ p }: { p: ReturnType<typeof usePeriod> }) {
+  const { t } = useI18n()
+  return (
+    <>
+      <div>
+        <span className="pur-label-block">{t.statePeriod}</span>
+        <div className="segmented" role="radiogroup" aria-label={t.statePeriod}>
+          {(['today', 'week', 'month', 'custom'] as const).map((k) => (
+            <button key={k} type="button" role="radio" aria-checked={p.period === k} className={p.period === k ? 'on' : ''} onClick={() => p.setPeriod(k)}>
+              {t.statePeriods[k]}
+            </button>
+          ))}
+        </div>
+      </div>
+      {p.period === 'custom' && (
+        <>
+          <label>
+            {t.moveFrom}
+            <input type="date" value={p.from} max={p.to || undefined} onChange={(e) => p.setFrom(e.target.value)} />
+          </label>
+          <label>
+            {t.moveTo}
+            <input type="date" value={p.to} min={p.from || undefined} onChange={(e) => p.setTo(e.target.value)} />
+          </label>
+        </>
+      )}
+    </>
+  )
+}
+
+function Moves({ version }: { version: number }) {
+  const { t } = useI18n()
+  const p = usePeriod()
   const [query, setQuery] = useState('')
   const [onlyMoved, setOnlyMoved] = useState(false)
   const [rows, setRows] = useState<StockReportRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const [start, end] = periodRange(period, from, to)
+  const { start, end } = p
   const startKey = start.getTime()
   const endKey = end.getTime()
   useEffect(() => {
@@ -267,7 +341,7 @@ function Moves({ version }: { version: number }) {
   }, [startKey, endKey, version])
 
   const q = query.trim().toLowerCase()
-  const moved = (r: StockReportRow) => r.purchases || r.transfers || r.returns || r.charges || r.adjustments
+  const moved = (r: StockReportRow) => r.purchases || r.transfers || r.returns || r.charges || r.consumption || r.adjustments
   const shown = (rows ?? []).filter((r) => (!q || r.name.toLowerCase().includes(q)) && (!onlyMoved || moved(r)))
   const lastDay = isoDay(new Date(endKey - 1))
 
@@ -282,6 +356,7 @@ function Moves({ version }: { version: number }) {
       [`${t.repColTransfers} ${t.repToKitchen}`]: csvNum(r.transfers),
       [`${t.repColTransfers} ${t.repToDepot}`]: csvNum(r.returns),
       [t.repColOut]: csvNum(r.charges),
+      [t.repColSales]: csvNum(r.consumption),
       [t.repColAdjust]: csvNum(r.adjustments),
       [`${t.repColFinal} ${t.stockLocation.depot}`]: csvNum(r.final_depot),
       [`${t.repColFinal} ${t.stockLocation.kitchen}`]: csvNum(r.final_kitchen),
@@ -295,28 +370,7 @@ function Moves({ version }: { version: number }) {
   return (
     <section className="panel">
       <div className="bo-toolbar pur-filters state-filters">
-        <div>
-          <span className="pur-label-block">{t.statePeriod}</span>
-          <div className="segmented" role="radiogroup" aria-label={t.statePeriod}>
-            {(['today', 'week', 'month', 'custom'] as const).map((p) => (
-              <button key={p} type="button" role="radio" aria-checked={period === p} className={period === p ? 'on' : ''} onClick={() => setPeriod(p)}>
-                {t.statePeriods[p]}
-              </button>
-            ))}
-          </div>
-        </div>
-        {period === 'custom' && (
-          <>
-            <label>
-              {t.moveFrom}
-              <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
-            </label>
-            <label>
-              {t.moveTo}
-              <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
-            </label>
-          </>
-        )}
+        <PeriodFields p={p} />
         <label>
           {t.search.replace('…', '')}
           <input type="search" className="bo-search" placeholder={t.search} value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -343,6 +397,7 @@ function Moves({ version }: { version: number }) {
               <th className="num">{t.repColIn}</th>
               <th className="num">{t.repColTransfers}</th>
               <th className="num">{t.repColOut}</th>
+              <th className="num">{t.repColSales}</th>
               <th className="num">{t.repColAdjust}</th>
               <th className="num">{t.repColFinal}</th>
             </tr>
@@ -364,6 +419,7 @@ function Moves({ version }: { version: number }) {
                   ) : '—'}
                 </td>
                 <td className="num" data-label={t.repColOut}>{r.charges ? <bdi className="neg">−{qtyText({ quantity: r.charges, unit: r.unit })}</bdi> : '—'}</td>
+                <td className="num" data-label={t.repColSales}>{r.consumption ? <bdi className="neg">−{qtyText({ quantity: r.consumption, unit: r.unit })}</bdi> : '—'}</td>
                 <td className="num" data-label={t.repColAdjust}>{r.adjustments ? <bdi className={r.adjustments < 0 ? 'neg' : 'pos'}>{signed(r, r.adjustments)}</bdi> : '—'}</td>
                 <td className="num strong" data-label={t.repColFinal} title={split(r, r.final_depot, r.final_kitchen)}>
                   <bdi>{qtyText({ quantity: round3(r.final_depot + r.final_kitchen), unit: r.unit })}</bdi>
@@ -374,6 +430,123 @@ function Moves({ version }: { version: number }) {
         </table>
       )}
       <p className="muted small">{t.repNote}</p>
+    </section>
+  )
+}
+
+// ───────────── Consommation théorique vs réelle ─────────────
+
+function Consumption({ version }: { version: number }) {
+  const { t } = useI18n()
+  const p = usePeriod()
+  const [query, setQuery] = useState('')
+  const [rows, setRows] = useState<ConsumptionRow[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const startKey = p.start.getTime()
+  const endKey = p.end.getTime()
+  useEffect(() => {
+    let live = true
+    setError(null)
+    recipes.consumption(new Date(startKey), new Date(endKey)).then(
+      (r) => live && setRows(r),
+      (e) => live && setError(errorText(e)),
+    )
+    return () => {
+      live = false
+    }
+  }, [startKey, endKey, version])
+
+  const q = query.trim().toLowerCase()
+  const shown = (rows ?? []).filter((r) => !q || r.name.toLowerCase().includes(q))
+  /** What the sales and the charges do not explain: the inventory shortfall, as a quantity and a value (a loss is < 0). */
+  const loss = (r: ConsumptionRow) => stockValue(r.inventory_gap, r.last_price)
+  const gapPct = (r: ConsumptionRow) => (r.theoretical > 0 ? Math.round(((r.actual - r.theoretical) / r.theoretical) * 1000) / 10 : null)
+  const totalLoss = round2(shown.reduce((a, r) => a + (loss(r) ?? 0), 0))
+  const theoreticalValue = round2(shown.reduce((a, r) => a + (stockValue(r.theoretical, r.last_price) ?? 0), 0))
+  const lastDay = isoDay(new Date(endKey - 1))
+
+  function exportCsv() {
+    download(`smile-signature_consommation_${isoDay(p.start)}_${lastDay}.csv`, toCsv(shown.map((r) => ({
+      [t.stateColArticle]: r.name,
+      [t.colUnit]: r.unit,
+      [t.consColTheory]: csvNum(r.theoretical),
+      [t.consColCharges]: csvNum(r.charges),
+      [t.consColGap]: csvNum(r.inventory_gap),
+      [t.consColActual]: csvNum(r.actual),
+      [t.consColGapPct]: csvNum(gapPct(r)),
+      [t.consColLoss]: csvNum(loss(r)),
+    }))), 'text/csv;charset=utf-8')
+  }
+
+  return (
+    <section className="panel">
+      <div className="bo-toolbar pur-filters state-filters">
+        <PeriodFields p={p} />
+        <label>
+          {t.search.replace('…', '')}
+          <input type="search" className="bo-search" placeholder={t.search} value={query} onChange={(e) => setQuery(e.target.value)} />
+        </label>
+        <div className="spacer" />
+        <button onClick={exportCsv} disabled={!shown.length}>{t.stateExport}</button>
+      </div>
+      <p className="muted small">{t.consIntro}</p>
+
+      {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
+      {!rows ? (
+        !error && <p className="muted">{t.loading}</p>
+      ) : !shown.length ? (
+        <p className="muted small">{rows.length ? t.stateNone : t.consNone}</p>
+      ) : (
+        <table className="bo-table payroll-table state-table report-table">
+          <thead>
+            <tr>
+              <th>{t.stateColArticle}</th>
+              <th className="num">{t.consColTheory}</th>
+              <th className="num">{t.consColCharges}</th>
+              <th className="num">{t.consColGap}</th>
+              <th className="num">{t.consColActual}</th>
+              <th className="num">{t.consColGapPct}</th>
+              <th className="num">{t.consColLoss}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((r) => {
+              const pct = gapPct(r)
+              const value = loss(r)
+              return (
+                <tr key={r.id} className={r.inventory_gap < 0 ? 'state-low' : undefined}>
+                  <td className="payroll-name"><bdi>{r.name}</bdi></td>
+                  <td className="num" data-label={t.consColTheory}>{r.theoretical ? <bdi>{qtyText({ quantity: r.theoretical, unit: r.unit })}</bdi> : '—'}</td>
+                  <td className="num" data-label={t.consColCharges}>{r.charges ? <bdi>{qtyText({ quantity: r.charges, unit: r.unit })}</bdi> : '—'}</td>
+                  <td className="num" data-label={t.consColGap}>
+                    {r.inventory_gap ? <bdi className={r.inventory_gap < 0 ? 'neg' : 'pos'}>{signed(r, r.inventory_gap)}</bdi> : '—'}
+                  </td>
+                  <td className="num strong" data-label={t.consColActual}><bdi>{qtyText({ quantity: r.actual, unit: r.unit })}</bdi></td>
+                  <td className={`num${pct != null && pct > 0 ? ' neg' : ''}`} data-label={t.consColGapPct}>
+                    {pct == null ? '—' : `${pct > 0 ? '+' : ''}${pct.toLocaleString('fr-FR')} %`}
+                  </td>
+                  <td className="num" data-label={t.consColLoss} title={r.inventory_gap && value == null ? t.invNoPrice : undefined}>
+                    {value == null || !r.inventory_gap ? '—' : <span className={value < 0 ? 'neg' : 'pos'}>{signedMoney(value)}</span>}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+      {rows && shown.length > 0 && (
+        <section className="stat-tiles moves-tiles" aria-live="polite">
+          <div className="stat-tile">
+            <span className="muted small">{t.consTheoryValue}</span>
+            <strong>{money(theoreticalValue)}</strong>
+          </div>
+          <div className="stat-tile main">
+            <span className="muted small">{t.consLossTotal}</span>
+            <strong className={totalLoss < 0 ? 'neg' : ''}>{signedMoney(totalLoss)}</strong>
+          </div>
+        </section>
+      )}
+      <p className="muted small">{t.consNote}</p>
     </section>
   )
 }

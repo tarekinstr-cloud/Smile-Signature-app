@@ -267,6 +267,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       : page === 'stockTransfer' ? can('stock_transfer')
       : page === 'kitchenCharges' ? can('kitchen_charges')
       : page === 'stockState' ? can('stock_state')
+      : page === 'recipes' ? can('recipes')
       : can(page as Permission)
   const shown = (items: (AdminMenuItem | false)[]) => items.filter((i): i is AdminMenuItem => !!i)
   // Menus and entries the account has no permission for are left out, not just greyed.
@@ -275,8 +276,9 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     can('edit') && { id: 'hall', label: t.addHall, onSelect: () => { toFloor(); addHall() } },
     can('edit') && { id: 'menu', label: t.menuTitle, onSelect: () => { toFloor(); setMenuAdmin(true) } },
     can('edit') && { id: 'menu-csv', label: t.csvTitle, checked: onBo('menuCsv'), onSelect: () => openBo('menuCsv') },
+    can('recipes') && { id: 'recipes', label: t.recipesTitle, checked: onBo('recipes'), onSelect: () => openBo('recipes') },
     can('delivery_zones') && {
-      id: 'zone-new', label: t.zoneNewItem, separator: can('edit'), checked: onBo('zoneNew'), onSelect: () => openBo('zoneNew'),
+      id: 'zone-new', label: t.zoneNewItem, separator: can('edit') || can('recipes'), checked: onBo('zoneNew'), onSelect: () => openBo('zoneNew'),
     },
     can('delivery_zones') && { id: 'zones', label: t.zonesEditItem, checked: onBo('zones'), onSelect: () => openBo('zones') },
   ])
@@ -327,7 +329,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
         { id: 'res-list', label: t.resListItem, checked: onBo('reservations'), onSelect: () => openBo('reservations') },
       ],
     }] : []),
-    ...(editItems.length ? [{ id: 'edit', label: t.navEdit, current: onBo('zones') || onBo('zoneNew') || onBo('menuCsv'), items: editItems }] : []),
+    ...(editItems.length ? [{ id: 'edit', label: t.navEdit, current: onBo('zones') || onBo('zoneNew') || onBo('menuCsv') || onBo('recipes'), items: editItems }] : []),
     ...(staffItems.length ? [{ id: 'staff', label: t.staff, current: onBo('staff') || onBo('payroll') || onBo('devices'), items: staffItems }] : []),
     ...(stockItems.length ? [{ id: 'stock', label: t.stock, current: onBo('stock') || onBo('suppliers') || onBo('purchaseNew') || onBo('purchases') || onBo('stockTransfer') || onBo('kitchenCharges') || onBo('stockState'), items: stockItems }] : []),
     ...(can('stats') ? [{

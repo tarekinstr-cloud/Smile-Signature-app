@@ -3,6 +3,7 @@ import { backOffice, insufficientStock } from '../../lib/backoffice'
 import type { StockItem } from '../../lib/types'
 import { useI18n } from '../../lib/i18n'
 import { useDialog } from '../Dialog'
+import { purchaseHint } from '../../lib/units'
 import { errorText, locale, useLoad } from './useLoad'
 
 const qtyFormat = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 3 })
@@ -19,7 +20,7 @@ type Editing = { kind: 'new' } | { kind: 'edit'; item: StockItem } | { kind: 'ad
 
 /**
  * Gestion du Stock: ingredients and products with their quantity at the Dépôt and in the Cuisine. The ± adjustment
- * works on the Dépôt; the Cuisine changes through Transfert dépôt / cuisine and Charges cuisine. Not linked to sales yet.
+ * works on the Dépôt; the Cuisine changes through Transfert dépôt / cuisine and Charges cuisine, and the sales consume it through the fiches techniques (it may go below 0).
  */
 export default function StockPage() {
   const { t, lang } = useI18n()
@@ -33,6 +34,8 @@ export default function StockPage() {
   const [unit, setUnit] = useState('')
   const [qty, setQty] = useState('')
   const [minQty, setMinQty] = useState('')
+  const [buyUnit, setBuyUnit] = useState('')
+  const [buyFactor, setBuyFactor] = useState('')
   const [direction, setDirection] = useState<1 | -1>(1)
   const [formError, setFormError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -44,6 +47,8 @@ export default function StockPage() {
     setUnit(e.kind === 'new' ? '' : e.item.unit)
     setQty(e.kind === 'new' ? '0' : '')
     setMinQty(e.kind === 'edit' && e.item.min_quantity != null ? String(e.item.min_quantity) : '')
+    setBuyUnit(e.kind === 'edit' ? e.item.purchase_unit : '')
+    setBuyFactor(e.kind === 'edit' && e.item.purchase_factor != null ? String(e.item.purchase_factor) : '')
     setDirection(1)
     setEditing(e)
   }
@@ -58,16 +63,24 @@ export default function StockPage() {
     // Stock minimum: empty (no alert) or a quantity ≥ 0.
     const min = minQty.trim() ? parseQty(minQty) : null
     if (editing.kind !== 'adjust' && minQty.trim() && (min === null || min < 0)) return setFormError(t.errQuantity)
+    // Unité d'achat: both the unit and its coefficient (> 0), or neither.
+    const factor = buyFactor.trim() ? parseQty(buyFactor) : null
+    if (editing.kind !== 'adjust' && (!!buyUnit.trim() !== !!buyFactor.trim() || (buyFactor.trim() && (factor === null || factor <= 0)))) {
+      return setFormError(t.errPurchaseFactor)
+    }
+    const buy = { purchase_unit: buyUnit.trim(), purchase_factor: buyUnit.trim() ? factor : null }
     if (editing.kind === 'adjust' && direction === -1 && n! > editing.item.quantity) {
       return setFormError(insufficientStock(editing.item.name, editing.item.unit, 'depot', editing.item.quantity, n!).message)
     }
     setBusy(true)
     try {
       setFormError(null)
-      if (editing.kind === 'new') await backOffice.createStockItem({ name, unit, quantity: n!, ...(min !== null && { min_quantity: min }) })
-      else if (editing.kind === 'edit') {
+      if (editing.kind === 'new') {
+        await backOffice.createStockItem({ name, unit, quantity: n!, ...(min !== null && { min_quantity: min }), ...(buy.purchase_unit && buy) })
+      } else if (editing.kind === 'edit') {
+        const buyChanged = buy.purchase_unit !== editing.item.purchase_unit || buy.purchase_factor !== editing.item.purchase_factor
         await backOffice.updateStockItem(editing.item.id, {
-          name, unit, ...((min ?? null) !== editing.item.min_quantity && { min_quantity: min }),
+          name, unit, ...((min ?? null) !== editing.item.min_quantity && { min_quantity: min }), ...(buyChanged && buy),
         })
       }
       else await backOffice.adjustStock(editing.item.id, direction * n!)
@@ -130,8 +143,13 @@ export default function StockPage() {
                   <td className="num" data-label={t.colDepot}>
                     <span className={s.quantity < 0 ? 'neg' : ''} title={s.quantity < 0 ? t.negativeStock : undefined}><bdi>{qtyText(s)}</bdi></span>
                   </td>
-                  <td className="num" data-label={t.colKitchen}><bdi>{qtyText(s, s.kitchen_quantity)}</bdi></td>
-                  <td className="num" data-label={t.colTotal}><strong><bdi>{qtyText(s, Math.round((s.quantity + s.kitchen_quantity) * 1000) / 1000)}</bdi></strong></td>
+                  <td className="num" data-label={t.colKitchen}>
+                    <span className={s.kitchen_quantity < 0 ? 'neg' : ''} title={s.kitchen_quantity < 0 ? t.negativeStock : undefined}><bdi>{qtyText(s, s.kitchen_quantity)}</bdi></span>
+                  </td>
+                  <td className="num" data-label={t.colTotal}>
+                    <strong><bdi>{qtyText(s, Math.round((s.quantity + s.kitchen_quantity) * 1000) / 1000)}</bdi></strong>
+                    {purchaseHint(s.quantity + s.kitchen_quantity, s) && <div className="muted small"><bdi>≈ {purchaseHint(s.quantity + s.kitchen_quantity, s)}</bdi></div>}
+                  </td>
                   <td className="hide-phone muted small">{when(s.updated_at)}</td>
                   <td className="end">
                     <button onClick={() => open({ kind: 'adjust', item: s })} aria-label={`${t.adjust} ${s.name}`}>±<span className="hide-phone"> {t.adjust}</span></button>
@@ -191,6 +209,17 @@ export default function StockPage() {
                   <input dir="ltr" inputMode="decimal" value={minQty} placeholder="—" onChange={(e) => setMinQty(e.target.value)} />
                 </label>
                 <p className="muted small">{t.stockMinHint}</p>
+                <div className="row">
+                  <label>
+                    {t.buyUnitLabel}
+                    <input value={buyUnit} placeholder={t.buyUnitPh} onChange={(e) => setBuyUnit(e.target.value)} />
+                  </label>
+                  <label>
+                    {t.buyFactorLabel(buyUnit.trim() || t.buyUnitDefault, unit.trim() || t.buyStockUnitDefault)}
+                    <input dir="ltr" inputMode="decimal" value={buyFactor} placeholder="—" onChange={(e) => setBuyFactor(e.target.value)} />
+                  </label>
+                </div>
+                <p className="muted small">{t.buyUnitHint}</p>
               </>
             )}
             <div className="dialog-actions">

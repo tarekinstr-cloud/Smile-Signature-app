@@ -40,7 +40,7 @@ const DELIVERY_STATUSES: DeliveryStatus[] = ['preparing', 'on_the_way', 'deliver
 const sameOptions = (a: ChosenOption[], b: ChosenOption[]) =>
   a.length === b.length && a.every((o, i) => o.group === b[i].group && o.name === b[i].name)
 
-const chosen = (g: OptionGroup, o: ItemOption): ChosenOption => ({ group: g.name, name: o.name, price_delta: o.price_delta })
+const chosen = (g: OptionGroup, o: ItemOption): ChosenOption => ({ group: g.name, name: o.name, price_delta: o.price_delta, option_id: o.id })
 const isChosen = (options: ChosenOption[], g: OptionGroup, o: ItemOption) => options.some((c) => c.group === g.name && c.name === o.name)
 const optionsPrice = (options: ChosenOption[]) => options.reduce((s, c) => s + c.price_delta, 0)
 

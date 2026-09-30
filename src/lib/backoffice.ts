@@ -77,6 +77,9 @@ export const normStock = (s: StockItem): StockItem => ({
   ...s, quantity: Number(s.quantity), kitchen_quantity: Number(s.kitchen_quantity ?? 0), unit: s.unit ?? '',
   // Before the stock state migration there is no stock minimum.
   min_quantity: s.min_quantity == null ? null : Number(s.min_quantity),
+  // Before the recipes migration there is no purchase unit.
+  purchase_unit: s.purchase_unit ?? '',
+  purchase_factor: s.purchase_factor == null ? null : Number(s.purchase_factor),
 })
 
 const LOCATIONS: StockLocation[] = ['depot', 'kitchen']
@@ -107,12 +110,16 @@ export function stockRpcError(message: string): Error | null {
   if (message.includes('no_lines')) return new Error(t.errMoveLines)
   return null
 }
-/** The stock minimum must be empty or ≥ 0. */
-function checkMin(min: number | null | undefined) {
+/** The stock minimum must be empty or ≥ 0; a purchase unit needs a coefficient > 0 (and the reverse). */
+function checkStock(s: StockItemPatch) {
+  const min = s.min_quantity
   if (min != null && !(Number.isFinite(min) && min >= 0)) throw new Error(tr().errQuantity)
+  if (s.purchase_factor != null && !(Number.isFinite(s.purchase_factor) && s.purchase_factor > 0)) throw new Error(tr().errPurchaseFactor)
+  if (s.purchase_unit !== undefined && !!s.purchase_unit.trim() !== (s.purchase_factor != null)) throw new Error(tr().errPurchaseFactor)
 }
 const cleanStock = <T extends StockItemPatch>(s: T): T => ({
   ...s, ...(s.name !== undefined && { name: s.name.trim() }), ...(s.unit !== undefined && { unit: s.unit.trim() }),
+  ...(s.purchase_unit !== undefined && { purchase_unit: s.purchase_unit.trim() }),
 })
 const cleanSupplier = <T extends Partial<NewSupplier>>(s: T): T => ({
   ...s,
@@ -131,6 +138,7 @@ function boError(message: string): Error {
   const stock = stockRpcError(message)
   if (stock) return stock
   if (/min_quantity/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return new Error(t.errMigrationStockState)
+  if (/purchase_unit|purchase_factor/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return new Error(t.errMigrationRecipes)
   if (/stock_items|suppliers|adjust_stock|list_staff/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) {
     return new Error(t.errMigrationBackOffice)
   }
@@ -167,12 +175,12 @@ function supabaseBackOffice(sb: SupabaseClient): BackOffice {
     },
     async createStockItem(s) {
       checkName(s.name)
-      checkMin(s.min_quantity)
+      checkStock(s)
       return normStock(check(await sb.from('stock_items').insert(cleanStock(s)).select().single()) as StockItem)
     },
     async updateStockItem(id, patch) {
       checkName(patch.name)
-      checkMin(patch.min_quantity)
+      checkStock(patch)
       check(await sb.from('stock_items').update({ ...cleanStock(patch), updated_at: new Date().toISOString() }).eq('id', id))
     },
     async adjustStock(id, delta) {
@@ -200,7 +208,7 @@ function supabaseBackOffice(sb: SupabaseClient): BackOffice {
     async listStaff() {
       return check(await sb.rpc('list_staff')) as StaffAccount[]
     },
-    subscribeStock: sharedChannel(sb, 'stock', ['stock_items', 'stock_movements', 'stock_inventories']),
+    subscribeStock: sharedChannel(sb, 'stock', ['stock_items', 'stock_movements', 'stock_inventories', 'recipe_lines']),
   }
 }
 
@@ -220,7 +228,9 @@ interface LocalDb {
 const now = () => new Date().toISOString()
 
 function seed(): LocalDb {
-  const s = (name: string, quantity: number, unit: string): StockItem => ({ id: newId(), name, quantity, kitchen_quantity: 0, unit, min_quantity: null, updated_at: now() })
+  const s = (name: string, quantity: number, unit: string): StockItem => ({
+    id: newId(), name, quantity, kitchen_quantity: 0, unit, min_quantity: null, purchase_unit: '', purchase_factor: null, updated_at: now(),
+  })
   return {
     stock: [s('Farine', 25, 'kg'), s('Fromage mozzarella', 8, 'kg'), s('Pain burger', 60, 'pièce'), s('Huile', 12, 'L'), s('Coca-Cola 33 cl', 48, 'canette')],
     suppliers: [{ id: newId(), name: 'Boulangerie El Amel', phone: '0550 12 34 56', products: 'Pain burger, pain de mie' }],
@@ -313,12 +323,12 @@ function localBackOffice(): BackOffice {
     },
     async createStockItem(s) {
       checkName(s.name)
-      checkMin(s.min_quantity)
+      checkStock(s)
       if (!(Number.isFinite(s.quantity) && s.quantity >= 0)) throw new Error(tr().errQuantity)
       const user = await localUserName()
       return edit((db) => {
         if (nameTaken(db, s.name)) throw new Error(tr().errStockName)
-        const row: StockItem = { id: newId(), min_quantity: null, ...cleanStock(s), kitchen_quantity: 0, updated_at: now() }
+        const row: StockItem = { id: newId(), min_quantity: null, purchase_unit: '', purchase_factor: null, ...cleanStock(s), kitchen_quantity: 0, updated_at: now() }
         db.stock.push(row)
         if (row.quantity > 0) db.movements.push(localMovement({ type: 'adjustment', item: row, quantity: row.quantity, to_location: 'depot', user_name: user }))
         return row
@@ -326,7 +336,7 @@ function localBackOffice(): BackOffice {
     },
     async updateStockItem(id, patch) {
       checkName(patch.name)
-      checkMin(patch.min_quantity)
+      checkStock(patch)
       edit((db) => {
         if (patch.name !== undefined && nameTaken(db, patch.name, id)) throw new Error(tr().errStockName)
         db.stock = db.stock.map((s) => (s.id === id ? { ...s, ...cleanStock(patch), updated_at: now() } : s))

@@ -114,6 +114,17 @@ export interface Repo {
   waiterName(): Promise<string>
 }
 
+/**
+ * Demo mode only: called once when an order becomes paid, with its lines (the fiches techniques take the ingredients
+ * out of the demo stock). With Supabase the database does it itself, in the payment's transaction.
+ */
+type PaidListener = (order: PaidOrder, lines: OrderLine[]) => void
+const paidListeners = new Set<PaidListener>()
+export function onLocalOrderPaid(fn: PaidListener): () => void {
+  paidListeners.add(fn)
+  return () => paidListeners.delete(fn)
+}
+
 /** What can change on a delivery: its customer, its status. */
 export type DeliveryPatch = Partial<DeliveryCustomer> & { status?: DeliveryStatus }
 
@@ -1074,6 +1085,7 @@ function localRepo(): Repo {
       db.lastTicket = ticket_no
       commitOrders(db)
       setTableStatus(paid.table_id, 'free')
+      paidListeners.forEach((l) => l(paid, lines))
       return paid
     },
     async listPayments(orderId) {

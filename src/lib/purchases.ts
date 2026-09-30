@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { sharedChannel, supabase } from './repo'
 import { backOffice, editLocalStock, localMovement, localUserName } from './backoffice'
 import { tr } from './i18n'
-import type { NewPurchase, SupplierInvoice, SupplierInvoiceItem, SupplierPayment, SupplierPaymentStatus } from './types'
+import type { NewPurchase, StockItem, SupplierInvoice, SupplierInvoiceItem, SupplierPayment, SupplierPaymentStatus } from './types'
 import { newId } from './id'
 
 /**
@@ -70,7 +70,17 @@ function purchasesError(message: string): Error {
 }
 
 const normInvoice = (i: SupplierInvoice): SupplierInvoice => ({ ...i, total_amount: Number(i.total_amount), paid_amount: Number(i.paid_amount) })
-const normItem = (i: SupplierInvoiceItem): SupplierInvoiceItem => ({ ...i, quantity: Number(i.quantity), unit_price: Number(i.unit_price) })
+const normItem = (i: SupplierInvoiceItem): SupplierInvoiceItem => ({
+  ...i, quantity: Number(i.quantity), unit_price: Number(i.unit_price), factor: Number(i.factor ?? 1) || 1,
+})
+
+/**
+ * Stock units per bought unit: the item's coefficient when the line is in its unité d'achat (2 fardeaux = 12
+ * bouteilles), 1 otherwise. Same rule as create_supplier_purchase().
+ */
+export function lineFactor(item: Pick<StockItem, 'purchase_unit' | 'purchase_factor'>, unit: string): number {
+  return item.purchase_unit && item.purchase_factor && unit.trim().toLowerCase() === item.purchase_unit.trim().toLowerCase() ? item.purchase_factor : 1
+}
 const normPayment = (p: SupplierPayment): SupplierPayment => ({ ...p, amount: Number(p.amount) })
 
 function supabasePurchases(sb: SupabaseClient): PurchasesService {
@@ -85,7 +95,7 @@ function supabasePurchases(sb: SupabaseClient): PurchasesService {
     },
     async details(invoiceId) {
       const [items, payments] = await Promise.all([
-        sb.from('supplier_invoice_items').select('id, invoice_id, stock_item_id, item_name, quantity, unit, unit_price').eq('invoice_id', invoiceId).order('position'),
+        sb.from('supplier_invoice_items').select('*').eq('invoice_id', invoiceId).order('position'),
         sb.from('supplier_invoice_payments').select('id, invoice_id, amount, date, created_at').eq('invoice_id', invoiceId).order('date').order('created_at'),
       ])
       return { items: (check(items) as SupplierInvoiceItem[]).map(normItem), payments: (check(payments) as SupplierPayment[]).map(normPayment) }
@@ -168,12 +178,14 @@ function localPurchases(): PurchasesService {
         for (const l of p.lines) {
           const item = db.stock.find((s) => s.id === l.stock_item_id)
           if (!item) throw new Error(tr().errStockGone)
-          item.quantity = Math.round((item.quantity + l.quantity) * 1000) / 1000
+          const factor = lineFactor(item, l.unit)
+          item.quantity = Math.round((item.quantity + l.quantity * factor) * 1000) / 1000
           if (!item.unit && l.unit.trim()) item.unit = l.unit.trim()
           item.updated_at = now()
           byId.set(item.id, { ...item })
           db.movements.push(localMovement({
-            type: 'purchase', item, quantity: l.quantity, to_location: 'depot', unit_cost: round2(l.unit_price), invoice_id: invoice.id,
+            type: 'purchase', item, quantity: Math.round(l.quantity * factor * 1000) / 1000, to_location: 'depot',
+            unit_cost: Math.round((round2(l.unit_price) / factor) * 10000) / 10000, invoice_id: invoice.id,
             batch_id: batch, user_name: user,
           }))
         }
@@ -183,6 +195,7 @@ function localPurchases(): PurchasesService {
       db.items.push(...p.lines.map((l) => ({
         id: newId(), invoice_id: invoice.id, stock_item_id: l.stock_item_id, item_name: byId.get(l.stock_item_id)!.name,
         quantity: l.quantity, unit: l.unit.trim() || byId.get(l.stock_item_id)!.unit, unit_price: round2(l.unit_price),
+        factor: lineFactor(byId.get(l.stock_item_id)!, l.unit),
       })))
       if (paid > 0) db.payments.push({ id: newId(), invoice_id: invoice.id, amount: paid, date: p.date, created_at: now() })
       write(db)
