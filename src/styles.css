@@ -578,3 +578,40 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .perm-no { color: #b91c1c; font-weight: 700; font-size: 18px; }
 .perm-user { display: flex; flex-direction: column; gap: 4px; max-width: 360px; margin-bottom: 12px; }
 .perm-user select { min-height: 40px; }
+
+/* Réservations (menu Clients) */
+.table.reserved { border-style: dashed; }
+.table .res-mark {
+  position: absolute; top: -9px; inset-inline-end: -9px; width: 22px; height: 22px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 12px; line-height: 1; background: var(--surface);
+  border: 1px solid var(--line); box-shadow: 0 1px 3px rgba(0,0,0,0.15); cursor: pointer;
+}
+.res-form { display: flex; flex-direction: column; gap: 14px; }
+.res-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.res-plan { display: flex; flex-direction: column; gap: 6px; }
+.res-plan .floor-wrap { max-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.res-warning { margin: 0; padding: 8px 10px; border-radius: 8px; background: #fef3c7; color: #92400e; }
+.res-dialog { width: min(760px, 100%); max-height: calc(100dvh - 32px); overflow: auto; }
+.res-table .end { text-align: end; }
+.res-table th { white-space: nowrap; }
+.res-head { flex-wrap: wrap; }
+.res-head .segmented { flex-shrink: 0; }
+.res-actions { display: inline-flex; gap: 6px; justify-content: flex-end; }
+.res-actions button { padding: 6px 10px; }
+.res-table tr.highlight td { background: #fffbeb; }
+.tag.res-status.confirmed { background: #dbeafe; color: #1e40af; }
+.tag.res-status.honored { background: #dcfce7; color: #166534; }
+.tag.res-status.cancelled { background: var(--line); color: var(--muted); }
+.tag.res-status.no_show { background: var(--occ-bg); color: var(--occ); }
+.tag.res-late { margin-inline-start: 4px; }
+.res-honor-tables { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 4px; }
+.res-pick { min-width: 64px; display: flex; flex-direction: column; align-items: center; gap: 2px; border-width: 2px; }
+.res-pick.free { background: var(--free-bg); border-color: var(--free); }
+.res-pick.booked { box-shadow: 0 0 0 3px var(--accent); }
+.res-pick:disabled { opacity: 0.55; }
+.res-info-time { font-size: 18px; margin: 0; }
+@media (max-width: 640px) {
+  .res-actions { flex-direction: column; align-items: stretch; }
+  .res-table th { white-space: normal; }
+  .res-table .show-phone .tag { display: inline-block; margin-top: 4px; }
+}

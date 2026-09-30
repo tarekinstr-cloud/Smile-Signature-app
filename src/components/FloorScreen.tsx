@@ -20,6 +20,9 @@ import ServiceTabs from './nav/ServiceTabs'
 import type { BackOfficePage } from './backoffice/pages'
 import type { SessionUser } from '../lib/auth'
 import { usePermissions, type Permission } from '../lib/permissions'
+import { reservations as reservationsService, upcomingWindow } from '../lib/reservations'
+import type { Reservation } from '../lib/types'
+import { timeText } from './backoffice/ReservationsPage'
 
 type Mode = 'service' | 'edit'
 /** Orders without a table, each with its button and list in the top bar. */
@@ -50,6 +53,10 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   const [backOffice, setBackOffice] = useState<BackOfficePage | null>(null)
   /** Small dialogs from the navigation: the account (Connexion tab) and Aide → À propos. */
   const [info, setInfo] = useState<'account' | 'about' | null>(null)
+  /** Confirmed bookings of the next hours, shown as a small mark on their table. */
+  const [upcoming, setUpcoming] = useState<Reservation[]>([])
+  /** Mark tapped on the floor plan: the booking's details. */
+  const [resInfo, setResInfo] = useState<{ reservation: Reservation; table: DiningTable } | null>(null)
   const [restaurant, setRestaurant] = useState('Smile Signature')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -93,6 +100,27 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   useEffect(() => {
     repo.getReceiptSettings().then((r) => r.name && setRestaurant(r.name), () => {})
   }, [backOffice])
+
+  // The window moves with the clock, so bookings are read again every minute as well as on every change.
+  const reloadUpcoming = useCallback(() => {
+    const [from, to] = upcomingWindow()
+    reservationsService.listBetween(from, to).then(setUpcoming, () => setUpcoming([]))
+  }, [])
+  useEffect(() => {
+    reloadUpcoming()
+    const timer = window.setInterval(reloadUpcoming, 60_000)
+    const unsubscribe = reservationsService.subscribe(reloadUpcoming)
+    return () => {
+      window.clearInterval(timer)
+      unsubscribe()
+    }
+  }, [reloadUpcoming, backOffice])
+  /** Next booking of each table (the earliest, when a table has several). */
+  const reservedTables = useMemo(() => {
+    const byTable = new Map<string, Reservation>()
+    for (const r of upcoming) if (r.table_id && !byTable.has(r.table_id)) byTable.set(r.table_id, r)
+    return byTable
+  }, [upcoming])
 
   const reloadTakeaways = useCallback(() => {
     repo.listOpenOrders('takeaway').then(setTakeaways, () => setTakeaways([]))
@@ -223,7 +251,10 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     id: 'signout', label: t.signOutAs(user.display_name || user.username, t.roles[user.role]), separator: true, onSelect: onSignOut,
   }
   /** Permission each back-office page needs (Utilisateurs and Permissions: the Admin role). */
-  const pageAllowed = (page: BackOfficePage) => (page === 'users' || page === 'permissions' ? isAdmin : can(page as Permission))
+  const pageAllowed = (page: BackOfficePage) =>
+    page === 'users' || page === 'permissions' ? isAdmin
+      : page === 'reservations' || page === 'reservationNew' ? can('reservations')
+      : can(page as Permission)
   const shown = (items: (AdminMenuItem | false)[]) => items.filter((i): i is AdminMenuItem => !!i)
   // Menus and entries the account has no permission for are left out, not just greyed.
   const stockItems = shown([
@@ -245,7 +276,12 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
         signOutItem,
       ]),
     },
-    ...(isAdmin ? [{ id: 'clients', label: t.navClients, items: [{ id: 'clients', label: t.clientsSoon, disabled: true }] }] : []),
+    ...(can('reservations') ? [{
+      id: 'clients', label: t.navClients, current: onBo('reservations') || onBo('reservationNew'), items: [
+        { id: 'res-new', label: t.resNewItem, checked: onBo('reservationNew'), onSelect: () => openBo('reservationNew') },
+        { id: 'res-list', label: t.resListItem, checked: onBo('reservations'), onSelect: () => openBo('reservations') },
+      ],
+    }] : []),
     ...(can('edit') ? [{
       id: 'edit', label: t.navEdit, items: [
         { id: 'plan', label: t.editPlanItem, checked: !backOffice && mode === 'edit', onSelect: () => { toFloor(); setMode('edit') } },
@@ -296,7 +332,12 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
           onOpenPrinters={() => { setBackOffice(null); setPrinterSettings(true) }}
           onOpenTicket={can('ticket') ? () => setBackOffice('ticket') : undefined}
           onOpenMenu={can('edit') ? () => { setBackOffice(null); setMenuAdmin(true) } : undefined}
-          onPage={(page) => setBackOffice(page)} />
+          onPage={(page) => setBackOffice(page)}
+          onOpenOrder={(id, tableId) => {
+            setBackOffice(null)
+            setHallId(id)
+            openOrder(tableId, false)
+          }} />
         {infoDialog}
       </>
     )
@@ -364,6 +405,8 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
                 onSelect={setSelectedId}
                 onTap={tapTable}
                 onMove={(id, x, y) => updateTable(id, { x, y })}
+                reservations={reservedTables}
+                onReservation={(reservation, table) => setResInfo({ reservation, table })}
               />
             </section>
             {mode === 'edit' && (
@@ -441,6 +484,24 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
             const order = await repo.openDelivery(customer)
             openTakeaway(order.id)
           }} />
+      )}
+      {resInfo && (
+        <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setResInfo(null)}>
+          <div className="dialog table-actions" role="dialog" aria-modal="true" aria-labelledby="res-info-title"
+            onKeyDown={(e) => e.key === 'Escape' && setResInfo(null)}>
+            <div className="panel-head">
+              <h2 id="res-info-title">{t.resInfoTitle(resInfo.table.label)}</h2>
+              <button className="ghost" onClick={() => setResInfo(null)} aria-label={t.close}>✕</button>
+            </div>
+            <p className="res-info-time"><strong>{timeText(resInfo.reservation.reserved_at, lang)}</strong> · {t.resPartySize(resInfo.reservation.party_size)}</p>
+            <p><bdi>{resInfo.reservation.client_name}</bdi>
+              {resInfo.reservation.phone && <> · <a href={`tel:${resInfo.reservation.phone.replace(/[^\d+]/g, '')}`} dir="ltr">{resInfo.reservation.phone}</a></>}
+            </p>
+            {resInfo.reservation.note && <p className="muted small"><bdi>{resInfo.reservation.note}</bdi></p>}
+            <button className="primary big" autoFocus onClick={() => { const table = resInfo.table; setResInfo(null); tapTable(table) }}>{t.resOpenTable}</button>
+            {can('reservations') && <button className="big" onClick={() => { setResInfo(null); openBo('reservations') }}>{t.resSeeList}</button>}
+          </div>
+        </div>
       )}
       {infoDialog}
       {dialog.element}

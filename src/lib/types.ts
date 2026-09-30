@@ -360,3 +360,25 @@ export interface DayStats {
   /** Most sold items, by quantity. */
   topItems: TopItem[]
 }
+
+export const RESERVATION_STATUSES = ['confirmed', 'cancelled', 'honored', 'no_show'] as const
+/** Confirmée, Annulée, Honorée (the customer came: their table's order was opened), No-show. */
+export type ReservationStatus = (typeof RESERVATION_STATUSES)[number]
+
+/** A table booking (menu Clients). The hall is always set; the table only when the customer chose one. */
+export interface Reservation {
+  id: string
+  client_name: string
+  phone: string
+  party_size: number
+  hall_id: string | null
+  table_id: string | null
+  /** ISO date and time of the booking. */
+  reserved_at: string
+  status: ReservationStatus
+  note: string
+  created_at: string
+}
+
+export type NewReservation = Pick<Reservation, 'client_name' | 'phone' | 'party_size' | 'hall_id' | 'table_id' | 'reserved_at' | 'note'>
+export type ReservationPatch = Partial<NewReservation> & { status?: ReservationStatus }

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useI18n } from '../../lib/i18n'
 import type { BackOfficePage } from './pages'
 import StatsPage from './StatsPage'
@@ -10,6 +10,7 @@ import UsersPage from './UsersPage'
 import BackupPage from './BackupPage'
 import TicketPage from './TicketPage'
 import PermissionsPage from './PermissionsPage'
+import { NewReservationPage, ReservationsList } from './ReservationsPage'
 
 interface Props {
   page: BackOfficePage
@@ -21,16 +22,20 @@ interface Props {
   onOpenPrinters(): void
   /** Opens Modifier le Ticket (shortcut from Paramètres). Left out without the permission. */
   onOpenTicket?(): void
-  /** Switches page (tabs Utilisateurs / Permissions). */
+  /** Switches page (tabs Utilisateurs / Permissions, Nouvelle réservation / Liste). */
   onPage(page: BackOfficePage): void
+  /** Réservation honorée: leaves the back-office for the order of the table where the customer sits. */
+  onOpenOrder(hallId: string, tableId: string): void
 }
 
 /**
  * Back-office screen under the administration menus: Statistiques, Stock, Fournisseurs, Employés, Paramètres, and the
- * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket).
+ * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket) and Clients (réservations).
  */
-export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrinters, onOpenTicket, onPage }: Props) {
+export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrinters, onOpenTicket, onPage, onOpenOrder }: Props) {
   const { t } = useI18n()
+  /** Booking just created from Nouvelle réservation, highlighted in the list. */
+  const [created, setCreated] = useState<string | null>(null)
   const title: Record<BackOfficePage, [string, string]> = {
     stats: [t.statistics, t.statsSub],
     stock: [t.stock, t.stockSub],
@@ -41,6 +46,8 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     permissions: [t.permissionsTitle, t.permissionsSub],
     backup: [t.backupTitle, t.backupSub],
     ticket: [t.ticketTitle, t.ticketSub],
+    reservations: [t.reservationsTitle, t.reservationsSub],
+    reservationNew: [t.resNewItem, t.resNewSub],
   }
   return (
     <div className="app back-office">
@@ -61,6 +68,15 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
           ))}
         </div>
       )}
+      {(page === 'reservations' || page === 'reservationNew') && (
+        <div className="segmented bo-tabs" role="tablist" aria-label={t.reservationsTitle}>
+          {(['reservationNew', 'reservations'] as const).map((p) => (
+            <button key={p} type="button" role="tab" aria-selected={page === p} className={page === p ? 'on' : ''} onClick={() => onPage(p)}>
+              {p === 'reservationNew' ? t.resNewItem : t.resListItem}
+            </button>
+          ))}
+        </div>
+      )}
       {page === 'stats' && <StatsPage />}
       {page === 'stock' && <StockPage />}
       {page === 'suppliers' && <SuppliersPage />}
@@ -70,6 +86,8 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'permissions' && <PermissionsPage />}
       {page === 'backup' && <BackupPage />}
       {page === 'ticket' && <TicketPage />}
+      {page === 'reservationNew' && <NewReservationPage onSaved={(r) => { setCreated(r.id); onPage('reservations') }} />}
+      {page === 'reservations' && <ReservationsList onOpenOrder={onOpenOrder} highlight={created} />}
     </div>
   )
 }
