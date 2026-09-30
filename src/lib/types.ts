@@ -193,7 +193,16 @@ export interface OrderLine extends Adjustments {
    * order_type and table_id: a whole takeaway order does not set it.
    */
   is_takeaway: boolean
+  /**
+   * Cost of one portion, fixed when the order was paid (fiche technique × last purchase price then); null before.
+   * Never recomputed, so past profits stay as they were.
+   */
+  unit_cost?: number | null
+  /** ok, no_recipe (no fiche: cost 0, « coût inconnu ») or no_price (an ingredient never bought: counted 0). */
+  cost_status?: CostStatus | null
 }
+
+export type CostStatus = 'ok' | 'no_recipe' | 'no_price'
 
 export type NewOrderLine = Pick<OrderLine, 'item_id' | 'name' | 'unit_price' | 'quantity' | 'options' | 'note'> & Partial<Pick<OrderLine, 'is_takeaway'>>
 export type OrderLinePatch = Partial<Pick<OrderLine, 'quantity' | 'note' | 'options' | 'unit_price' | 'is_takeaway'>>
@@ -685,6 +694,8 @@ export interface NewCashMovement {
   amount: number
   reason: string
   supplier_invoice_id?: string | null
+  /** Fond de sortie that is also a general expense of this category (Liste des dépenses). */
+  expense_category_id?: string | null
 }
 
 /**
@@ -782,4 +793,54 @@ export interface SalesData {
   /** Payments made during the period. */
   payments: Payment[]
   openOrders: number
+}
+
+// ───────────── Dépenses, Bénéfice (migration 20260930120000_expenses_profit.sql) ─────────────
+
+export interface ExpenseCategory {
+  id: string
+  name: string
+  sort_order: number
+  active: boolean
+}
+
+/** Espèces caisse (a Fond de sortie of the open day) or Autre (bank, card…). */
+export type ExpenseMode = 'cash' | 'other'
+
+/** A general expense (loyer, électricité…). */
+export interface Expense {
+  id: string
+  category_id: string | null
+  /** Name of the category when saved; kept after the category is deleted. */
+  category_name: string
+  amount: number
+  /** Day of the expense, YYYY-MM-DD. */
+  date: string
+  mode: ExpenseMode
+  note: string
+  /** The Fond de sortie that paid it (mode cash), shown only once. */
+  cash_movement_id: string | null
+  user_name: string
+  created_at: string
+}
+
+export interface NewExpense {
+  category_id: string
+  amount: number
+  date: string
+  mode: ExpenseMode
+  note: string
+}
+
+/** Costs of a period that do not come from the sales (page Bénéfice). */
+export interface ProfitCosts {
+  /** Charges cuisine déclarées (pertes, casse, repas personnel…), at their cost. */
+  charges: number
+  charges_by_reason: Record<string, number>
+  /** Écarts d'inventaire négatifs, at their cost. */
+  inventory_loss: number
+  /** Monthly salaries prorated to the days of the period. */
+  salaries: number
+  expenses: number
+  expenses_by_category: Record<string, number>
 }

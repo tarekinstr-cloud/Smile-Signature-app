@@ -21,6 +21,9 @@ import { KitchenChargesPage, StockTransferPage } from './StockMovesPage'
 import StockStatePage from './StockStatePage'
 import RecipesPage from './RecipesPage'
 import { CashFloatPage, CashMovesPage, ResetNumbersPage } from './CashPage'
+import WeeklyPage from './WeeklyPage'
+import ExpensesPage from './ExpensesPage'
+import ProfitPage from './ProfitPage'
 import type { SupplierInvoice } from '../../lib/types'
 
 interface Props {
@@ -41,7 +44,7 @@ interface Props {
 
 /**
  * Back-office screen under the administration menus: Statistiques, Stock, Fournisseurs, Employés, Paramètres, and the
- * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket), Clients (réservations), Édition > Zones de livraison and Gestion des employés (Salaires et acomptes, Appareils connectés), Gestion du Stock (Effectuer un achat, Factures fournisseurs, Transfert dépôt / cuisine, Charges cuisine, État du stock), Édition > Fiches techniques.
+ * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket), Clients (réservations), Édition > Zones de livraison and Gestion des employés (Salaires et acomptes, Appareils connectés), Gestion du Stock (Effectuer un achat, Factures fournisseurs, Transfert dépôt / cuisine, Charges cuisine, État du stock), Édition > Fiches techniques, Statistiques (caisse, journalier, hebdomadaire, dépenses, bénéfice).
  */
 export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrinters, onOpenTicket, onPage, onOpenOrder }: Props) {
   const { t } = useI18n()
@@ -82,6 +85,9 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     cashFloat: [t.floatTitle, t.floatSub],
     cashIn: [t.cashInTitle, t.cashInSub],
     cashOut: [t.cashOutTitle, t.cashOutSub],
+    weekly: [t.weeklyTitle, t.weeklySub],
+    expenses: [t.expensesTitle, t.expensesSub],
+    profit: [t.profitTitle, t.profitSub],
   }
   return (
     <div className="app back-office">
@@ -155,6 +161,9 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'cashFloat' && <CashFloatPage onOpenStats={canStats ? () => onPage('stats') : undefined} />}
       {page === 'cashIn' && <CashMovesPage key="in" kind="in" onOpenFloat={() => onPage('cashFloat')} />}
       {page === 'cashOut' && <CashMovesPage key="out" kind="out" onOpenFloat={() => onPage('cashFloat')} />}
+      {page === 'weekly' && <WeeklyPage />}
+      {page === 'expenses' && <ExpensesPage />}
+      {page === 'profit' && <ProfitPage />}
     </div>
   )
 }

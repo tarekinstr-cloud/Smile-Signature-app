@@ -2,4 +2,4 @@
 export type BackOfficePage = 'stats' | 'stock' | 'suppliers' | 'staff' | 'settings' | 'users' | 'permissions' | 'backup' | 'ticket'
   | 'reservations' | 'reservationNew' | 'zones' | 'zoneNew' | 'menuCsv' | 'payroll' | 'devices'
   | 'purchaseNew' | 'purchases' | 'stockTransfer' | 'kitchenCharges' | 'stockState' | 'recipes'
-  | 'resetNumbers' | 'cashFloat' | 'cashIn' | 'cashOut'
+  | 'resetNumbers' | 'cashFloat' | 'cashIn' | 'cashOut' | 'weekly' | 'expenses' | 'profit'

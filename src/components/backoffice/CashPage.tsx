@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { cash } from '../../lib/cash'
+import { expenses } from '../../lib/expenses'
 import { purchases, remaining } from '../../lib/purchases'
 import { download, stamp, toCsv } from '../../lib/admin'
 import { money } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
 import { usePermissions } from '../../lib/permissions'
-import type { CashDay, CashMovement, CashMovementKind, NumberReset, SupplierInvoice } from '../../lib/types'
+import type { CashDay, CashMovement, CashMovementKind, ExpenseCategory, NumberReset, SupplierInvoice } from '../../lib/types'
 import { useDialog } from '../Dialog'
 import PeriodFilter, { initialPeriod, periodRange, rangeLabel, type Period } from './PeriodFilter'
 import { parseAmount } from './StatsPage'
@@ -212,6 +213,8 @@ function MoveForm({ kind, day, canPayInvoice, onSaved }: { kind: CashMovementKin
   const [reason, setReason] = useState('')
   const [invoiceId, setInvoiceId] = useState('')
   const [invoices, setInvoices] = useState<SupplierInvoice[]>([])
+  const [categoryId, setCategoryId] = useState('')
+  const [categories, setCategories] = useState<ExpenseCategory[]>([])
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -219,6 +222,9 @@ function MoveForm({ kind, day, canPayInvoice, onSaved }: { kind: CashMovementKin
     if (canPayInvoice) purchases.listInvoices().then((l) => setInvoices(l.filter((i) => remaining(i) > 0)), () => setInvoices([]))
   }, [canPayInvoice])
   useEffect(loadInvoices, [loadInvoices])
+  useEffect(() => {
+    if (kind === 'out') expenses.categories().then((l) => setCategories(l.filter((c) => c.active)), () => setCategories([]))
+  }, [kind])
   const invoice = invoices.find((i) => i.id === invoiceId) ?? null
   const presets = kind === 'in' ? t.cashInPresets : t.cashOutPresets
 
@@ -228,17 +234,20 @@ function MoveForm({ kind, day, canPayInvoice, onSaved }: { kind: CashMovementKin
     const n = parseAmount(amount)
     if (n === null || n <= 0) return setError(t.errCashAmount)
     if (invoice && n > remaining(invoice) + 0.001) return setError(t.errPayAmount)
-    if (!reason.trim() && !invoice) return setError(t.errCashReason)
+    const category = !invoice ? categories.find((c) => c.id === categoryId) : undefined
+    if (!reason.trim() && !invoice && !category) return setError(t.errCashReason)
     setBusy(true)
     try {
       setError(null)
       const m = await cash.addMovement({
-        kind, amount: n, reason: reason.trim() || (invoice ? t.cashInvoiceReason(invoice.supplier_name) : ''), supplier_invoice_id: invoice?.id ?? null,
+        kind, amount: n, reason: reason.trim() || (invoice ? t.cashInvoiceReason(invoice.supplier_name) : category?.name ?? ''), supplier_invoice_id: invoice?.id ?? null,
+        expense_category_id: !invoice && categoryId ? categoryId : null,
       })
       setNotice(kind === 'in' ? t.cashInSaved(money(m.amount)) : t.cashOutSaved(money(m.amount)))
       setAmount('')
       setReason('')
       setInvoiceId('')
+      setCategoryId('')
       loadInvoices()
       onSaved()
     } catch (err) {
@@ -268,6 +277,15 @@ function MoveForm({ kind, day, canPayInvoice, onSaved }: { kind: CashMovementKin
               {invoices.map((i) => (
                 <option key={i.id} value={i.id}>{i.supplier_name} · {i.date} · {t.cashInvoiceLeft(money(remaining(i)))}</option>
               ))}
+            </select>
+          </label>
+        )}
+        {kind === 'out' && !invoice && categories.length > 0 && (
+          <label>
+            {t.cashExpenseCategory} ({t.optional})
+            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+              <option value="">{t.cashNoExpense}</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </label>
         )}

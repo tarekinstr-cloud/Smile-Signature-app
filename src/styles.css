@@ -844,3 +844,44 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .z-title { text-align: center; font-size: 16px; font-weight: 800; letter-spacing: 0.08em; margin: 4px 0; }
 .receipt-strong { font-weight: 700; }
 .days-table { font-size: 14px; }
+
+/* ───────────── Hebdomadaire, dépenses, bénéfice ───────────── */
+:root { --chart-this: #d97706; --chart-prev: #2a78d6; }
+.week-nav { display: flex; align-items: center; gap: 6px; }
+.week-nav button { min-width: 44px; min-height: 40px; }
+.week-nav input { width: auto; }
+.inline-label { display: flex; flex-direction: row; align-items: center; gap: 6px; }
+.inline-label select { width: auto; }
+.stat-tile small { font-size: 13px; }
+.stat-tile small.pos { color: #15803d; }
+.stat-tile small.neg { color: var(--occ); }
+.stat-tile.main.loss { border-color: var(--occ); background: var(--occ-bg); }
+.week-chart { display: flex; flex-direction: column; gap: 8px; }
+.week-chart svg { width: 100%; height: auto; max-height: 280px; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 14px; color: var(--ink); align-items: center; }
+.chart-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-inline-end: 6px; vertical-align: -1px; }
+.chart-readout { margin-inline-start: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chart-readout strong { color: var(--ink); }
+.chart-grid { stroke: var(--line); stroke-width: 1; }
+.chart-base { stroke: var(--muted); stroke-width: 1; }
+.chart-axis { font-size: 12px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.chart-hit { fill: transparent; }
+.week-chart g.on .chart-hit { fill: rgba(0, 0, 0, 0.04); }
+.week-table tr.muted td { color: var(--muted); }
+.bo-table .row-actions { text-align: end; white-space: nowrap; }
+.bo-table .row-actions button + button, .bo-table .row-actions label + button { margin-inline-start: 6px; }
+.inline-form { display: flex; gap: 8px; margin-bottom: 12px; }
+.inline-form input { flex: 1; }
+.check-label { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-size: 14px; }
+.check-label input { width: auto; }
+.profit-statement td { font-size: 15px; }
+.profit-statement td.pct { color: var(--muted); width: 90px; }
+.profit-statement tr.subtotal td { font-weight: 700; border-top: 1px solid var(--line); }
+.profit-statement tr.total td { font-size: 17px; }
+.profit-items { font-size: 14px; }
+.sort-btn { background: none; border: none; padding: 0; min-height: 36px; font: inherit; font-weight: 600; color: inherit; cursor: pointer; }
+.cost-tag { margin-inline-start: 6px; }
+.bo-toolbar select.auto-width { width: auto; min-width: 200px; }
+.table-scroll { overflow-x: auto; max-width: 100%; }
+.expenses-table th, .expenses-table td:first-child, .week-table td:first-child, .profit-items th { white-space: nowrap; }
+.expenses-table td.num, .week-table td.num, .profit-items td.num { white-space: nowrap; }
