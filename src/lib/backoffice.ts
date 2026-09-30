@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { supabase } from './repo'
+import { sharedChannel, supabase } from './repo'
 import { computeBill } from './billing'
 import { tr } from './i18n'
 import type {
@@ -20,6 +20,8 @@ export interface BackOffice {
   /** Adds `delta` to the quantity (negative to remove), in one step so two devices do not overwrite each other. */
   adjustStock(id: string, delta: number): Promise<StockItem>
   deleteStockItem(id: string): Promise<void>
+  /** Calls onChange when the stock changes on any device. */
+  subscribeStock(onChange: () => void): () => void
 
   listSuppliers(): Promise<Supplier[]>
   createSupplier(s: NewSupplier): Promise<Supplier>
@@ -152,6 +154,7 @@ function supabaseBackOffice(sb: SupabaseClient): BackOffice {
     async listStaff() {
       return check(await sb.rpc('list_staff')) as StaffAccount[]
     },
+    subscribeStock: sharedChannel(sb, 'stock', ['stock_items']),
   }
 }
 
@@ -274,6 +277,12 @@ function localBackOffice(): BackOffice {
 
     async listStaff() {
       return [{ id: 'demo', email: tr().demoAccount, created_at: null, last_sign_in_at: null }]
+    },
+    subscribeStock(onChange) {
+      // Other tabs of this browser; the demo has no other devices.
+      const onStorage = (e: StorageEvent) => e.key === KEY && onChange()
+      window.addEventListener('storage', onStorage)
+      return () => window.removeEventListener('storage', onStorage)
     },
   }
 }

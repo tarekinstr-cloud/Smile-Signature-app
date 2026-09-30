@@ -63,7 +63,7 @@ const SUPABASE_TABLES: [string, string][] = [
   ['orders', 'id'], ['order_items', 'id'], ['payments', 'id'], ['kitchen_tickets', 'id'], ['table_moves', 'id'],
   ['receipt_settings', 'id'], ['stock_items', 'id'], ['suppliers', 'id'],
   ['app_users', 'user_id'], ['backups_log', 'id'], ['role_permissions', 'role'], ['user_permissions', 'user_id'],
-  ['reservations', 'id'], ['delivery_zones', 'id'], ['salary_advances', 'id'],
+  ['reservations', 'id'], ['delivery_zones', 'id'], ['salary_advances', 'id'], ['device_sessions', 'id'],
 ]
 const PAGE = 1000
 

@@ -4,6 +4,7 @@ import Login from './components/Login'
 import FloorScreen from './components/FloorScreen'
 import { useI18n } from './lib/i18n'
 import { loadMyPermissions } from './lib/permissions'
+import { devices, startPresence } from './lib/devices'
 
 /** Écran de connexion until a user signs in, then the service screen. */
 export default function App() {
@@ -25,7 +26,16 @@ export default function App() {
     return auth.subscribe(refresh)
   }, [refresh])
 
+  // Appareils connectés: this device signals its activity while someone is signed in.
+  const userId = user?.id
+  useEffect(() => (userId ? startPresence() : undefined), [userId])
+
+  const signOut = async () => {
+    await devices.signOut().catch(() => {})
+    await auth.signOut()
+  }
+
   if (user === undefined) return <div className="center muted">{t.loading}</div>
   if (!user) return <Login />
-  return <FloorScreen key={user.id} user={user} onSignOut={() => auth.signOut()} />
+  return <FloorScreen key={user.id} user={user} onSignOut={signOut} />
 }
