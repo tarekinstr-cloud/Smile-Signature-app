@@ -24,6 +24,7 @@ import { CashFloatPage, CashMovesPage, ResetNumbersPage } from './CashPage'
 import WeeklyPage from './WeeklyPage'
 import ExpensesPage from './ExpensesPage'
 import ProfitPage from './ProfitPage'
+import { CancelledInvoicesPage, CancelledOrdersPage, PriceLogPage } from './ControlPages'
 import type { SupplierInvoice } from '../../lib/types'
 
 interface Props {
@@ -88,6 +89,9 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     weekly: [t.weeklyTitle, t.weeklySub],
     expenses: [t.expensesTitle, t.expensesSub],
     profit: [t.profitTitle, t.profitSub],
+    cancelledOrders: [t.cancelledOrdersTitle, t.cancelledOrdersSub],
+    cancelledInvoices: [t.cancelledInvoicesTitle, t.cancelledInvoicesSub],
+    priceLog: [t.priceLogTitle, t.priceLogSub],
   }
   return (
     <div className="app back-office">
@@ -164,6 +168,9 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'weekly' && <WeeklyPage />}
       {page === 'expenses' && <ExpensesPage />}
       {page === 'profit' && <ProfitPage />}
+      {page === 'cancelledOrders' && <CancelledOrdersPage />}
+      {page === 'cancelledInvoices' && <CancelledInvoicesPage />}
+      {page === 'priceLog' && <PriceLogPage />}
     </div>
   )
 }

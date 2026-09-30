@@ -273,6 +273,9 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       : page === 'cashIn' ? can('cash_in')
       : page === 'cashOut' ? can('cash_out')
       : page === 'weekly' ? can('weekly_stats')
+      : page === 'cancelledOrders' ? can('cancelled_orders')
+      : page === 'cancelledInvoices' ? can('cancelled_invoices')
+      : page === 'priceLog' ? can('price_log')
       : can(page as Permission)
   const shown = (items: (AdminMenuItem | false)[]) => items.filter((i): i is AdminMenuItem => !!i)
   // Menus and entries the account has no permission for are left out, not just greyed.
@@ -314,7 +317,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     can('devices') && { id: 'devices', label: t.devicesTitle, checked: onBo('devices'), onSelect: () => openBo('devices') },
   ])
   // Statistiques / bénéfice, in four groups with a line between them: numbering, caisse, rapports, contrôle.
-  const statsPages: BackOfficePage[] = ['resetNumbers', 'cashFloat', 'cashIn', 'cashOut', 'stats', 'weekly', 'expenses', 'profit']
+  const statsPages: BackOfficePage[] = ['resetNumbers', 'cashFloat', 'cashIn', 'cashOut', 'stats', 'weekly', 'expenses', 'profit', 'cancelledOrders', 'cancelledInvoices', 'priceLog']
   const statsGroups: AdminMenuItem[][] = [
     shown([can('reset_numbers') && { id: 'reset-numbers', label: t.resetTitle, checked: onBo('resetNumbers'), onSelect: () => openBo('resetNumbers') }]),
     shown([
@@ -329,9 +332,9 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       can('profit') && { id: 'profit', label: t.profitTitle, checked: onBo('profit'), onSelect: () => openBo('profit') },
     ]),
     shown([
-      can('stats') && { id: 'cancelled-orders', label: t.cancelledOrdersTitle, disabled: true },
-      can('stats') && { id: 'cancelled-invoices', label: t.cancelledInvoicesTitle, disabled: true },
-      can('stats') && { id: 'price-log', label: t.priceLogTitle, disabled: true },
+      can('cancelled_orders') && { id: 'cancelled-orders', label: t.cancelledOrdersTitle, checked: onBo('cancelledOrders'), onSelect: () => openBo('cancelledOrders') },
+      can('cancelled_invoices') && { id: 'cancelled-invoices', label: t.cancelledInvoicesTitle, checked: onBo('cancelledInvoices'), onSelect: () => openBo('cancelledInvoices') },
+      can('price_log') && { id: 'price-log', label: t.priceLogTitle, checked: onBo('priceLog'), onSelect: () => openBo('priceLog') },
     ]),
   ]
   const statsItems = statsGroups.filter((g) => g.length).flatMap((g, i) => g.map((it, j) => (i > 0 && j === 0 ? { ...it, separator: true } : it)))

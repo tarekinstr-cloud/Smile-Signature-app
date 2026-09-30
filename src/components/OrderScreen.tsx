@@ -15,6 +15,7 @@ import { dispatchTickets, type SendResult } from '../lib/kitchen'
 import { deliveryContact, placeText, ticketPlace } from '../lib/place'
 import DeliveryDialog from './DeliveryDialog'
 import { useDialog } from './Dialog'
+import CancelDialog from './CancelDialog'
 import LangToggle from './LangToggle'
 import { useI18n } from '../lib/i18n'
 import { usePermissions } from '../lib/permissions'
@@ -99,6 +100,8 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
   /** Kitchen tickets on screen: the result of the last Valider, or a reprint. */
   const [sent, setSent] = useState<(SendResult & { sentCount: number; reprint?: boolean }) | null>(null)
   const [modal, setModal] = useState<Modal | null>(null)
+  /** Annuler la CMD in progress: the reason dialog. */
+  const [cancelling, setCancelling] = useState(false)
   // Line that supplement buttons, Remise and Offrir apply to: the one last added, or the one tapped in the order.
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const opening = useRef<Promise<Order> | null>(null)
@@ -399,13 +402,18 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
     })
   }
 
+  /** Annuler la CMD: a reason is required once the order has items; a printed bill needs cancel_invoice. */
   async function cancelOrder() {
     if (!order) return
-    if (!(await dialog.confirm(t.confirmCancelOrder(where), t.actCancel))) return
-    await run(async () => {
-      await repo.cancelOrder(order.id)
-      onBack()
-    })
+    if (lines.length === 0) {
+      if (!(await dialog.confirm(t.confirmCancelOrder(where), t.actCancel))) return
+      return run(async () => {
+        await repo.cancelOrder(order.id)
+        onBack()
+      })
+    }
+    if ((order.printed_at || order.invoice_no) && !can('cancel_invoice')) return setError(t.errCancelInvoice)
+    setCancelling(true)
   }
 
   /**
@@ -723,6 +731,16 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
             )}
           </div>
         </div>
+      )}
+      {cancelling && order && (
+        <CancelDialog title={t.confirmCancelOrder(where)} confirmLabel={t.actCancel}
+          detail={order.printed_at || order.invoice_no ? t.cancelPrintedDetail : undefined}
+          onCancel={() => setCancelling(false)}
+          onConfirm={async (why) => {
+            await repo.cancelOrder(order.id, why)
+            setCancelling(false)
+            onBack()
+          }} />
       )}
       {dialog.element}
     </div>

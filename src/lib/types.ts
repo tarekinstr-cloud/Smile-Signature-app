@@ -125,6 +125,48 @@ export interface Order extends Adjustments {
   delivery_fee?: number
   /** Employee who opened the order (ventes par employé); kept when the account is deleted. */
   created_by_name?: string | null
+  /** Annulation (migration 20260930140000_control.sql): reason code, free text, when, who and the amount then. */
+  cancel_reason?: string | null
+  cancel_note?: string | null
+  cancelled_at?: string | null
+  cancelled_by_name?: string | null
+  cancelled_total?: number | null
+  /** When the bill (Addition) was printed; cancelling it afterwards needs the cancel_invoice permission. */
+  printed_at?: string | null
+  /** Ticket paid then cancelled: its cash part was given back from the drawer of the day open then. */
+  voided?: boolean
+  voided_day_id?: string | null
+  void_cash?: number
+}
+
+/** Why an order is cancelled: a code of the list (texts in i18n cancelReasons) and, for 'other', a free text. */
+export const CANCEL_REASONS = ['entry_error', 'customer_left', 'customer_changed', 'unavailable', 'too_long', 'customer_complaint', 'test', 'other'] as const
+export type CancelReason = (typeof CANCEL_REASONS)[number]
+export interface Cancellation {
+  reason: CancelReason
+  note: string
+}
+
+/** A cancelled order with items (Commandes annulées / Factures annulées). */
+export interface CancelledOrder extends Order {
+  lines: OrderLine[]
+  /** Lines already sent to the kitchen. */
+  sent: number
+}
+
+/** One line of the Liste des modifications des prix (written by the database, never changed). */
+export interface PriceChange {
+  id: string
+  kind: 'item' | 'size' | 'supplement'
+  item_id: string | null
+  option_id: string | null
+  item_name: string
+  group_name: string
+  option_name: string
+  old_price: number
+  new_price: number
+  user_name: string
+  created_at: string
 }
 
 /** Customer details typed for an invoice; both optional. */
@@ -788,6 +830,8 @@ export interface DayReport {
    * this was recorded have none.
    */
   closedSales?: ClosedSales | null
+  /** Tickets paid then cancelled (Factures annulées) during the period: count, their total, cash given back. */
+  voids?: { orders: number; amount: number; cash: number } | null
 }
 
 export interface ClosedSales {
@@ -806,6 +850,8 @@ export interface SalesData {
   /** Payments made during the period. */
   payments: Payment[]
   openOrders: number
+  /** Tickets paid then cancelled during the period (their cash part left the drawer). */
+  voids?: (Order & { cancelled_at: string | null })[]
 }
 
 // ───────────── Dépenses, Bénéfice (migration 20260930120000_expenses_profit.sql) ─────────────

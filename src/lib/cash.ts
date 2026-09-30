@@ -92,6 +92,9 @@ const normLine = (l: OrderLine): OrderLine => ({
   quantity: Number(l.quantity),
   unit_cost: l.unit_cost == null ? null : Number(l.unit_cost),
 })
+const normVoid = (o: NonNullable<SalesData['voids']>[number]) => ({
+  ...o, void_cash: Number(o.void_cash ?? 0), cancelled_total: o.cancelled_total == null ? null : Number(o.cancelled_total),
+})
 const normPayment = (p: Payment): Payment => ({ ...p, amount: Number(p.amount), received: Number(p.received), change_amount: Number(p.change_amount) })
 
 function supabaseCash(sb: SupabaseClient): CashService {
@@ -164,7 +167,11 @@ function supabaseCash(sb: SupabaseClient): CashService {
         const ids = orders.slice(i, i + 100).map((o) => o.id)
         lines.push(...(check(await sb.from('order_items').select('*').in('order_id', ids)) as OrderLine[]).map(normLine))
       }
-      return { orders, lines, payments: (check(pays) as Payment[]).map(normPayment), openOrders: open.count ?? 0 }
+      // Tickets cancelled after payment (migration 20260930140000_control.sql; none before it).
+      const voided = await sb.from('orders').select('*').eq('status', 'cancelled').eq('voided', true)
+        .gte('cancelled_at', from.toISOString()).lt('cancelled_at', to.toISOString())
+      const voids = voided.error ? [] : (voided.data as NonNullable<SalesData['voids']>).map(normVoid)
+      return { orders, lines, payments: (check(pays) as Payment[]).map(normPayment), openOrders: open.count ?? 0, voids }
     },
     subscribe: sharedChannel(sb, 'cash', ['cash_days', 'cash_movements']),
   }
@@ -365,6 +372,8 @@ function localCash(): CashService {
         lines: (o.lines ?? []).filter((l) => ids.has(l.order_id)).map(normLine),
         payments: (o.payments ?? []).filter((p) => inRange(p.created_at)).map(normPayment),
         openOrders: (o.orders ?? []).filter((x) => x.status === 'open').length,
+        voids: (o.orders ?? []).filter((x) => x.status === 'cancelled' && x.voided && inRange(x.cancelled_at))
+          .map((x) => normVoid({ ...x, cancelled_at: x.cancelled_at ?? null })),
       }
     },
     subscribe(onChange) {
