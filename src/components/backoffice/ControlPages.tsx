@@ -7,7 +7,7 @@ import { money } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
 import { usePermissions } from '../../lib/permissions'
 import { placeText } from '../../lib/place'
-import { CANCEL_REASONS, type CancelledOrder, type DiningTable, type Order, type PriceChange } from '../../lib/types'
+import { CANCEL_REASONS, type CancelledOrder, type DiningTable, type Order, type PriceChange, type SalesData } from '../../lib/types'
 import CancelDialog, { reasonText } from '../CancelDialog'
 import PeriodFilter, { initialPeriod, periodRange, rangeLabel, type Period } from './PeriodFilter'
 import { locale, useLoad } from './useLoad'
@@ -270,24 +270,84 @@ function CancelledInvoices() {
   )
 }
 
-type PaidTicket = Order & { total: number | null; closed_at: string | null; ticket_no?: number }
+export type PaidTicket = Order & { total: number | null; closed_at: string | null; ticket_no?: number | null; created_by_name?: string | null }
+
+/** Paid tickets of the period and the cash part of each (the cash given back if one is cancelled). */
+export function paidTickets(sales: SalesData) {
+  const cashOf = new Map<string, number>()
+  for (const p of sales.payments) if (p.method === 'cash') cashOf.set(p.order_id, (cashOf.get(p.order_id) ?? 0) + p.amount)
+  return { orders: (sales.orders as PaidTicket[]).slice().sort((a, b) => (b.closed_at ?? '').localeCompare(a.closed_at ?? '')), cashOf }
+}
+
+/**
+ * Paid tickets with an « Annuler la facture » button for accounts with cancel_invoice: reason required, the cash part
+ * is given back from the open day's drawer (void_paid_order). Used in Factures Annulées and in Statistique Journalier.
+ */
+export function PaidTicketsTable({ orders, cashOf, onDone }: { orders: PaidTicket[]; cashOf: Map<string, number>; onDone(): void }) {
+  const { t, lang } = useI18n()
+  const loc = locale(lang)
+  const { can } = usePermissions()
+  const canVoid = can('cancel_invoice')
+  const tables = useTables()
+  const [voiding, setVoiding] = useState<PaidTicket | null>(null)
+  const place = (o: Order) => placeText(t, o, o.table_id ? tables.get(o.table_id) ?? null : null)
+  if (!orders.length) return <p className="muted small">{t.noPaidTickets}</p>
+  return (
+    <>
+      <div className="table-scroll">
+        <table className="bo-table control-table">
+          <thead>
+            <tr>
+              <th>{t.ticketCol}</th>
+              <th>{t.paidAtCol}</th>
+              <th>{t.placeCol}</th>
+              <th className="num">{t.colAmount}</th>
+              <th className="num">{t.weekCash}</th>
+              <th>{t.dayEmployee}</th>
+              {canVoid && <th />}
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map((o) => (
+              <tr key={o.id}>
+                <td>{o.ticket_no != null ? t.ticketNo(String(o.ticket_no)) : '—'}</td>
+                <td>{when(o.closed_at, loc)}</td>
+                <td>{place(o)}</td>
+                <td className="num">{money(o.total ?? 0)}</td>
+                <td className="num">{money(cashOf.get(o.id) ?? 0)}</td>
+                <td>{o.created_by_name || '—'}</td>
+                {canVoid && <td className="row-actions"><button type="button" className="danger" onClick={() => setVoiding(o)}>{t.voidBtn}</button></td>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {voiding && (
+        <CancelDialog
+          title={t.voidTitle(voiding.ticket_no != null ? t.ticketNo(String(voiding.ticket_no)) : place(voiding))}
+          detail={t.voidDetail(money(voiding.total ?? 0), money(cashOf.get(voiding.id) ?? 0))}
+          confirmLabel={t.voidBtn}
+          onCancel={() => setVoiding(null)}
+          onConfirm={async (why) => {
+            await repo.voidTicket(voiding.id, why)
+            setVoiding(null)
+            onDone()
+          }} />
+      )}
+    </>
+  )
+}
 
 /** Annuler un ticket encaissé: the paid tickets of a period; cancelling one gives its cash back from the open day's drawer. */
 function VoidTickets({ onDone }: { onDone(): void }) {
   const { t, lang } = useI18n()
   const loc = locale(lang)
   const { period, setPeriod, range } = usePeriod('today')
-  const load = useCallback(async () => {
-    const sales = await cash.sales(range[0], range[1])
-    const cashOf = new Map<string, number>()
-    for (const p of sales.payments) if (p.method === 'cash') cashOf.set(p.order_id, (cashOf.get(p.order_id) ?? 0) + p.amount)
-    return { orders: (sales.orders as PaidTicket[]).sort((a, b) => (b.closed_at ?? '').localeCompare(a.closed_at ?? '')), cashOf }
-  }, [range])
+  const load = useCallback(async () => paidTickets(await cash.sales(range[0], range[1])), [range])
   const { data, error, setError, reload } = useLoad(load)
   useEffect(() => repo.subscribeOrders(reload), [reload])
   const tables = useTables()
   const [search, setSearch] = useState('')
-  const [voiding, setVoiding] = useState<PaidTicket | null>(null)
   const place = (o: Order) => placeText(t, o, o.table_id ? tables.get(o.table_id) ?? null : null)
   const rows = (data?.orders ?? []).filter((o) => !search.trim() || String(o.ticket_no ?? '').includes(search.trim()) || place(o).toLowerCase().includes(search.trim().toLowerCase()))
 
@@ -301,51 +361,8 @@ function VoidTickets({ onDone }: { onDone(): void }) {
       </div>
       <div className="banner">{t.voidHint}</div>
       <section className="panel">
-        {!data ? (
-          !error && <p className="muted">{t.loading}</p>
-        ) : !rows.length ? (
-          <p className="muted small">{t.noPaidTickets}</p>
-        ) : (
-          <div className="table-scroll">
-            <table className="bo-table control-table">
-              <thead>
-                <tr>
-                  <th>{t.ticketCol}</th>
-                  <th>{t.paidAtCol}</th>
-                  <th>{t.placeCol}</th>
-                  <th className="num">{t.colAmount}</th>
-                  <th className="num">{t.weekCash}</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((o) => (
-                  <tr key={o.id}>
-                    <td>{o.ticket_no != null ? t.ticketNo(String(o.ticket_no)) : '—'}</td>
-                    <td>{when(o.closed_at, loc)}</td>
-                    <td>{place(o)}</td>
-                    <td className="num">{money(o.total ?? 0)}</td>
-                    <td className="num">{money(data.cashOf.get(o.id) ?? 0)}</td>
-                    <td className="row-actions"><button type="button" className="danger" onClick={() => setVoiding(o)}>{t.voidBtn}</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {!data ? (!error && <p className="muted">{t.loading}</p>) : <PaidTicketsTable orders={rows} cashOf={data.cashOf} onDone={() => { reload(); onDone() }} />}
       </section>
-      {voiding && (
-        <CancelDialog
-          title={t.voidTitle(voiding.ticket_no != null ? t.ticketNo(String(voiding.ticket_no)) : place(voiding))}
-          detail={t.voidDetail(money(voiding.total ?? 0), money(data?.cashOf.get(voiding.id) ?? 0))}
-          confirmLabel={t.voidBtn}
-          onCancel={() => setVoiding(null)}
-          onConfirm={async (why) => {
-            await repo.voidTicket(voiding.id, why)
-            setVoiding(null)
-            onDone()
-          }} />
-      )}
     </>
   )
 }

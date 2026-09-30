@@ -6,7 +6,8 @@ import { download, stamp, toCsv } from '../../lib/admin'
 import { money } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
 import { usePermissions } from '../../lib/permissions'
-import type { CashDay, DayReport } from '../../lib/types'
+import type { CashDay, DayReport, SalesData } from '../../lib/types'
+import { PaidTicketsTable, paidTickets } from './ControlPages'
 import PeriodFilter, { initialPeriod, periodRange, rangeLabel, type Period } from './PeriodFilter'
 import { DayReportView, ZDialog, gapClass, gapText } from './DayReportView'
 import { errorText, locale, useLoad } from './useLoad'
@@ -36,6 +37,7 @@ function useThrottled(fn: () => void, ms: number) {
 interface Live {
   day: CashDay | null
   report: DayReport
+  sales: SalesData
 }
 
 /** Report of the working day in progress: sales since the last closing, cash expected in the drawer. */
@@ -63,7 +65,7 @@ async function loadLive(): Promise<Live> {
   const box = day ? cashSummary(day.opening_float, cashSales, sum('in'), sum('out')) : null
   const now = new Date().toISOString()
   // Drawer closed: everything since the last closing was taken with the drawer closed.
-  return { day, report: computeDayReport(sales, categoryOfItems(menu), from.toISOString(), now, box, day?.opened_at ?? now) }
+  return { day, sales, report: computeDayReport(sales, categoryOfItems(menu), from.toISOString(), now, box, day?.opened_at ?? now) }
 }
 
 type Tab = 'current' | 'closed'
@@ -83,6 +85,18 @@ export default function StatsPage() {
       </div>
       {tab === 'current' ? <CurrentDay onClosed={() => setTab('closed')} /> : <ClosedDays />}
     </main>
+  )
+}
+
+/** Commandes encaissées of the day in progress, each with « Annuler la facture » for the accounts allowed to. */
+function PaidOrdersPanel({ sales, onDone }: { sales: SalesData; onDone(): void }) {
+  const { t } = useI18n()
+  const { orders, cashOf } = useMemo(() => paidTickets(sales), [sales])
+  return (
+    <section className="panel">
+      <div className="panel-head"><h2>{t.dayPaidOrders(orders.length)}</h2></div>
+      <PaidTicketsTable orders={orders} cashOf={cashOf} onDone={onDone} />
+    </section>
   )
 }
 
@@ -146,6 +160,7 @@ function CurrentDay({ onClosed }: { onClosed(): void }) {
             <div className="banner">{t.dayClosedIncluded(data.report.closedSales.orders, money(data.report.closedSales.amount))}</div>
           )}
           <DayReportView report={data.report} day={day} />
+          <PaidOrdersPanel sales={data.sales} onDone={reload} />
         </>
       )}
       {closing && day && data && (
