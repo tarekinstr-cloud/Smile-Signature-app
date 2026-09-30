@@ -5,6 +5,7 @@ import FloorScreen from './components/FloorScreen'
 import { useI18n } from './lib/i18n'
 import { loadMyPermissions } from './lib/permissions'
 import { devices, startPresence } from './lib/devices'
+import { setDemoUserName } from './lib/repo'
 
 /** Écran de connexion until a user signs in, then the service screen. */
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
     auth.current().then(
       async (u) => {
         await loadMyPermissions(u)
+        setDemoUserName(u ? u.display_name || u.username : null)
         setUser(u)
       },
       () => setUser(null),

@@ -813,3 +813,34 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .recipe-editor > * { flex-shrink: 0; }
 .report-table td.payroll-name { min-width: 150px; }
 .recipe-copy button { flex: 0 0 auto; }
+
+/* ───────────── Statistiques / bénéfice : caisse, Statistique Journalier, rapport Z ───────────── */
+.bo-tabs.inline-tabs { margin: 0; }
+.period-filter { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.period-filter .segmented { flex-wrap: wrap; }
+.period-filter .segmented button { min-height: 40px; }
+.period-dates { display: flex; gap: 8px; }
+.period-dates label { flex-direction: row; align-items: center; gap: 6px; }
+.period-dates input { width: auto; }
+.day-state { display: flex; flex-direction: column; gap: 2px; }
+.day-state strong { font-size: 17px; }
+.day-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
+.day-sub { margin: 4px 0 0; font-size: 14px; color: var(--muted); font-weight: 600; }
+.bo-table tr.total td { font-weight: 700; border-top: 2px solid var(--ink); }
+.bo-table .pos, .day-gap.pos { color: #15803d; }
+.bo-table .neg, .day-gap.neg { color: var(--occ); }
+.day-gap { margin: 0; font-size: 16px; }
+.day-summary td:first-child { color: var(--ink); }
+.days-table button.link { min-height: 36px; }
+.float-amount { display: flex; flex-direction: column; gap: 4px; }
+.float-amount strong { font-size: 30px; font-variant-numeric: tabular-nums; }
+.cash-form { max-width: 360px; }
+.cash-form input, .dialog input[inputmode='decimal'] { font-size: 20px; font-variant-numeric: tabular-nums; }
+.tag.day-open-tag { background: var(--free-bg); color: #166534; font-weight: 600; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { border-radius: 999px; padding: 6px 14px; min-height: 38px; font-size: 14px; }
+.chip.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.reset-points { margin: 0; padding-inline-start: 20px; display: flex; flex-direction: column; gap: 4px; }
+.z-title { text-align: center; font-size: 16px; font-weight: 800; letter-spacing: 0.08em; margin: 4px 0; }
+.receipt-strong { font-weight: 700; }
+.days-table { font-size: 14px; }

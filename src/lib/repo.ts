@@ -618,12 +618,18 @@ function buildMenu(categories: Category[], items: MenuItem[], groups: Omit<Optio
   }
 }
 
+/** Demo mode: name of the account signed in on this device, kept on the orders it opens (ventes par employé). */
+let demoUserName: string | null = null
+export function setDemoUserName(name: string | null) {
+  demoUserName = name
+}
+
 const newOrder = (tableId: string | null): Order => ({
   id: newId(), table_id: tableId, status: 'open', note: null, created_at: new Date().toISOString(),
   discount_type: null, discount_value: 0, offered: false,
   order_type: 'dine_in', takeaway_no: null, customer_name: null, customer_address: null, invoice_no: null,
   delivery_no: null, customer_phone: null, delivery_status: null,
-  delivery_zone_id: null, delivery_zone_name: null, delivery_fee: 0,
+  delivery_zone_id: null, delivery_zone_name: null, delivery_fee: 0, created_by_name: demoUserName,
 })
 
 const KEY = 'smile.floor.v1'
