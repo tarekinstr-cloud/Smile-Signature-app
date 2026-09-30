@@ -17,6 +17,7 @@ import PayrollPage from './PayrollPage'
 import DevicesPage from './DevicesPage'
 import { InvoicesList, NewPurchasePage } from './PurchasesPage'
 import { KitchenChargesPage, StockTransferPage } from './StockMovesPage'
+import StockStatePage from './StockStatePage'
 import type { SupplierInvoice } from '../../lib/types'
 
 interface Props {
@@ -37,7 +38,7 @@ interface Props {
 
 /**
  * Back-office screen under the administration menus: Statistiques, Stock, Fournisseurs, Employés, Paramètres, and the
- * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket), Clients (réservations), Édition > Zones de livraison and Gestion des employés (Salaires et acomptes, Appareils connectés), Gestion du Stock (Effectuer un achat, Factures fournisseurs, Transfert dépôt / cuisine, Charges cuisine).
+ * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket), Clients (réservations), Édition > Zones de livraison and Gestion des employés (Salaires et acomptes, Appareils connectés), Gestion du Stock (Effectuer un achat, Factures fournisseurs, Transfert dépôt / cuisine, Charges cuisine, État du stock).
  */
 export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrinters, onOpenTicket, onPage, onOpenOrder }: Props) {
   const { t } = useI18n()
@@ -71,6 +72,7 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     purchases: [t.purInvoicesItem, t.purInvoicesSub],
     stockTransfer: [t.transferItem, t.transferSub],
     kitchenCharges: [t.chargesItem, t.chargesSub],
+    stockState: [t.stateItem, t.stateSub],
   }
   return (
     <div className="app back-office">
@@ -138,6 +140,7 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'purchases' && <InvoicesList key={createdInvoice?.id} highlight={createdInvoice} />}
       {page === 'stockTransfer' && <StockTransferPage />}
       {page === 'kitchenCharges' && <KitchenChargesPage />}
+      {page === 'stockState' && <StockStatePage />}
     </div>
   )
 }
