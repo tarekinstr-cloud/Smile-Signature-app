@@ -1,92 +1,307 @@
-import { useCallback, useState } from 'react'
-import { backOffice, dayRange } from '../../lib/backoffice'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { cash } from '../../lib/cash'
+import { repo } from '../../lib/repo'
+import { cashSummary, categoryOfItems, computeDayReport, reportCsvRows } from '../../lib/dayReport'
+import { download, stamp, toCsv } from '../../lib/admin'
 import { money } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
-import { locale, useLoad } from './useLoad'
+import { usePermissions } from '../../lib/permissions'
+import type { CashDay, DayReport } from '../../lib/types'
+import PeriodFilter, { initialPeriod, periodRange, rangeLabel, type Period } from './PeriodFilter'
+import { DayReportView, ZDialog, gapClass, gapText } from './DayReportView'
+import { errorText, locale, useLoad } from './useLoad'
 
-/** Statistiques: read-only dashboard of one day's sales, from the orders already paid. */
+/** Parses a DA amount typed with a comma or a dot; null when it is not a number. */
+export const parseAmount = (text: string) => {
+  const n = Number(text.replace(/\s/g, '').replace(',', '.'))
+  return text.trim() && Number.isFinite(n) ? n : null
+}
+
+/** Calls `fn` at most once per `ms` while events keep coming (payments on several tablets). */
+function useThrottled(fn: () => void, ms: number) {
+  const last = useRef(0)
+  const timer = useRef<number | null>(null)
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current) }, [])
+  return useCallback(() => {
+    if (timer.current) return
+    const wait = Math.max(0, last.current + ms - Date.now())
+    timer.current = window.setTimeout(() => {
+      timer.current = null
+      last.current = Date.now()
+      fn()
+    }, wait)
+  }, [fn, ms])
+}
+
+interface Live {
+  day: CashDay | null
+  report: DayReport
+}
+
+/** Report of the working day in progress: sales since the last closing, cash expected in the drawer. */
+async function loadLive(): Promise<Live> {
+  const day = await cash.currentDay()
+  let start = day?.period_start
+  if (!start) {
+    // Drawer not opened yet: what was sold since the last closing (or since midnight).
+    const [last] = await cash.closedDays(new Date(0), new Date(Date.now() + 86_400_000))
+    const midnight = new Date()
+    midnight.setHours(0, 0, 0, 0)
+    start = last?.closed_at ?? midnight.toISOString()
+  }
+  const from = new Date(start)
+  const to = new Date(Date.now() + 60_000)
+  const [sales, menu, moves] = await Promise.all([
+    cash.sales(from, to),
+    repo.getMenu({ includeHidden: true }).catch(() => null),
+    day ? cash.movements({ dayId: day.id }) : Promise.resolve([]),
+  ])
+  const sum = (k: 'in' | 'out') => moves.filter((m) => m.kind === k).reduce((s, m) => s + m.amount, 0)
+  const cashSales = sales.payments.filter((p) => p.method === 'cash').reduce((s, p) => s + p.amount, 0)
+  const box = day ? cashSummary(day.opening_float, cashSales, sum('in'), sum('out')) : null
+  return { day, report: computeDayReport(sales, categoryOfItems(menu), from.toISOString(), new Date().toISOString(), box) }
+}
+
+type Tab = 'current' | 'closed'
+
+/** Statistique Journalier: the day in progress (live), its closing, and the closed days. */
 export default function StatsPage() {
-  const { t, lang } = useI18n()
-  const [day, setDay] = useState(() => dayRange(new Date())[0])
-  const load = useCallback(() => backOffice.dayStats(day), [day])
-  const { data: stats, error, setError } = useLoad(load)
-
-  const today = dayRange(new Date())[0]
-  const isToday = day.getTime() === today.getTime()
-  const shift = (n: number) => setDay(new Date(day.getFullYear(), day.getMonth(), day.getDate() + n))
-  const dayLabel = day.toLocaleDateString(locale(lang), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-  const maxQty = Math.max(1, ...(stats?.topItems.map((i) => i.quantity) ?? []))
-
+  const { t } = useI18n()
+  const [tab, setTab] = useState<Tab>('current')
   return (
     <main className="content bo-content">
-      {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
-      <div className="bo-toolbar">
-        <div className="segmented day-nav" role="group">
-          <button onClick={() => shift(-1)} aria-label={t.prevDay} title={t.prevDay}>{lang === 'ar' ? '›' : '‹'}</button>
-          <button className={isToday ? 'on' : ''} onClick={() => setDay(today)}>{t.today}</button>
-          <button onClick={() => shift(1)} disabled={isToday} aria-label={t.nextDay} title={t.nextDay}>{lang === 'ar' ? '‹' : '›'}</button>
-        </div>
-        <strong className="day-label">{dayLabel}</strong>
+      <div className="segmented bo-tabs inline-tabs" role="tablist" aria-label={t.dailyStatsTitle}>
+        {(['current', 'closed'] as const).map((k) => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
+            {k === 'current' ? t.dayCurrentTab : t.dayClosedTab}
+          </button>
+        ))}
       </div>
+      {tab === 'current' ? <CurrentDay onClosed={() => setTab('closed')} /> : <ClosedDays />}
+    </main>
+  )
+}
 
-      {!stats ? (
+function CurrentDay({ onClosed }: { onClosed(): void }) {
+  const { t, lang } = useI18n()
+  const { can } = usePermissions()
+  const { data, error, setError, reload } = useLoad(loadLive)
+  const [closing, setClosing] = useState(false)
+  const [z, setZ] = useState<CashDay | null>(null)
+  const refresh = useThrottled(reload, 1500)
+  // Payments and drawer movements on any tablet update the figures (shared « orders » and « cash » channels).
+  useEffect(() => {
+    const offOrders = repo.subscribeOrders(refresh)
+    const offCash = cash.subscribe(refresh)
+    return () => {
+      offOrders()
+      offCash()
+    }
+  }, [refresh])
+
+  const when = (iso: string) => new Date(iso).toLocaleString(locale(lang), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+  const day = data?.day ?? null
+  const exportCsv = () => data && download(`journee-${stamp()}.csv`, toCsv(reportCsvRows(data.report)), 'text/csv;charset=utf-8')
+
+  return (
+    <>
+      {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
+      {!data ? (
         !error && <div className="center muted">{t.loading}</div>
       ) : (
         <>
-          <section className="stat-tiles" aria-live="polite">
-            <div className="stat-tile main">
-              <span className="muted small">{t.salesOfDay}</span>
-              <strong>{money(stats.sales)}</strong>
+          <div className="bo-toolbar">
+            <div className="day-state">
+              {day ? (
+                <>
+                  <strong>{t.dayNo(day.day_no)}</strong>
+                  <span className="muted small">{t.dayOpenedBy(when(day.opened_at), day.opened_by_name || '—')}</span>
+                  {new Date(day.period_start).getTime() < new Date(day.opened_at).getTime() - 60_000 && (
+                    <span className="muted small">{t.daySalesSince(when(day.period_start))}</span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <strong>{t.dayNotOpen}</strong>
+                  <span className="muted small">{t.daySalesSince(when(data.report.from))}</span>
+                </>
+              )}
             </div>
-            <div className="stat-tile">
-              <span className="muted small">{t.paidOrders}</span>
-              <strong>{stats.orders}</strong>
-            </div>
-            <div className="stat-tile">
-              <span className="muted small">{t.avgTicket}</span>
-              <strong>{stats.orders ? money(Math.round(stats.sales / stats.orders)) : '—'}</strong>
-            </div>
-            {isToday && (
-              <div className="stat-tile">
-                <span className="muted small">{t.openOrdersNow}</span>
-                <strong>{stats.openOrders}</strong>
-              </div>
-            )}
-          </section>
-
-          <section className="panel">
-            <h2>{t.topItems}</h2>
-            {stats.topItems.length === 0 ? (
-              <p className="muted small">{t.noSales}</p>
-            ) : (
-              <table className="bo-table top-items">
-                <thead>
-                  <tr>
-                    <th className="rank">#</th>
-                    <th>{t.colItem}</th>
-                    <th className="num">{t.colQty}</th>
-                    <th className="num">{t.colAmount}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stats.topItems.map((it, i) => (
-                    <tr key={it.name}>
-                      <td className="rank muted">{i + 1}</td>
-                      <td>
-                        <bdi>{it.name}</bdi>
-                        <span className="qty-bar" style={{ width: `${(it.quantity / maxQty) * 100}%` }} aria-hidden />
-                      </td>
-                      <td className="num"><strong>{it.quantity}</strong></td>
-                      <td className="num">{money(it.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            <p className="muted small">{t.statsNote}</p>
-          </section>
+            <div className="spacer" />
+            <button type="button" onClick={exportCsv}>{t.exportCsv}</button>
+            {day && <button type="button" onClick={() => setZ(day)}>{t.zPreview}</button>}
+            {day && can('day_close') && <button type="button" className="primary" onClick={() => setClosing(true)}>{t.dayCloseBtn}</button>}
+          </div>
+          {!day && <div className="banner">{t.dayOpenHint}</div>}
+          <DayReportView report={data.report} day={day} />
         </>
       )}
-    </main>
+      {closing && day && data && (
+        <CloseDialog day={day} onClose={() => setClosing(false)}
+          onDone={(closed) => { setClosing(false); setZ(closed); reload() }} />
+      )}
+      {z && (z.closed_at ? z.report : data?.report) && (
+        <ZDialog day={z} report={(z.closed_at ? z.report : data!.report)!} onClose={() => { const was = z.closed_at; setZ(null); if (was) onClosed() }} />
+      )}
+    </>
+  )
+}
+
+/** Clôturer la journée: the counted cash, the gap shown live, then the closing (once). */
+function CloseDialog({ day, onClose, onDone }: { day: CashDay; onClose(): void; onDone(d: CashDay): void }) {
+  const { t } = useI18n()
+  const [counted, setCounted] = useState('')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // Figures reloaded when the dialog opens, so the expected cash is the latest.
+  const { data } = useLoad(loadLive)
+  const n = parseAmount(counted)
+  const expected = data?.report.cash?.expected ?? null
+  const gap = n !== null && expected !== null ? Math.round((n - expected) * 100) / 100 : null
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    if (n === null || n < 0) return setError(t.errCashAmount)
+    if (!data) return
+    setBusy(true)
+    try {
+      setError(null)
+      onDone(await cash.closeDay(day.id, n, data.report, note))
+    } catch (err) {
+      setError(errorText(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
+      <form className="dialog" role="dialog" aria-modal="true" aria-labelledby="close-title" onSubmit={submit}
+        onKeyDown={(e) => e.key === 'Escape' && !busy && onClose()}>
+        <h2 id="close-title">{t.dayCloseTitle(day.day_no)}</h2>
+        {error && <p className="error small" role="alert">{error}</p>}
+        {data && data.report.openOrders > 0 && <div className="banner">{t.dayCloseOpenOrders(data.report.openOrders)}</div>}
+        <table className="bo-table day-summary">
+          <tbody>
+            <tr><td>{t.dayNet}</td><td className="num">{data ? money(data.report.net) : '…'}</td></tr>
+            <tr className="total"><td>{t.cashExpected}</td><td className="num">{expected !== null ? money(expected) : '…'}</td></tr>
+          </tbody>
+        </table>
+        <label>
+          {t.cashCounted}
+          <input autoFocus dir="ltr" inputMode="decimal" value={counted} placeholder="0" onChange={(e) => setCounted(e.target.value)} />
+        </label>
+        {gap !== null && (
+          <p className={`day-gap ${gapClass(gap)}`}>
+            {t.cashGap} : <strong>{gapText(gap)}</strong> {gap < 0 ? t.gapMissing : gap > 0 ? t.gapExtra : ''}
+          </p>
+        )}
+        <label>
+          {t.resNote}
+          <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+        </label>
+        <p className="muted small">{t.dayCloseWarning}</p>
+        <div className="dialog-actions">
+          <button type="button" onClick={onClose} disabled={busy}>{t.cancel}</button>
+          <button type="submit" className="primary" disabled={busy || n === null || !data}>{busy ? t.saving : t.dayCloseConfirm}</button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+/** Journées clôturées: list over a period, each day's report and its Z ticket. */
+function ClosedDays() {
+  const { t, lang } = useI18n()
+  const [period, setPeriod] = useState<Period>(() => initialPeriod('month'))
+  const range = useMemo(() => periodRange(period), [period])
+  const load = useCallback(() => cash.closedDays(range[0], range[1]), [range])
+  const { data, error, setError, reload } = useLoad(load)
+  const [open, setOpen] = useState<CashDay | null>(null)
+  const [z, setZ] = useState<CashDay | null>(null)
+  useEffect(() => cash.subscribe(reload), [reload])
+  const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString(locale(lang), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : '—')
+  const days = data ?? []
+  const sum = (f: (d: CashDay) => number) => days.reduce((s, d) => s + f(d), 0)
+
+  const exportCsv = () => download(`journees-${stamp()}.csv`, toCsv(days.map((d) => ({
+    [t.dayNoCol]: d.day_no, [t.dayOpenedAt]: d.opened_at, [t.dayClosedAt]: d.closed_at, [t.dayOpenedByCol]: d.opened_by_name,
+    [t.dayClosedByCol]: d.closed_by_name, [t.dayNet]: d.report?.net ?? '', [t.paidOrders]: d.report?.orders ?? '',
+    [t.cashOpening]: d.opening_float, [t.cashSales]: d.cash_sales, [t.cashInTotal]: d.cash_in, [t.cashOutTotal]: d.cash_out,
+    [t.cashExpected]: d.expected_cash, [t.cashCounted]: d.counted_cash, [t.cashGap]: d.difference, [t.resNote]: d.note,
+  }))), 'text/csv;charset=utf-8')
+
+  if (open) {
+    return (
+      <>
+        <div className="bo-toolbar">
+          <button type="button" className="ghost" onClick={() => setOpen(null)}>{t.back}</button>
+          <div className="day-state">
+            <strong>{t.dayNo(open.day_no)}</strong>
+            <span className="muted small">{when(open.opened_at)} → {when(open.closed_at)} · {open.closed_by_name}</span>
+          </div>
+          <div className="spacer" />
+          {open.report && <button type="button" onClick={() => download(`journee-${open.day_no}.csv`, toCsv(reportCsvRows(open.report!)), 'text/csv;charset=utf-8')}>{t.exportCsv}</button>}
+          {open.report && <button type="button" className="primary" onClick={() => setZ(open)}>{t.zPrint}</button>}
+        </div>
+        {open.report ? <DayReportView report={open.report} day={open} /> : <p className="muted">{t.dayNoReport}</p>}
+        {z?.report && <ZDialog day={z} report={z.report} onClose={() => setZ(null)} />}
+      </>
+    )
+  }
+
+  return (
+    <>
+      {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
+      <div className="bo-toolbar">
+        <PeriodFilter value={period} onChange={setPeriod} presets={['today', '7d', 'month', 'lastMonth', 'custom']} />
+        <span className="muted small">{rangeLabel(range, locale(lang))}</span>
+        <div className="spacer" />
+        <button type="button" onClick={exportCsv} disabled={!days.length}>{t.exportCsv}</button>
+      </div>
+      <section className="panel">
+        {!data ? (
+          !error && <p className="muted">{t.loading}</p>
+        ) : !days.length ? (
+          <p className="muted small">{t.dayNoClosed}</p>
+        ) : (
+          <table className="bo-table days-table">
+            <thead>
+              <tr>
+                <th>{t.dayNoCol}</th>
+                <th>{t.dayOpenedAt}</th>
+                <th>{t.dayClosedAt}</th>
+                <th className="num">{t.dayNet}</th>
+                <th className="num">{t.cashExpected}</th>
+                <th className="num">{t.cashCounted}</th>
+                <th className="num">{t.cashGap}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {days.map((d) => (
+                <tr key={d.id}>
+                  <td><button type="button" className="link" onClick={() => setOpen(d)}>{d.day_no}</button></td>
+                  <td>{when(d.opened_at)}</td>
+                  <td>{when(d.closed_at)}</td>
+                  <td className="num">{d.report ? money(d.report.net) : '—'}</td>
+                  <td className="num">{money(d.expected_cash ?? 0)}</td>
+                  <td className="num">{money(d.counted_cash ?? 0)}</td>
+                  <td className={`num ${gapClass(d.difference ?? 0)}`}>{gapText(d.difference ?? 0)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="total">
+                <td colSpan={3}>{t.total}</td>
+                <td className="num">{money(sum((d) => d.report?.net ?? 0))}</td>
+                <td className="num">{money(sum((d) => d.expected_cash ?? 0))}</td>
+                <td className="num">{money(sum((d) => d.counted_cash ?? 0))}</td>
+                <td className={`num ${gapClass(sum((d) => d.difference ?? 0))}`}>{gapText(sum((d) => d.difference ?? 0))}</td>
+              </tr>
+            </tfoot>
+          </table>
+        )}
+      </section>
+    </>
   )
 }

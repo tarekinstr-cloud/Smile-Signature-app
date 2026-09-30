@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useI18n } from '../../lib/i18n'
+import { usePermissions } from '../../lib/permissions'
 import type { BackOfficePage } from './pages'
 import StatsPage from './StatsPage'
 import StockPage from './StockPage'
@@ -19,6 +20,7 @@ import { InvoicesList, NewPurchasePage } from './PurchasesPage'
 import { KitchenChargesPage, StockTransferPage } from './StockMovesPage'
 import StockStatePage from './StockStatePage'
 import RecipesPage from './RecipesPage'
+import { CashFloatPage, CashMovesPage, ResetNumbersPage } from './CashPage'
 import type { SupplierInvoice } from '../../lib/types'
 
 interface Props {
@@ -43,6 +45,7 @@ interface Props {
  */
 export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrinters, onOpenTicket, onPage, onOpenOrder }: Props) {
   const { t } = useI18n()
+  const canStats = usePermissions().can('stats')
   /** Booking just created from Nouvelle réservation, highlighted in the list. */
   const [created, setCreated] = useState<string | null>(null)
   /** Zone just added, highlighted in the list. */
@@ -53,7 +56,7 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     if (page !== 'purchases') setCreatedInvoice(null)
   }, [page])
   const title: Record<BackOfficePage, [string, string]> = {
-    stats: [t.statistics, t.statsSub],
+    stats: [t.dailyStatsTitle, t.dailyStatsSub],
     stock: [t.stock, t.stockSub],
     suppliers: [t.suppliers, t.suppliersSub],
     staff: [t.staff, t.staffSub],
@@ -75,6 +78,10 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     kitchenCharges: [t.chargesItem, t.chargesSub],
     stockState: [t.stateItem, t.stateSub],
     recipes: [t.recipesTitle, t.recipesSub],
+    resetNumbers: [t.resetTitle, t.resetSub],
+    cashFloat: [t.floatTitle, t.floatSub],
+    cashIn: [t.cashInTitle, t.cashInSub],
+    cashOut: [t.cashOutTitle, t.cashOutSub],
   }
   return (
     <div className="app back-office">
@@ -144,6 +151,10 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'kitchenCharges' && <KitchenChargesPage />}
       {page === 'stockState' && <StockStatePage />}
       {page === 'recipes' && <RecipesPage />}
+      {page === 'resetNumbers' && <ResetNumbersPage />}
+      {page === 'cashFloat' && <CashFloatPage onOpenStats={canStats ? () => onPage('stats') : undefined} />}
+      {page === 'cashIn' && <CashMovesPage key="in" kind="in" onOpenFloat={() => onPage('cashFloat')} />}
+      {page === 'cashOut' && <CashMovesPage key="out" kind="out" onOpenFloat={() => onPage('cashFloat')} />}
     </div>
   )
 }

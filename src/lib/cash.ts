@@ -1,0 +1,341 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { sharedChannel, supabase } from './repo'
+import { tr } from './i18n'
+import { newId } from './id'
+import { localUserName } from './backoffice'
+import { purchases } from './purchases'
+import { normalizeAdjustments } from './billing'
+import type { CashDay, CashMovement, DayReport, NewCashMovement, NumberReset, Order, OrderLine, Payment, SalesData } from './types'
+
+/**
+ * Caisse (menu Statistiques / bénéfice): working days (Fond de caisse → clôture), Fonds d'entrée / de sortie, the
+ * reset of the order numbers, and the raw sales of a period for the reports. Supabase tables cash_days, cash_movements,
+ * order_number_resets written only through RPCs (migration 20260930110000_cash_register.sql), or localStorage in demo mode.
+ */
+export interface CashService {
+  /** The working day in progress, or null when the drawer is not open. */
+  currentDay(): Promise<CashDay | null>
+  /** Closed days whose closing falls in [from, to), newest first. */
+  closedDays(from: Date, to: Date): Promise<CashDay[]>
+  /** Fond de caisse: opens the day (and resets the order numbers to 1). */
+  openDay(float: number): Promise<CashDay>
+  /** Corrects the Fond de caisse of the open day. */
+  setFloat(float: number): Promise<CashDay>
+  addMovement(m: NewCashMovement): Promise<CashMovement>
+  /** Removes an entry typed by mistake (open day only, not when it paid a supplier invoice). */
+  deleteMovement(id: string): Promise<void>
+  /** Movements of one day, or made during [from, to); oldest first. */
+  movements(q: { dayId: string } | { from: Date; to: Date }): Promise<CashMovement[]>
+  /** Clôturer la journée: the database computes the expected cash and the gap; the report is kept as the rapport Z. */
+  closeDay(dayId: string, counted: number, report: DayReport, note: string): Promise<CashDay>
+  /** Re-Initialiser le N° des Commandes: tickets, takeaway and delivery numbers start again at 1. */
+  resetNumbers(): Promise<NumberReset>
+  lastResets(): Promise<NumberReset[]>
+  /** Orders paid in [from, to) with their lines, payments made in [from, to), and the orders still open. */
+  sales(from: Date, to: Date): Promise<SalesData>
+  /** Calls onChange when the drawer changes on any device (shared « cash » channel). */
+  subscribe(onChange: () => void): () => void
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100
+const validAmount = (n: number) => Number.isFinite(n) && n >= 0 && n <= 1e9
+
+function cashError(message: string): Error {
+  const t = tr()
+  if (/cash_days|cash_movements|order_number_resets|open_cash_day|close_cash_day|add_cash_movement|reset_order_numbers/.test(message)
+    && /does not exist|schema cache|Could not find/i.test(message)) return new Error(t.errMigrationCash)
+  if (/no_permission|row-level security|permission denied/i.test(message)) return new Error(t.errNoPermission)
+  if (message.includes('day_already_open')) return new Error(t.errDayAlreadyOpen)
+  if (message.includes('day_already_closed')) return new Error(t.errDayAlreadyClosed)
+  if (message.includes('no_open_day')) return new Error(t.errNoOpenDay)
+  if (message.includes('day_closed')) return new Error(t.errDayClosed)
+  if (message.includes('movement_has_invoice')) return new Error(t.errMovementInvoice)
+  if (message.includes('bad_paid_amount')) return new Error(t.errPayAmount)
+  if (message.includes('invoice_not_found')) return new Error(t.errInvoiceGone)
+  if (message.includes('bad_amount')) return new Error(t.errCashAmount)
+  return new Error(message)
+}
+
+function checkMovement(m: NewCashMovement): NewCashMovement {
+  const t = tr()
+  if (!(validAmount(m.amount) && m.amount > 0)) throw new Error(t.errCashAmount)
+  const reason = m.reason.trim().slice(0, 300)
+  if (!reason && !m.supplier_invoice_id) throw new Error(t.errCashReason)
+  if (m.supplier_invoice_id && m.kind !== 'out') throw new Error(t.errCashAmount)
+  return { kind: m.kind, amount: round2(m.amount), reason, supplier_invoice_id: m.supplier_invoice_id ?? null }
+}
+
+const num = (v: unknown) => (v == null ? null : Number(v))
+export const normDay = (d: CashDay): CashDay => ({
+  ...d, day_no: Number(d.day_no), opening_float: Number(d.opening_float),
+  cash_sales: num(d.cash_sales), cash_in: num(d.cash_in), cash_out: num(d.cash_out),
+  expected_cash: num(d.expected_cash), counted_cash: num(d.counted_cash), difference: num(d.difference),
+  report: d.report ?? null, note: d.note ?? '',
+})
+const normMove = (m: CashMovement): CashMovement => ({ ...m, amount: Number(m.amount) })
+const normReset = (r: NumberReset): NumberReset => ({
+  ...r, last_ticket_no: num(r.last_ticket_no), last_takeaway_no: num(r.last_takeaway_no), last_delivery_no: num(r.last_delivery_no),
+})
+const normOrder = (o: SalesData['orders'][number]): SalesData['orders'][number] => ({
+  ...normalizeAdjustments(o), order_type: o.order_type ?? 'dine_in', total: num(o.total), delivery_fee: Number(o.delivery_fee ?? 0),
+})
+const normLine = (l: OrderLine): OrderLine => ({ ...normalizeAdjustments(l), unit_price: Number(l.unit_price), quantity: Number(l.quantity) })
+const normPayment = (p: Payment): Payment => ({ ...p, amount: Number(p.amount), received: Number(p.received), change_amount: Number(p.change_amount) })
+
+function supabaseCash(sb: SupabaseClient): CashService {
+  const check = <T>(res: { data: T; error: { message: string } | null }): T => {
+    if (res.error) throw cashError(res.error.message)
+    return res.data
+  }
+  return {
+    async currentDay() {
+      const rows = check(await sb.from('cash_days').select('*').is('closed_at', null).limit(1)) as CashDay[]
+      return rows[0] ? normDay(rows[0]) : null
+    },
+    async closedDays(from, to) {
+      const rows = check(await sb.from('cash_days').select('*').not('closed_at', 'is', null)
+        .gte('closed_at', from.toISOString()).lt('closed_at', to.toISOString()).order('closed_at', { ascending: false })) as CashDay[]
+      return rows.map(normDay)
+    },
+    async openDay(float) {
+      if (!validAmount(float)) throw new Error(tr().errCashAmount)
+      return normDay(check(await sb.rpc('open_cash_day', { p_float: round2(float) })) as CashDay)
+    },
+    async setFloat(float) {
+      if (!validAmount(float)) throw new Error(tr().errCashAmount)
+      return normDay(check(await sb.rpc('set_opening_float', { p_float: round2(float) })) as CashDay)
+    },
+    async addMovement(m) {
+      const c = checkMovement(m)
+      return normMove(check(await sb.rpc('add_cash_movement', {
+        p_kind: c.kind, p_amount: c.amount, p_reason: c.reason, p_supplier_invoice_id: c.supplier_invoice_id,
+      })) as CashMovement)
+    },
+    async deleteMovement(id) {
+      check(await sb.rpc('delete_cash_movement', { p_id: id }))
+    },
+    async movements(q) {
+      let query = sb.from('cash_movements').select('*').order('created_at')
+      query = 'dayId' in q ? query.eq('day_id', q.dayId) : query.gte('created_at', q.from.toISOString()).lt('created_at', q.to.toISOString())
+      return (check(await query) as CashMovement[]).map(normMove)
+    },
+    async closeDay(dayId, counted, report, note) {
+      if (!validAmount(counted)) throw new Error(tr().errCashAmount)
+      return normDay(check(await sb.rpc('close_cash_day', {
+        p_day_id: dayId, p_counted: round2(counted), p_report: report, p_note: note.trim(),
+      })) as CashDay)
+    },
+    async resetNumbers() {
+      return normReset(check(await sb.rpc('reset_order_numbers')) as NumberReset)
+    },
+    async lastResets() {
+      return (check(await sb.from('order_number_resets').select('*').order('created_at', { ascending: false }).limit(10)) as NumberReset[]).map(normReset)
+    },
+    async sales(from, to) {
+      const [paid, pays, open] = await Promise.all([
+        sb.from('orders').select('*').eq('status', 'paid').gte('closed_at', from.toISOString()).lt('closed_at', to.toISOString()),
+        sb.from('payments').select('*').gte('created_at', from.toISOString()).lt('created_at', to.toISOString()),
+        sb.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'open'),
+      ])
+      const orders = (check(paid) as SalesData['orders']).map(normOrder)
+      if (open.error) throw cashError(open.error.message)
+      const lines: OrderLine[] = []
+      // URL-sized batches rather than one huge `in (…)` on busy periods.
+      for (let i = 0; i < orders.length; i += 100) {
+        const ids = orders.slice(i, i + 100).map((o) => o.id)
+        lines.push(...(check(await sb.from('order_items').select('*').in('order_id', ids)) as OrderLine[]).map(normLine))
+      }
+      return { orders, lines, payments: (check(pays) as Payment[]).map(normPayment), openOrders: open.count ?? 0 }
+    },
+    subscribe: sharedChannel(sb, 'cash', ['cash_days', 'cash_movements']),
+  }
+}
+
+// ───────────── Demo mode (localStorage) ─────────────
+
+const KEY = 'smile.cash.v1'
+/** Demo orders (repo.ts), read for the reports and to reset their numbers. */
+const ORDERS_KEY = 'smile.orders.v1'
+
+interface LocalCash {
+  days: CashDay[]
+  movements: CashMovement[]
+  resets: NumberReset[]
+}
+
+interface LocalOrders {
+  orders?: (Order & { total?: number | null; closed_at?: string | null })[]
+  lines?: OrderLine[]
+  payments?: Payment[]
+  lastTicket?: number
+  lastTakeaway?: number
+  lastDelivery?: number
+}
+
+function localCash(): CashService {
+  const listeners = new Set<() => void>()
+  const read = (): LocalCash => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<LocalCash> | null
+      return { days: (saved?.days ?? []).map(normDay), movements: (saved?.movements ?? []).map(normMove), resets: saved?.resets ?? [] }
+    } catch {
+      return { days: [], movements: [], resets: [] }
+    }
+  }
+  const write = (db: LocalCash) => {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(db))
+    } catch {
+      // Not persisted (private mode); the change is lost on reload.
+    }
+    listeners.forEach((l) => l())
+  }
+  window.addEventListener('storage', (e) => {
+    if (e.key === KEY) listeners.forEach((l) => l())
+  })
+  const readOrders = (): LocalOrders => {
+    try {
+      return (JSON.parse(localStorage.getItem(ORDERS_KEY) ?? 'null') as LocalOrders | null) ?? {}
+    } catch {
+      return {}
+    }
+  }
+  const reset = (reason: NumberReset['reason'], user: string): NumberReset => {
+    const o = readOrders()
+    const row: NumberReset = {
+      id: newId(), reason, last_ticket_no: o.lastTicket ?? null, last_takeaway_no: o.lastTakeaway ?? null, last_delivery_no: o.lastDelivery ?? null,
+      user_name: user, created_at: new Date().toISOString(),
+    }
+    try {
+      localStorage.setItem(ORDERS_KEY, JSON.stringify({ ...o, lastTicket: 0, lastTakeaway: 0, lastDelivery: 0 }))
+    } catch {
+      // Storage blocked: the numbers go on.
+    }
+    return row
+  }
+  const openDay = (db: LocalCash) => db.days.find((d) => !d.closed_at) ?? null
+  const now = () => new Date().toISOString()
+
+  return {
+    async currentDay() {
+      return openDay(read())
+    },
+    async closedDays(from, to) {
+      return read().days
+        .filter((d) => d.closed_at && new Date(d.closed_at) >= from && new Date(d.closed_at) < to)
+        .sort((a, b) => b.closed_at!.localeCompare(a.closed_at!))
+    },
+    async openDay(float) {
+      if (!validAmount(float)) throw new Error(tr().errCashAmount)
+      const user = await localUserName()
+      const db = read()
+      if (openDay(db)) throw new Error(tr().errDayAlreadyOpen)
+      const lastClose = db.days.map((d) => d.closed_at ?? '').sort().at(-1)
+      const day: CashDay = {
+        id: newId(), day_no: db.days.reduce((n, d) => Math.max(n, d.day_no), 0) + 1, period_start: lastClose || now(), opened_at: now(),
+        opened_by_name: user, opening_float: round2(float), float_updated_at: null, float_updated_by_name: null,
+        closed_at: null, closed_by_name: null, cash_sales: null, cash_in: null, cash_out: null, expected_cash: null, counted_cash: null,
+        difference: null, report: null, note: '',
+      }
+      db.days.push(day)
+      db.resets.push(reset('day_open', user))
+      write(db)
+      return day
+    },
+    async setFloat(float) {
+      if (!validAmount(float)) throw new Error(tr().errCashAmount)
+      const user = await localUserName()
+      const db = read()
+      const day = openDay(db)
+      if (!day) throw new Error(tr().errNoOpenDay)
+      Object.assign(day, { opening_float: round2(float), float_updated_at: now(), float_updated_by_name: user })
+      write(db)
+      return day
+    },
+    async addMovement(m) {
+      const c = checkMovement(m)
+      const user = await localUserName()
+      const db = read()
+      const day = openDay(db)
+      if (!day) throw new Error(tr().errNoOpenDay)
+      let supplier: string | null = null
+      if (c.supplier_invoice_id) supplier = (await purchases.pay(c.supplier_invoice_id, c.amount, now().slice(0, 10))).supplier_name
+      const row: CashMovement = {
+        id: newId(), day_id: day.id, kind: c.kind, amount: c.amount, reason: c.reason, supplier_invoice_id: c.supplier_invoice_id ?? null,
+        supplier_name: supplier, user_name: user, created_at: now(),
+      }
+      const fresh = read()
+      fresh.movements.push(row)
+      write(fresh)
+      return row
+    },
+    async deleteMovement(id) {
+      const db = read()
+      const row = db.movements.find((m) => m.id === id)
+      if (!row) return
+      if (db.days.find((d) => d.id === row.day_id)?.closed_at) throw new Error(tr().errDayClosed)
+      if (row.supplier_invoice_id) throw new Error(tr().errMovementInvoice)
+      db.movements = db.movements.filter((m) => m.id !== id)
+      write(db)
+    },
+    async movements(q) {
+      return read().movements
+        .filter((m) => ('dayId' in q ? m.day_id === q.dayId : new Date(m.created_at) >= q.from && new Date(m.created_at) < q.to))
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+    },
+    async closeDay(dayId, counted, report, note) {
+      if (!validAmount(counted)) throw new Error(tr().errCashAmount)
+      const user = await localUserName()
+      const db = read()
+      const day = db.days.find((d) => d.id === dayId)
+      if (!day) throw new Error(tr().errNoOpenDay)
+      if (day.closed_at) throw new Error(tr().errDayAlreadyClosed)
+      const closedAt = now()
+      const sales = round2((readOrders().payments ?? [])
+        .filter((p) => p.method === 'cash' && p.created_at >= day.period_start && p.created_at < closedAt)
+        .reduce((s, p) => s + Number(p.amount), 0))
+      const mine = db.movements.filter((m) => m.day_id === day.id)
+      const sum = (k: 'in' | 'out') => round2(mine.filter((m) => m.kind === k).reduce((s, m) => s + m.amount, 0))
+      const expected = round2(day.opening_float + sales + sum('in') - sum('out'))
+      Object.assign(day, {
+        closed_at: closedAt, closed_by_name: user, cash_sales: sales, cash_in: sum('in'), cash_out: sum('out'), expected_cash: expected,
+        counted_cash: round2(counted), difference: round2(counted - expected), report, note: note.trim(),
+      })
+      write(db)
+      return day
+    },
+    async resetNumbers() {
+      const db = read()
+      const row = reset('manual', await localUserName())
+      db.resets.push(row)
+      write(db)
+      return row
+    },
+    async lastResets() {
+      return [...read().resets].reverse().slice(0, 10).map(normReset)
+    },
+    async sales(from, to) {
+      const o = readOrders()
+      const inRange = (iso?: string | null) => !!iso && new Date(iso) >= from && new Date(iso) < to
+      const orders = (o.orders ?? [])
+        .filter((x) => x.status === 'paid' && inRange(x.closed_at))
+        .map((x) => normOrder({ ...x, total: x.total ?? null, closed_at: x.closed_at ?? null }))
+      const ids = new Set(orders.map((x) => x.id))
+      return {
+        orders,
+        lines: (o.lines ?? []).filter((l) => ids.has(l.order_id)).map(normLine),
+        payments: (o.payments ?? []).filter((p) => inRange(p.created_at)).map(normPayment),
+        openOrders: (o.orders ?? []).filter((x) => x.status === 'open').length,
+      }
+    },
+    subscribe(onChange) {
+      const l = () => onChange()
+      listeners.add(l)
+      return () => {
+        listeners.delete(l)
+      }
+    },
+  }
+}
+
+export const cash: CashService = supabase ? supabaseCash(supabase) : localCash()

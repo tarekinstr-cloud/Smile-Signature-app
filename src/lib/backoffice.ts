@@ -1,22 +1,18 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { sharedChannel, supabase } from './repo'
-import { computeBill } from './billing'
 import { tr } from './i18n'
 import type {
-  Adjustments, DayStats, NewStockItem, NewSupplier, Order, OrderLine, StaffAccount, StockInventory, StockInventoryLine, StockItem, StockItemPatch,
-  StockLocation, StockMovement, Supplier, TopItem,
+  NewStockItem, NewSupplier, StaffAccount, StockInventory, StockInventoryLine, StockItem, StockItemPatch,
+  StockLocation, StockMovement, Supplier,
 } from './types'
 import { newId } from './id'
 import { auth } from './auth'
 
 /**
- * Data access for the back-office pages (Statistiques, Gestion du Stock, Fournisseurs, Employés).
+ * Data access for the back-office pages (Gestion du Stock, Fournisseurs, Employés).
  * Backed by Supabase when configured, localStorage otherwise, like `repo`.
  */
 export interface BackOffice {
-  /** Sales of the day that starts at `day` (local midnight): orders paid that day, and the items sold in them. */
-  dayStats(day: Date): Promise<DayStats>
-
   listStock(): Promise<StockItem[]>
   createStockItem(s: NewStockItem): Promise<StockItem>
   updateStockItem(id: string, patch: StockItemPatch): Promise<void>
@@ -35,43 +31,6 @@ export interface BackOffice {
   listStaff(): Promise<StaffAccount[]>
 }
 
-const TOP_ITEMS = 10
-
-/** Start and end (exclusive) of the local day containing `day`. */
-export function dayRange(day: Date): [Date, Date] {
-  const start = new Date(day.getFullYear(), day.getMonth(), day.getDate())
-  const end = new Date(start)
-  end.setDate(end.getDate() + 1)
-  return [start, end]
-}
-
-/** Totals of the paid orders and their lines. Line amounts are what was paid for them (discounts and offers applied). */
-export function computeDayStats(paid: (Order & { total: number | null })[], lines: OrderLine[], openOrders: number): DayStats {
-  const byOrder = new Map<string, OrderLine[]>()
-  for (const l of lines) (byOrder.get(l.order_id) ?? byOrder.set(l.order_id, []).get(l.order_id)!).push(l)
-  const items = new Map<string, TopItem>()
-  let sales = 0
-  for (const o of paid) {
-    const bill = computeBill(o, byOrder.get(o.id) ?? [])
-    sales += o.total ?? bill.total
-    for (const b of bill.lines) {
-      const it = items.get(b.line.name) ?? { name: b.line.name, quantity: 0, amount: 0 }
-      it.quantity += b.line.quantity
-      it.amount += b.net
-      items.set(it.name, it)
-    }
-  }
-  const topItems = [...items.values()]
-    .sort((a, b) => b.quantity - a.quantity || b.amount - a.amount || a.name.localeCompare(b.name))
-    .slice(0, TOP_ITEMS)
-  return { sales: Math.round(sales * 100) / 100, orders: paid.length, openOrders, topItems }
-}
-
-// Old rows (before the payments migration) have no discount fields; bills need them.
-const adjustments = <T extends Partial<Adjustments>>(r: T) => ({
-  ...r, discount_type: r.discount_type ?? null, discount_value: Number(r.discount_value ?? 0), offered: !!r.offered,
-})
-const normLine = (l: OrderLine): OrderLine => ({ ...adjustments(l), unit_price: Number(l.unit_price), quantity: Number(l.quantity) })
 // Before the stock locations migration there is no kitchen_quantity: everything is at the Dépôt.
 export const normStock = (s: StockItem): StockItem => ({
   ...s, quantity: Number(s.quantity), kitchen_quantity: Number(s.kitchen_quantity ?? 0), unit: s.unit ?? '',
@@ -152,24 +111,6 @@ function check<T>(res: { data: T; error: { message: string } | null }): T {
 
 function supabaseBackOffice(sb: SupabaseClient): BackOffice {
   return {
-    async dayStats(day) {
-      const [start, end] = dayRange(day)
-      const [paid, open] = await Promise.all([
-        sb.from('orders').select('*').eq('status', 'paid').gte('closed_at', start.toISOString()).lt('closed_at', end.toISOString()),
-        sb.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'open'),
-      ])
-      const orders = (check(paid) as (Order & { total: number | null })[])
-        .map((o) => ({ ...adjustments(o), total: o.total == null ? null : Number(o.total) }))
-      if (open.error) throw boError(open.error.message)
-      const lines: OrderLine[] = []
-      // A few URL-sized batches rather than one huge `in (…)` on busy days.
-      for (let i = 0; i < orders.length; i += 100) {
-        const ids = orders.slice(i, i + 100).map((o) => o.id)
-        lines.push(...(check(await sb.from('order_items').select('*').in('order_id', ids)) as OrderLine[]).map(normLine))
-      }
-      return computeDayStats(orders, lines, open.count ?? 0)
-    },
-
     async listStock() {
       return (check(await sb.from('stock_items').select('*').order('name')) as StockItem[]).map(normStock)
     },
@@ -212,8 +153,7 @@ function supabaseBackOffice(sb: SupabaseClient): BackOffice {
   }
 }
 
-/** Keys of the demo data: orders are read from the order screens' store, stock and suppliers have their own. */
-const ORDERS_KEY = 'smile.orders.v1'
+/** Key of the demo data: stock and suppliers. */
 const KEY = 'smile.backoffice.v1'
 
 interface LocalDb {
@@ -301,23 +241,6 @@ function localBackOffice(): BackOffice {
   const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name)
 
   return {
-    async dayStats(day) {
-      const [start, end] = dayRange(day)
-      let orders: (Order & { total?: number | null; closed_at?: string | null })[] = []
-      let lines: OrderLine[] = []
-      try {
-        const raw = localStorage.getItem(ORDERS_KEY)
-        if (raw) ({ orders, lines } = JSON.parse(raw) as { orders: typeof orders; lines: OrderLine[] })
-      } catch {
-        // No demo orders yet.
-      }
-      const paid = orders
-        .filter((o) => o.status === 'paid' && o.closed_at && new Date(o.closed_at) >= start && new Date(o.closed_at) < end)
-        .map((o) => ({ ...adjustments(o), total: o.total == null ? null : Number(o.total) }))
-      const ids = new Set(paid.map((o) => o.id))
-      return computeDayStats(paid, (lines ?? []).filter((l) => ids.has(l.order_id)).map(normLine), orders.filter((o) => o.status === 'open').length)
-    },
-
     async listStock() {
       return [...load().stock].sort(byName)
     },

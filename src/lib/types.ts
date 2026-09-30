@@ -123,6 +123,8 @@ export interface Order extends Adjustments {
   delivery_zone_name?: string | null
   /** Delivery fee added to the total (0 without a zone), copied from the zone when it was chosen. */
   delivery_fee?: number
+  /** Employee who opened the order (ventes par employé); kept when the account is deleted. */
+  created_by_name?: string | null
 }
 
 /** Customer details typed for an invoice; both optional. */
@@ -590,25 +592,6 @@ export interface BackupLogEntry {
   size_bytes: number
 }
 
-export interface TopItem {
-  name: string
-  quantity: number
-  /** What customers paid for it, after discounts and offers. */
-  amount: number
-}
-
-/** Sales of one day, from the orders paid that day. */
-export interface DayStats {
-  /** Sum of the paid orders' totals. */
-  sales: number
-  /** Paid orders. */
-  orders: number
-  /** Orders still open (not paid yet), whatever their day. */
-  openOrders: number
-  /** Most sold items, by quantity. */
-  topItems: TopItem[]
-}
-
 export const RESERVATION_STATUSES = ['confirmed', 'cancelled', 'honored', 'no_show'] as const
 /** Confirmée, Annulée, Honorée (the customer came: their table's order was opened), No-show. */
 export type ReservationStatus = (typeof RESERVATION_STATUSES)[number]
@@ -676,4 +659,127 @@ export interface DeviceSession {
   ended_at: string | null
   /** Seconds since the last signal, measured by the database. */
   idle_seconds: number
+}
+
+// ───────────── Caisse et Statistique Journalier (migration 20260930110000_cash_register.sql) ─────────────
+
+/** Fond d'entrée (in) or Fond de sortie (out). */
+export type CashMovementKind = 'in' | 'out'
+
+/** Money put in or taken out of the drawer outside sales, during an open working day. */
+export interface CashMovement {
+  id: string
+  day_id: string
+  kind: CashMovementKind
+  amount: number
+  reason: string
+  /** Supplier invoice this Fond de sortie paid (null otherwise, or once the invoice is deleted). */
+  supplier_invoice_id: string | null
+  supplier_name: string | null
+  user_name: string
+  created_at: string
+}
+
+export interface NewCashMovement {
+  kind: CashMovementKind
+  amount: number
+  reason: string
+  supplier_invoice_id?: string | null
+}
+
+/**
+ * A working day (journée de travail), from the Fond de caisse to the closing. Its sales are everything paid since the
+ * previous closing (period_start), so a sale made before the drawer was opened still counts.
+ */
+export interface CashDay {
+  id: string
+  /** Journée n°, increasing. */
+  day_no: number
+  period_start: string
+  opened_at: string
+  opened_by_name: string
+  /** Fond de caisse: cash in the drawer at opening. */
+  opening_float: number
+  float_updated_at: string | null
+  float_updated_by_name: string | null
+  closed_at: string | null
+  closed_by_name: string | null
+  /** Fixed at closing (null while open). */
+  cash_sales: number | null
+  cash_in: number | null
+  cash_out: number | null
+  expected_cash: number | null
+  counted_cash: number | null
+  /** Counted − expected: negative when cash is missing. */
+  difference: number | null
+  /** The day's figures when it was closed (rapport Z). */
+  report: DayReport | null
+  note: string
+}
+
+/** A reset of the order / ticket numbers to 1 (Re-Initialiser le N°, or automatically at the opening of a day). */
+export interface NumberReset {
+  id: string
+  reason: 'manual' | 'day_open'
+  last_ticket_no: number | null
+  last_takeaway_no: number | null
+  last_delivery_no: number | null
+  user_name: string
+  created_at: string
+}
+
+/** One row of "ventes par article / catégorie / employé". Amounts are what customers paid (discounts shared out). */
+export interface SalesRow {
+  name: string
+  /** Item's category (items only). */
+  category?: string
+  quantity: number
+  /** Orders (employees only). */
+  orders?: number
+  amount: number
+}
+
+/** Espèces attendues = fond de caisse + ventes espèces + fonds d'entrée − fonds de sortie. */
+export interface CashSummary {
+  opening: number
+  sales: number
+  in: number
+  out: number
+  expected: number
+}
+
+/** Figures of a working day (Statistique Journalier, rapport Z). All amounts in DA. */
+export interface DayReport {
+  from: string
+  /** End of the period; now for the day in progress. */
+  to: string
+  /** Normal price of everything sold (before discounts and offers). */
+  gross: number
+  discounts: number
+  offered: number
+  /** Delivery fees charged. */
+  delivery: number
+  /** What customers paid: gross − discounts − offered + delivery. */
+  net: number
+  orders: number
+  avgTicket: number
+  /** Orders not paid yet when the report was made. */
+  openOrders: number
+  /** Paid during the period, by method (partial payments of orders still open included). */
+  payments: Record<string, number>
+  byType: Record<OrderType, { orders: number; amount: number }>
+  items: SalesRow[]
+  categories: SalesRow[]
+  employees: SalesRow[]
+  cash: CashSummary | null
+}
+
+/** Raw sales of a period, from which reports are computed. */
+export interface SalesData {
+  /** Orders paid (closed) during the period. */
+  orders: (Order & { total: number | null; closed_at: string | null })[]
+  lines: OrderLine[]
+  /** Payments made during the period. */
+  payments: Payment[]
+  openOrders: number
 }

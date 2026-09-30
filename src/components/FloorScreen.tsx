@@ -268,6 +268,10 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       : page === 'kitchenCharges' ? can('kitchen_charges')
       : page === 'stockState' ? can('stock_state')
       : page === 'recipes' ? can('recipes')
+      : page === 'resetNumbers' ? can('reset_numbers')
+      : page === 'cashFloat' ? can('cash_open')
+      : page === 'cashIn' ? can('cash_in')
+      : page === 'cashOut' ? can('cash_out')
       : can(page as Permission)
   const shown = (items: (AdminMenuItem | false)[]) => items.filter((i): i is AdminMenuItem => !!i)
   // Menus and entries the account has no permission for are left out, not just greyed.
@@ -308,6 +312,28 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     can('payroll') && { id: 'payroll', label: t.payrollTitle, checked: onBo('payroll'), onSelect: () => openBo('payroll') },
     can('devices') && { id: 'devices', label: t.devicesTitle, checked: onBo('devices'), onSelect: () => openBo('devices') },
   ])
+  // Statistiques / bénéfice, in four groups with a line between them: numbering, caisse, rapports, contrôle.
+  const statsPages: BackOfficePage[] = ['resetNumbers', 'cashFloat', 'cashIn', 'cashOut', 'stats']
+  const statsGroups: AdminMenuItem[][] = [
+    shown([can('reset_numbers') && { id: 'reset-numbers', label: t.resetTitle, checked: onBo('resetNumbers'), onSelect: () => openBo('resetNumbers') }]),
+    shown([
+      can('cash_open') && { id: 'cash-float', label: t.floatTitle, checked: onBo('cashFloat'), onSelect: () => openBo('cashFloat') },
+      can('cash_in') && { id: 'cash-in', label: t.cashInTitle, checked: onBo('cashIn'), onSelect: () => openBo('cashIn') },
+      can('cash_out') && { id: 'cash-out', label: t.cashOutTitle, checked: onBo('cashOut'), onSelect: () => openBo('cashOut') },
+    ]),
+    shown([
+      can('stats') && { id: 'daily', label: t.dailyStatsTitle, checked: onBo('stats'), onSelect: () => openBo('stats') },
+      can('stats') && { id: 'weekly', label: t.weeklyTitle, disabled: true },
+      can('stats') && { id: 'expenses', label: t.expensesTitle, disabled: true },
+      can('stats') && { id: 'profit', label: t.profitTitle, disabled: true },
+    ]),
+    shown([
+      can('stats') && { id: 'cancelled-orders', label: t.cancelledOrdersTitle, disabled: true },
+      can('stats') && { id: 'cancelled-invoices', label: t.cancelledInvoicesTitle, disabled: true },
+      can('stats') && { id: 'price-log', label: t.priceLogTitle, disabled: true },
+    ]),
+  ]
+  const statsItems = statsGroups.filter((g) => g.length).flatMap((g, i) => g.map((it, j) => (i > 0 && j === 0 ? { ...it, separator: true } : it)))
   const adminGroups: AdminMenuGroup[] = [
     {
       id: 'file', label: t.navFile, current: onBo('users') || onBo('permissions') || onBo('backup') || onBo('ticket'), items: shown([
@@ -332,11 +358,8 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     ...(editItems.length ? [{ id: 'edit', label: t.navEdit, current: onBo('zones') || onBo('zoneNew') || onBo('menuCsv') || onBo('recipes'), items: editItems }] : []),
     ...(staffItems.length ? [{ id: 'staff', label: t.staff, current: onBo('staff') || onBo('payroll') || onBo('devices'), items: staffItems }] : []),
     ...(stockItems.length ? [{ id: 'stock', label: t.stock, current: onBo('stock') || onBo('suppliers') || onBo('purchaseNew') || onBo('purchases') || onBo('stockTransfer') || onBo('kitchenCharges') || onBo('stockState'), items: stockItems }] : []),
-    ...(can('stats') ? [{
-      id: 'stats', label: t.navStats, current: onBo('stats'), items: [
-        { id: 'sales', label: t.statsSales, checked: onBo('stats'), onSelect: () => setBackOffice('stats') },
-        { id: 'profit', label: t.profitSoon, disabled: true },
-      ],
+    ...(statsItems.length ? [{
+      id: 'stats', label: t.navStats, current: statsPages.some(onBo), items: statsItems,
     }] : []),
     ...(can('settings') ? [{
       id: 'settings', label: t.settings, current: onBo('settings'), items: [
