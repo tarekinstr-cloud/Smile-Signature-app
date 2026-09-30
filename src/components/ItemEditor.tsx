@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import type { Category, MenuItem, OptionGroup } from '../lib/types'
 import { useI18n } from '../lib/i18n'
+import { newId } from '../lib/id'
 
 export interface DraftOption {
   id?: string
@@ -49,7 +50,7 @@ export const parsePrice = (s: string) => {
   return t === '' || !/^-?\d*\.?\d*$/.test(t) ? NaN : Number(t)
 }
 
-const key = () => crypto.randomUUID()
+const key = () => newId()
 
 /** Adds or edits one menu item: name, price, category, visibility and its option groups (size, extras…). */
 export default function ItemEditor({ item, categoryId, categories, groups, onCancel, onSave, onDelete }: Props) {

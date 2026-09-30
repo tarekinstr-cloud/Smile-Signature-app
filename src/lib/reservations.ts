@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { repo, sharedChannel, supabase } from './repo'
 import { tr } from './i18n'
 import type { NewReservation, Reservation, ReservationPatch } from './types'
+import { newId } from './id'
 
 /**
  * Table bookings (menu Clients, and the small indicator on the floor plan). Supabase table `reservations`
@@ -149,7 +150,7 @@ function localReservations(): ReservationsService {
       return sorted(read()).filter((r) => r.status === 'confirmed' && new Date(r.reserved_at) >= from && new Date(r.reserved_at) < to)
     },
     async create(r) {
-      const row: Reservation = { id: crypto.randomUUID(), status: 'confirmed', created_at: new Date().toISOString(), ...clean(r) }
+      const row: Reservation = { id: newId(), status: 'confirmed', created_at: new Date().toISOString(), ...clean(r) }
       write([...read(), row])
       return row
     },

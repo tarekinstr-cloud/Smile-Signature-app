@@ -1,4 +1,5 @@
 import type { Category, ItemOption, MenuItem, OptionGroup } from './types'
+import { newId } from './id'
 
 /** Demo menu for local mode; mirrors the sample rows in the menu_orders migration. */
 export function demoMenu() {
@@ -30,15 +31,15 @@ export function demoMenu() {
   ]
 
   data.forEach(([name, color, its], ci) => {
-    const category_id = crypto.randomUUID()
+    const category_id = newId()
     categories.push({ id: category_id, name, color, sort_order: ci, active: true })
     its.forEach(([itemName, price, gs = []], ii) => {
-      const item_id = crypto.randomUUID()
+      const item_id = newId()
       items.push({ id: item_id, category_id, name: itemName, price, sort_order: ii, active: true })
       gs.forEach(([gName, min_select, max_select, opts], gi) => {
-        const group_id = crypto.randomUUID()
+        const group_id = newId()
         groups.push({ id: group_id, item_id, name: gName, min_select, max_select, sort_order: gi })
-        opts.forEach(([oName, price_delta], oi) => options.push({ id: crypto.randomUUID(), group_id, name: oName, price_delta, sort_order: oi }))
+        opts.forEach(([oName, price_delta], oi) => options.push({ id: newId(), group_id, name: oName, price_delta, sort_order: oi }))
       })
     })
   })

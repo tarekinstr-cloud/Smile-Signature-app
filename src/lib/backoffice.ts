@@ -5,6 +5,7 @@ import { tr } from './i18n'
 import type {
   Adjustments, DayStats, NewStockItem, NewSupplier, Order, OrderLine, StaffAccount, StockItem, StockItemPatch, Supplier, TopItem,
 } from './types'
+import { newId } from './id'
 
 /**
  * Data access for the back-office pages (Statistiques, Gestion du Stock, Fournisseurs, Employés).
@@ -170,10 +171,10 @@ interface LocalDb {
 const now = () => new Date().toISOString()
 
 function seed(): LocalDb {
-  const s = (name: string, quantity: number, unit: string): StockItem => ({ id: crypto.randomUUID(), name, quantity, unit, updated_at: now() })
+  const s = (name: string, quantity: number, unit: string): StockItem => ({ id: newId(), name, quantity, unit, updated_at: now() })
   return {
     stock: [s('Farine', 25, 'kg'), s('Fromage mozzarella', 8, 'kg'), s('Pain burger', 60, 'pièce'), s('Huile', 12, 'L'), s('Coca-Cola 33 cl', 48, 'canette')],
-    suppliers: [{ id: crypto.randomUUID(), name: 'Boulangerie El Amel', phone: '0550 12 34 56', products: 'Pain burger, pain de mie' }],
+    suppliers: [{ id: newId(), name: 'Boulangerie El Amel', phone: '0550 12 34 56', products: 'Pain burger, pain de mie' }],
   }
 }
 
@@ -231,7 +232,7 @@ function localBackOffice(): BackOffice {
       checkName(s.name)
       return edit((db) => {
         if (nameTaken(db, s.name)) throw new Error(tr().errStockName)
-        const row: StockItem = { id: crypto.randomUUID(), ...cleanStock(s), updated_at: now() }
+        const row: StockItem = { id: newId(), ...cleanStock(s), updated_at: now() }
         db.stock.push(row)
         return row
       })
@@ -262,7 +263,7 @@ function localBackOffice(): BackOffice {
     async createSupplier(s) {
       checkName(s.name)
       return edit((db) => {
-        const row: Supplier = { id: crypto.randomUUID(), ...cleanSupplier(s) }
+        const row: Supplier = { id: newId(), ...cleanSupplier(s) }
         db.suppliers.push(row)
         return row
       })

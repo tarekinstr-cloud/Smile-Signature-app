@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './repo'
 import { tr } from './i18n'
 import { USER_ROLES, type AppUser, type BackupLogEntry, type UserInput, type UserRole } from './types'
+import { newId, randomBytes, sha256Hex } from './id'
 
 /**
  * Data access for the Fichier menu: user accounts (page Utilisateurs) and database exports (Sauvegarder la base de
@@ -138,20 +139,16 @@ export interface LocalUser extends AppUser {
  * Seeded users start with "plain:…" until their password is changed.
  */
 export async function hashPassword(password: string): Promise<string> {
-  const salt = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('')
-  return `sha256:${salt}:${await sha256(salt + password)}`
+  const salt = Array.from(randomBytes(8), (b) => b.toString(16).padStart(2, '0')).join('')
+  return `sha256:${salt}:${await sha256Hex(salt + password)}`
 }
 
 export async function checkPassword(stored: string, password: string): Promise<boolean> {
   if (stored.startsWith('plain:')) return stored.slice(6) === password
   const [, salt, hash] = stored.split(':')
-  return (await sha256(salt + password)) === hash
+  return (await sha256Hex(salt + password)) === hash
 }
 
-async function sha256(text: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
-  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('')
-}
 
 /** Demo administrator: admin / 1234. */
 export const DEMO_ADMIN = { username: 'admin', password: '1234' }
@@ -245,7 +242,7 @@ function localAdmin(): Admin {
       const fields = { username, display_name: u.display_name.trim(), role: u.role as UserRole, active: u.active }
       if (!u.id) {
         const row: LocalUser = {
-          id: crypto.randomUUID(), ...fields, email: null, created_at: new Date().toISOString(), last_sign_in_at: null,
+          id: newId(), ...fields, email: null, created_at: new Date().toISOString(), last_sign_in_at: null,
           password_hash: await hashPassword(u.password),
         }
         saveLocalUsers([...users, row])
@@ -266,7 +263,7 @@ function localAdmin(): Admin {
     },
     async logBackup(e) {
       const log = await this.listBackups()
-      const row: BackupLogEntry = { id: crypto.randomUUID(), created_at: new Date().toISOString(), ...e }
+      const row: BackupLogEntry = { id: newId(), created_at: new Date().toISOString(), ...e }
       try {
         localStorage.setItem(BACKUPS_KEY, JSON.stringify([row, ...log].slice(0, 20)))
       } catch {
