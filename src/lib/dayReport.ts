@@ -29,7 +29,13 @@ const byAmount = (a: SalesRow, b: SalesRow) => b.amount - a.amount || b.quantity
  * Line amounts are what the customer paid for them: their own discount and offer, then their share of the order's
  * discount, so items and categories add up to the net sales (delivery fees apart).
  */
-export function computeDayReport(data: SalesData, categories: Map<string, string>, from: string, to: string, cash: CashSummary | null): DayReport {
+/**
+ * Report of a period. `openedAt`: when the drawer was opened; orders paid and cash taken before it (drawer closed)
+ * are counted and flagged as « ventes encaissées caisse fermée ».
+ */
+export function computeDayReport(
+  data: SalesData, categories: Map<string, string>, from: string, to: string, cash: CashSummary | null, openedAt?: string | null,
+): DayReport {
   const t = tr()
   const byOrder = new Map<string, OrderLine[]>()
   for (const l of data.lines) (byOrder.get(l.order_id) ?? byOrder.set(l.order_id, []).get(l.order_id)!).push(l)
@@ -66,6 +72,19 @@ export function computeDayReport(data: SalesData, categories: Map<string, string
   for (const p of data.payments) payments[p.method] = cents((payments[p.method] ?? 0) + p.amount)
 
   const orders = data.orders.length
+  let closedSales: DayReport['closedSales'] = null
+  if (openedAt) {
+    const before = (iso: string | null | undefined) => !!iso && new Date(iso).getTime() < new Date(openedAt).getTime()
+    const early = data.orders.filter((o) => before(o.closed_at))
+    const earlyCash = data.payments.filter((p) => p.method === 'cash' && before(p.created_at))
+    if (early.length || earlyCash.length) {
+      closedSales = {
+        orders: early.length,
+        amount: cents(early.reduce((s, o) => s + (o.total ?? 0), 0)),
+        cash: cents(earlyCash.reduce((s, p) => s + p.amount, 0)),
+      }
+    }
+  }
   return {
     from, to,
     gross: cents(gross), discounts: cents(discounts), offered: cents(offered), delivery: cents(delivery), net: cents(net),
@@ -75,6 +94,7 @@ export function computeDayReport(data: SalesData, categories: Map<string, string
     categories: [...cats.values()].sort(byAmount),
     employees: [...employees.values()].sort(byAmount),
     cash,
+    closedSales,
   }
 }
 
@@ -91,6 +111,7 @@ export function reportCsvRows(r: DayReport): Record<string, unknown>[] {
   line(t.daySummary, t.dayNet, '', r.net)
   line(t.daySummary, t.paidOrders, r.orders, '')
   line(t.daySummary, t.avgTicket, '', r.avgTicket)
+  if (r.closedSales) line(t.daySummary, t.dayClosedSales, r.closedSales.orders, r.closedSales.amount)
   for (const [m, v] of Object.entries(r.payments)) line(t.dayPayments, (t.payMethod as Record<string, string>)[m] ?? m, '', v)
   for (const type of ['dine_in', 'takeaway', 'delivery'] as const) line(t.dayByType, t.dayTypes[type], r.byType[type].orders, r.byType[type].amount)
   if (r.cash) {

@@ -59,7 +59,9 @@ async function loadLive(): Promise<Live> {
   const sum = (k: 'in' | 'out') => moves.filter((m) => m.kind === k).reduce((s, m) => s + m.amount, 0)
   const cashSales = sales.payments.filter((p) => p.method === 'cash').reduce((s, p) => s + p.amount, 0)
   const box = day ? cashSummary(day.opening_float, cashSales, sum('in'), sum('out')) : null
-  return { day, report: computeDayReport(sales, categoryOfItems(menu), from.toISOString(), new Date().toISOString(), box) }
+  const now = new Date().toISOString()
+  // Drawer closed: everything since the last closing was taken with the drawer closed.
+  return { day, report: computeDayReport(sales, categoryOfItems(menu), from.toISOString(), now, box, day?.opened_at ?? now) }
 }
 
 type Tab = 'current' | 'closed'
@@ -132,7 +134,15 @@ function CurrentDay({ onClosed }: { onClosed(): void }) {
             {day && <button type="button" onClick={() => setZ(day)}>{t.zPreview}</button>}
             {day && can('day_close') && <button type="button" className="primary" onClick={() => setClosing(true)}>{t.dayCloseBtn}</button>}
           </div>
-          {!day && <div className="banner">{t.dayOpenHint}</div>}
+          {!day && (
+            <div className="banner error" role="status">
+              <strong>{t.dayClosedBanner}</strong> {t.dayOpenHint}
+              {data.report.closedSales && <> {t.dayClosedPending(data.report.closedSales.orders, money(data.report.closedSales.amount))}</>}
+            </div>
+          )}
+          {day && data.report.closedSales && (
+            <div className="banner">{t.dayClosedIncluded(data.report.closedSales.orders, money(data.report.closedSales.amount))}</div>
+          )}
           <DayReportView report={data.report} day={day} />
         </>
       )}
