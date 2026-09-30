@@ -892,6 +892,7 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .cancel-reasons { border: none; padding: 0; margin: 0; }
 .cancel-reasons legend { font-weight: 600; margin-bottom: 8px; }
 .control-table td { vertical-align: top; }
+.control-table th { white-space: nowrap; }
 .control-table td button { white-space: nowrap; }
 .control-table tr.expandable { cursor: pointer; }
 .control-lines { margin: 4px 0 0; padding-inline-start: 18px; font-size: 13px; color: var(--muted); }

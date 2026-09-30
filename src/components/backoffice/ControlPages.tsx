@@ -38,6 +38,12 @@ function useCancelled(range: [Date, Date]) {
   return res
 }
 
+type Numbered = Order & { ticket_no?: number | null }
+/** N° of an order: its ticket once paid, else its takeaway / delivery number. */
+const orderNo = (o: Order) => (o as Numbered).ticket_no ?? o.takeaway_no ?? o.delivery_no ?? null
+/** Billed = cancelled after printing, invoicing or payment: listed in Factures Annulées, not Commandes Annulées. */
+const billed = (o: CancelledOrder) => o.voided || !!o.printed_at || o.invoice_no != null
+
 const when = (iso: string | null | undefined, loc: string) =>
   iso ? new Date(iso).toLocaleString(loc, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : '—'
 
@@ -50,7 +56,7 @@ export function CancelledOrdersPage() {
   const tables = useTables()
   const [reason, setReason] = useState('')
   const [open, setOpen] = useState<string | null>(null)
-  const rows = (data ?? []).filter((o) => !reason || o.cancel_reason === reason)
+  const rows = (data ?? []).filter((o) => !billed(o) && (!reason || o.cancel_reason === reason))
   const total = Math.round(rows.reduce((s, o) => s + (o.cancelled_total ?? 0), 0) * 100) / 100
   const byReason = useMemo(() => {
     const m = new Map<string, number>()
@@ -60,11 +66,10 @@ export function CancelledOrdersPage() {
   const place = (o: Order) => placeText(t, o, o.table_id ? tables.get(o.table_id) ?? null : null)
 
   const exportCsv = () => download(`commandes-annulees-${stamp()}.csv`, toCsv(rows.map((o) => ({
-    [t.cancelledAtCol]: o.cancelled_at, [t.placeCol]: place(o), [t.openedAtCol]: o.created_at, [t.dayEmployee]: o.created_by_name ?? '',
+    [t.cancelledAtCol]: o.cancelled_at, [t.orderNoCol]: orderNo(o) ?? '', [t.placeCol]: place(o), [t.openedAtCol]: o.created_at, [t.dayEmployee]: o.created_by_name ?? '',
     [t.cancelledByCol]: o.cancelled_by_name ?? '', [t.cancelReasonLabel]: o.cancel_reason ? t.cancelReasons[o.cancel_reason] ?? o.cancel_reason : '',
     [t.cancelNoteCol]: o.cancel_note ?? '', [t.itemsCol]: o.lines.map((l) => `${l.quantity} × ${l.name}`).join(' | '),
     [t.sentKitchenCol]: `${o.sent}/${o.lines.length}`, [t.colAmount]: o.cancelled_total ?? '',
-    [t.cancelKindCol]: o.voided ? t.kindVoided : o.invoice_no ? t.kindInvoice(o.invoice_no) : o.printed_at ? t.kindPrinted : '',
   }))), csvType)
 
   return (
@@ -97,9 +102,11 @@ export function CancelledOrdersPage() {
               <thead>
                 <tr>
                   <th>{t.cancelledAtCol}</th>
+                  <th>{t.orderNoCol}</th>
                   <th>{t.placeCol}</th>
                   <th>{t.itemsCol}</th>
                   <th className="num">{t.colAmount}</th>
+                  <th>{t.dayEmployee}</th>
                   <th>{t.cancelReasonLabel}</th>
                   <th>{t.cancelledByCol}</th>
                 </tr>
@@ -110,7 +117,7 @@ export function CancelledOrdersPage() {
                 ))}
               </tbody>
               <tfoot>
-                <tr className="total"><td colSpan={3}>{t.total}</td><td className="num">{money(total)}</td><td colSpan={2} /></tr>
+                <tr className="total"><td colSpan={4}>{t.total}</td><td className="num">{money(total)}</td><td colSpan={3} /></tr>
               </tfoot>
             </table>
           </div>
@@ -120,30 +127,36 @@ export function CancelledOrdersPage() {
   )
 }
 
-function CancelledRow({ o, place, loc, open, onToggle }: { o: CancelledOrder; place: string; loc: string; open: boolean; onToggle(): void }) {
+function CancelledRow({ o, place, loc, open, onToggle, kind }: {
+  o: CancelledOrder; place: string; loc: string; open: boolean; onToggle(): void
+  /** Factures Annulées: what was cancelled (tag) and the cash given back column. */
+  kind?: string
+}) {
   const { t } = useI18n()
+  const no = orderNo(o)
   const qty = o.lines.reduce((s, l) => s + l.quantity, 0)
   return (
     <>
       <tr>
         <td>{when(o.cancelled_at, loc)}</td>
+        <td>{no ?? '—'}</td>
         <td>
           {place}
-          {o.voided && <span className="tag warn cost-tag">{t.kindVoided}</span>}
-          {!o.voided && o.invoice_no != null && <span className="tag warn cost-tag">{t.kindInvoice(o.invoice_no)}</span>}
-          {!o.voided && o.invoice_no == null && o.printed_at && <span className="tag cost-tag">{t.kindPrinted}</span>}
+          {kind && <span className={`tag cost-tag ${o.voided ? 'warn' : ''}`}>{kind}</span>}
         </td>
         <td>
           <button type="button" className="link" aria-expanded={open} onClick={onToggle}>{t.itemCount(qty)}</button>
           {o.sent > 0 && <span className="muted small"> · {t.sentKitchen(o.sent, o.lines.length)}</span>}
         </td>
         <td className="num">{money(o.cancelled_total ?? 0)}</td>
+        {kind !== undefined && <td className="num">{o.voided ? money(o.void_cash ?? 0) : '—'}</td>}
+        <td>{o.created_by_name || '—'}</td>
         <td>{reasonText(t, o.cancel_reason, o.cancel_note) || '—'}</td>
         <td className="muted">{o.cancelled_by_name || '—'}</td>
       </tr>
       {open && (
         <tr className="control-lines">
-          <td colSpan={6}>
+          <td colSpan={kind !== undefined ? 9 : 8}>
             {o.lines.map((l) => (
               <div key={l.id}>
                 {l.quantity} × {l.name}
@@ -188,14 +201,15 @@ function CancelledInvoices() {
   const { period, setPeriod, range } = usePeriod()
   const { data, error, setError } = useCancelled(range)
   const tables = useTables()
-  const rows = (data ?? []).filter((o) => o.voided || o.printed_at || o.invoice_no != null)
+  const [open, setOpen] = useState<string | null>(null)
+  const rows = (data ?? []).filter(billed)
   const sum = (f: (o: CancelledOrder) => number) => Math.round(rows.reduce((s, o) => s + f(o), 0) * 100) / 100
   const place = (o: Order) => placeText(t, o, o.table_id ? tables.get(o.table_id) ?? null : null)
   const kind = (o: CancelledOrder) => (o.voided ? t.kindVoided : o.invoice_no != null ? t.kindInvoice(o.invoice_no) : t.kindPrinted)
 
   const exportCsv = () => download(`factures-annulees-${stamp()}.csv`, toCsv(rows.map((o) => ({
-    [t.cancelledAtCol]: o.cancelled_at, [t.cancelKindCol]: kind(o), [t.ticketCol]: (o as Order & { ticket_no?: number }).ticket_no ?? '',
-    [t.placeCol]: place(o), [t.colAmount]: o.cancelled_total ?? '', [t.cashBackCol]: o.voided ? o.void_cash ?? 0 : '',
+    [t.cancelledAtCol]: o.cancelled_at, [t.cancelKindCol]: kind(o), [t.orderNoCol]: orderNo(o) ?? '',
+    [t.placeCol]: place(o), [t.dayEmployee]: o.created_by_name ?? '', [t.colAmount]: o.cancelled_total ?? '', [t.cashBackCol]: o.voided ? o.void_cash ?? 0 : '',
     [t.cancelReasonLabel]: o.cancel_reason ? t.cancelReasons[o.cancel_reason] ?? o.cancel_reason : '', [t.cancelNoteCol]: o.cancel_note ?? '',
     [t.cancelledByCol]: o.cancelled_by_name ?? '', [t.itemsCol]: o.lines.map((l) => `${l.quantity} × ${l.name}`).join(' | '),
   }))), csvType)
@@ -224,38 +238,27 @@ function CancelledInvoices() {
               <thead>
                 <tr>
                   <th>{t.cancelledAtCol}</th>
-                  <th>{t.cancelKindCol}</th>
+                  <th>{t.orderNoCol}</th>
                   <th>{t.placeCol}</th>
+                  <th>{t.itemsCol}</th>
                   <th className="num">{t.colAmount}</th>
                   <th className="num">{t.cashBackCol}</th>
+                  <th>{t.dayEmployee}</th>
                   <th>{t.cancelReasonLabel}</th>
                   <th>{t.cancelledByCol}</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((o) => (
-                  <tr key={o.id}>
-                    <td>{when(o.cancelled_at, loc)}</td>
-                    <td>
-                      <span className={`tag ${o.voided ? 'warn' : ''}`}>{kind(o)}</span>
-                      {(o as Order & { ticket_no?: number }).ticket_no != null && o.voided && (
-                        <span className="muted small"> {t.ticketNo(String((o as Order & { ticket_no?: number }).ticket_no))}</span>
-                      )}
-                    </td>
-                    <td>{place(o)}</td>
-                    <td className="num">{money(o.cancelled_total ?? 0)}</td>
-                    <td className="num">{o.voided ? money(o.void_cash ?? 0) : '—'}</td>
-                    <td>{reasonText(t, o.cancel_reason, o.cancel_note) || '—'}</td>
-                    <td className="muted">{o.cancelled_by_name || '—'}</td>
-                  </tr>
+                  <CancelledRow key={o.id} o={o} place={place(o)} loc={loc} kind={kind(o)} open={open === o.id} onToggle={() => setOpen(open === o.id ? null : o.id)} />
                 ))}
               </tbody>
               <tfoot>
                 <tr className="total">
-                  <td colSpan={3}>{t.total}</td>
+                  <td colSpan={4}>{t.total}</td>
                   <td className="num">{money(sum((o) => o.cancelled_total ?? 0))}</td>
                   <td className="num">{money(sum((o) => (o.voided ? o.void_cash ?? 0 : 0)))}</td>
-                  <td colSpan={2} />
+                  <td colSpan={3} />
                 </tr>
               </tfoot>
             </table>
@@ -370,7 +373,7 @@ export function PriceLogPage() {
 
   const exportCsv = () => download(`modifications-prix-${stamp()}.csv`, toCsv(rows.map((c) => ({
     [t.colDate]: c.created_at, [t.priceKindCol]: t.priceKinds[c.kind], [t.profitItemCol]: c.item_name, [t.priceWhatCol]: c.kind === 'item' ? '' : `${c.group_name} : ${c.option_name}`,
-    [t.priceOldCol]: c.old_price, [t.priceNewCol]: c.new_price, [t.priceDiffCol]: diff(c), '%': pct(c) ?? '', [t.cancelledByCol]: c.user_name,
+    [t.priceOldCol]: c.old_price, [t.priceNewCol]: c.new_price, [t.priceDiffCol]: diff(c), '%': pct(c) ?? '', [t.dayEmployee]: c.user_name,
   }))), csvType)
 
   return (
@@ -403,7 +406,7 @@ export function PriceLogPage() {
                   <th className="num">{t.priceOldCol}</th>
                   <th className="num">{t.priceNewCol}</th>
                   <th className="num">{t.priceDiffCol}</th>
-                  <th>{t.cancelledByCol}</th>
+                  <th>{t.dayEmployee}</th>
                 </tr>
               </thead>
               <tbody>
