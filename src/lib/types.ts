@@ -292,17 +292,69 @@ export interface KitchenTicket {
 
 // ───────────── Back-office (Statistiques, Stock, Fournisseurs, Employés) ─────────────
 
-/** An ingredient or product counted in stock. Adjusted by hand; not linked to sales yet. */
+/** An ingredient or product counted in stock, in two places: the Dépôt and the Cuisine. Not linked to sales yet. */
 export interface StockItem {
   id: string
   name: string
+  /** Qté Dépôt: purchases and manual adjustments go here. */
   quantity: number
+  /** Qté Cuisine: filled by transfers from the Dépôt, emptied by returns and kitchen charges. */
+  kitchen_quantity: number
   /** Free text: kg, L, pièce… */
   unit: string
   updated_at: string
 }
 
 export type NewStockItem = Pick<StockItem, 'name' | 'quantity' | 'unit'>
+
+/** Where stock is kept. */
+export type StockLocation = 'depot' | 'kitchen'
+/** Transfer (Dépôt → Cuisine) or return (Cuisine → Dépôt). */
+export type TransferDirection = 'to_kitchen' | 'to_depot'
+export type StockMovementType = 'purchase' | 'transfer' | 'return' | 'charge' | 'adjustment'
+/** Motif of a kitchen charge: Consommation, Perte / Périmé, Casse, Repas personnel, Autre. */
+export type ChargeReason = 'consumption' | 'loss' | 'breakage' | 'staff_meal' | 'other'
+export const CHARGE_REASONS: ChargeReason[] = ['consumption', 'loss', 'breakage', 'staff_meal', 'other']
+
+/** One line of the stock_movements table: what moved, from where to where, who did it and when. */
+export interface StockMovement {
+  id: string
+  /** Movements made together (one transfer of several items) share it. */
+  batch_id: string
+  type: StockMovementType
+  stock_item_id: string | null
+  /** Kept when the item is deleted from the stock. */
+  item_name: string
+  unit: string
+  quantity: number
+  /** null: stock coming in (purchase, adjustment +). */
+  from_location: StockLocation | null
+  /** null: stock going out (charge, adjustment −). */
+  to_location: StockLocation | null
+  reason: ChargeReason | null
+  note: string
+  /** Purchase: unit price; charge: last purchase price when it was recorded (null if never bought). */
+  unit_cost: number | null
+  /** Purchase: the supplier invoice it came from. */
+  invoice_id?: string | null
+  /** Signed-in employee. */
+  user_name: string
+  created_at: string
+}
+
+/** An item and the quantity moved, in a transfer or a charge. */
+export interface MovementLine {
+  stock_item_id: string
+  quantity: number
+}
+
+/** History filters; dates are YYYY-MM-DD (local days, both included). */
+export interface MovementFilter {
+  from?: string
+  to?: string
+  stock_item_id?: string
+  reason?: ChargeReason
+}
 export type StockItemPatch = Partial<Pick<StockItem, 'name' | 'unit'>>
 
 export interface Supplier {

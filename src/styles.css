@@ -722,3 +722,37 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
   .invoices-table tbody tr:not(.payroll-history) td:not(.num):not(.payroll-name):not(.row-actions) { display: flex; flex-direction: column; }
   .invoices-table tbody tr:not(.payroll-history) td:not(.num):not(.payroll-name):not(.row-actions)::before { content: attr(data-label); font-size: 11px; font-weight: 600; color: var(--muted); }
 }
+
+/* Transfert dépôt / cuisine et Charges cuisine (menu Gestion du Stock) */
+.moves-lines .pur-line { grid-template-columns: minmax(200px, 2fr) minmax(110px, 1fr) minmax(130px, 1fr) 44px; }
+.moves-lines .pur-amount { padding-top: 10px; align-self: start; }
+.moves-lines .pur-amount.neg { color: var(--occ); font-weight: 700; }
+.moves-qty { display: flex; align-items: center; gap: 6px; }
+.moves-qty input { flex: 1; min-width: 0; }
+.moves-qty input[aria-invalid] { border-color: var(--occ); }
+.moves-reasons { flex-wrap: wrap; }
+.moves-reasons button, .pur-payment .segmented button { min-height: 44px; }
+.moves-filters input[type='date'] { min-height: 40px; color: var(--ink); }
+.moves-filters select { min-width: 180px; }
+.moves-tiles { margin: 12px 0; }
+.moves-table .moves-date { white-space: nowrap; }
+.moves-table .moves-note { max-width: 240px; }
+.tag.move-dir.transfer { background: #dbeafe; color: #1e40af; }
+.tag.move-dir.return { background: #fef3c7; color: #92400e; }
+.tag.charge-reason { background: var(--line); color: var(--ink); }
+.tag.charge-reason.loss, .tag.charge-reason.breakage { background: var(--occ-bg); color: var(--occ); }
+.stock-table th.num, .stock-table td.num { width: 1%; }
+@media (max-width: 760px) {
+  .moves-lines .pur-line { grid-template-columns: 1fr 1fr; }
+  .moves-lines .pur-amount { text-align: start; font-size: 15px; }
+  .moves-lines .pur-amount .pur-label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .moves-filters input[type='date'] { width: 100%; }
+}
+@media (max-width: 600px) {
+  .moves-table tbody tr:not(.payroll-history) { grid-template-columns: repeat(2, 1fr); }
+  .moves-table td.moves-date { grid-column: 1 / -1; color: var(--muted); font-size: 13px; }
+  .moves-table td.moves-note { grid-column: 1 / -1; }
+  .moves-table td:not(.num)[data-label] { display: flex; flex-direction: column; }
+  .moves-table td:not(.num)[data-label]::before { content: attr(data-label); font-size: 11px; font-weight: 600; color: var(--muted); }
+  .stock-table thead th.num { font-size: 11px; }
+}

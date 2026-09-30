@@ -16,6 +16,7 @@ import { NewZonePage, ZonesList } from './DeliveryZonesPage'
 import PayrollPage from './PayrollPage'
 import DevicesPage from './DevicesPage'
 import { InvoicesList, NewPurchasePage } from './PurchasesPage'
+import { KitchenChargesPage, StockTransferPage } from './StockMovesPage'
 import type { SupplierInvoice } from '../../lib/types'
 
 interface Props {
@@ -36,7 +37,7 @@ interface Props {
 
 /**
  * Back-office screen under the administration menus: Statistiques, Stock, Fournisseurs, Employés, Paramètres, and the
- * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket), Clients (réservations), Édition > Zones de livraison and Gestion des employés (Salaires et acomptes, Appareils connectés), Gestion du Stock (Effectuer un achat, Factures fournisseurs).
+ * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket), Clients (réservations), Édition > Zones de livraison and Gestion des employés (Salaires et acomptes, Appareils connectés), Gestion du Stock (Effectuer un achat, Factures fournisseurs, Transfert dépôt / cuisine, Charges cuisine).
  */
 export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrinters, onOpenTicket, onPage, onOpenOrder }: Props) {
   const { t } = useI18n()
@@ -68,6 +69,8 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     devices: [t.devicesTitle, t.devicesSub],
     purchaseNew: [t.purNewItem, t.purNewSub],
     purchases: [t.purInvoicesItem, t.purInvoicesSub],
+    stockTransfer: [t.transferItem, t.transferSub],
+    kitchenCharges: [t.chargesItem, t.chargesSub],
   }
   return (
     <div className="app back-office">
@@ -133,6 +136,8 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'zones' && <ZonesList highlight={createdZone} />}
       {page === 'purchaseNew' && <NewPurchasePage onSaved={(i) => { setCreatedInvoice(i); onPage('purchases') }} />}
       {page === 'purchases' && <InvoicesList key={createdInvoice?.id} highlight={createdInvoice} />}
+      {page === 'stockTransfer' && <StockTransferPage />}
+      {page === 'kitchenCharges' && <KitchenChargesPage />}
     </div>
   )
 }
