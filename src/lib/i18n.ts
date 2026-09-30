@@ -1217,7 +1217,7 @@ const fr = {
   expenseBy: 'Saisie par',
   expenseFromDrawer: 'Fond de sortie',
   expenseCashHint: 'Crée un Fond de sortie dans la journée ouverte (date du jour) : il compte dans la caisse attendue.',
-  expenseCashEditHint: 'Payée par la caisse : le montant du Fond de sortie suit tant que la journée est ouverte.',
+  expenseCashEditHint: 'Payée par la caisse : le Fond de sortie suit le montant tant que la journée est ouverte ; passer en Autre le supprime.',
   expenseOtherHint: 'Payée hors caisse (banque, chèque…) : n’entre pas dans la caisse attendue.',
   expenseDeleteConfirm: 'Supprimer cette dépense ?',
   expenseDeleteCash: 'Supprimer cette dépense et son Fond de sortie ?',
@@ -1255,6 +1255,7 @@ const fr = {
   errExpenseNoDay: 'Aucune journée ouverte : saisissez d’abord le fond de caisse, ou choisissez le mode Autre.',
   errExpenseDayClosed: 'La journée de ce Fond de sortie est clôturée : le montant ne peut plus changer.',
   errExpenseMode: 'Le mode de paiement d’une dépense ne peut pas être changé : supprimez-la et ressaisissez-la.',
+  errCashShort: (available: string) => `Espèces insuffisantes en caisse (disponible : ${available}). Choisissez le mode Autre (banque, chèque...) si la dépense n’est pas payée depuis le tiroir.`,
   errCategoryTaken: 'Cette catégorie existe déjà.',
   errMigrationExpenses: 'Dépenses indisponibles : exécutez 20260930120000_expenses_profit.sql dans Supabase (SQL Editor).',
 }
@@ -2458,7 +2459,7 @@ const ar: Dict = {
   expenseBy: 'سجّله',
   expenseFromDrawer: 'إخراج مبلغ',
   expenseCashHint: 'ينشئ إخراج مبلغ في اليوم المفتوح (تاريخ اليوم): يُحسب في النقد المتوقع.',
-  expenseCashEditHint: 'مدفوع من الصندوق: مبلغ الإخراج يتبعه ما دام اليوم مفتوحًا.',
+  expenseCashEditHint: 'مدفوع من الصندوق: مبلغ الإخراج يتبعه ما دام اليوم مفتوحًا؛ التحويل إلى « أخرى » يحذفه.',
   expenseOtherHint: 'مدفوع خارج الصندوق (بنك، شيك…): لا يدخل في النقد المتوقع.',
   expenseDeleteConfirm: 'حذف هذا المصروف؟',
   expenseDeleteCash: 'حذف هذا المصروف وإخراج المبلغ المرتبط به؟',
@@ -2496,6 +2497,7 @@ const ar: Dict = {
   errExpenseNoDay: 'لا يوجد يوم مفتوح: أدخل أولًا رصيد الصندوق، أو اختر طريقة أخرى.',
   errExpenseDayClosed: 'يوم إخراج المبلغ هذا مغلق: لم يعد بالإمكان تغيير المبلغ.',
   errExpenseMode: 'لا يمكن تغيير طريقة دفع مصروف: احذفه وأعد إدخاله.',
+  errCashShort: (available: string) => `النقد غير كافٍ في الصندوق (المتوفر: ${available}). اختر « أخرى » (بنك، شيك...) إذا لم يُدفع المصروف من الدرج.`,
   errCategoryTaken: 'هذه الفئة موجودة بالفعل.',
   errMigrationExpenses: 'المصاريف غير متاحة: نفّذ 20260930120000_expenses_profit.sql في Supabase (SQL Editor).',
 }

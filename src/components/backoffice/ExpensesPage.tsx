@@ -151,7 +151,7 @@ function ExpenseList() {
   )
 }
 
-/** New expense, or changes to one (its mode stays; a drawer expense follows its Fond de sortie while the day is open). */
+/** New expense, or changes to one (a drawer expense follows its Fond de sortie, mode and amount, while the day is open). */
 function ExpenseDialog({ expense, categories, onClose, onSaved }: {
   expense: Expense | null
   categories: ExpenseCategory[]
@@ -167,7 +167,7 @@ function ExpenseDialog({ expense, categories, onClose, onSaved }: {
   const [note, setNote] = useState(expense?.note ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const cashLocked = !!expense && mode === 'cash'
+  const cashLocked = !!expense?.cash_movement_id && mode === 'cash'
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -176,7 +176,7 @@ function ExpenseDialog({ expense, categories, onClose, onSaved }: {
     setBusy(true)
     try {
       setError(null)
-      await expenses.save({ category_id: categoryId, amount: n, date: mode === 'cash' && !expense ? localIsoDay() : date, mode, note }, expense?.id)
+      await expenses.save({ category_id: categoryId, amount: n, date: mode === 'cash' && !expense?.cash_movement_id ? localIsoDay() : date, mode, note }, expense?.id)
       onSaved()
     } catch (err) {
       setError(errorText(err))
@@ -204,12 +204,12 @@ function ExpenseDialog({ expense, categories, onClose, onSaved }: {
           </label>
           <label>
             {t.colDate}
-            <input type="date" value={mode === 'cash' && !expense ? localIsoDay() : date} disabled={mode === 'cash'} onChange={(e) => e.target.value && setDate(e.target.value)} />
+            <input type="date" value={mode === 'cash' && !expense?.cash_movement_id ? localIsoDay() : date} disabled={mode === 'cash'} onChange={(e) => e.target.value && setDate(e.target.value)} />
           </label>
         </div>
         <div className="segmented" role="radiogroup" aria-label={t.expenseMode}>
-          {(['cash', 'other'] as const).map((m) => (
-            <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? 'on' : ''} disabled={!!expense && expense.mode !== m}
+          {(['other', 'cash'] as const).map((m) => (
+            <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? 'on' : ''}
               onClick={() => setMode(m)}>
               {t.expenseModes[m]}
             </button>
