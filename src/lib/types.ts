@@ -852,8 +852,11 @@ export interface ProfitCosts {
   charges_by_reason: Record<string, number>
   /** Écarts d'inventaire négatifs, at their cost. */
   inventory_loss: number
-  /** Monthly salaries prorated to the days of the period. */
+  /** Monthly salaries prorated to the elapsed days of the period (up to today included). */
   salaries: number
+  /** Days counted for the salaries (elapsed), out of the days of the period; absent before migration 20260930160000. */
+  salary_days?: number
+  period_days?: number
   expenses: number
   expenses_by_category: Record<string, number>
 }

@@ -92,6 +92,7 @@ function supabaseExpenses(sb: SupabaseClient): ExpensesService {
       return {
         charges: Number(r.charges ?? 0), charges_by_reason: numbers(r.charges_by_reason as Record<string, unknown>),
         inventory_loss: Number(r.inventory_loss ?? 0), salaries: Number(r.salaries ?? 0),
+        ...(r.salary_days != null && { salary_days: Number(r.salary_days), period_days: Number(r.period_days) }),
         expenses: Number(r.expenses ?? 0), expenses_by_category: numbers(r.expenses_by_category as Record<string, unknown>),
       }
     },
@@ -256,10 +257,12 @@ function localExpenses(): ExpensesService {
         return { charges: round2(charges), byReason, loss: round2(loss) }
       })
       let salaries = 0
+      // Like profit_summary: only the elapsed days, up to today included.
+      const lastPaid = last < localIsoDay() ? last : localIsoDay()
       try {
         const payroll = JSON.parse(localStorage.getItem('smile.payroll.v1') ?? 'null') as { salaries?: Record<string, number> } | null
         const monthly = loadLocalUsers().filter((u) => u.active).reduce((s, u) => s + (payroll?.salaries?.[u.id] ?? 0), 0)
-        salaries = round2(prorate(monthly, first, last))
+        salaries = lastPaid < first ? 0 : round2(prorate(monthly, first, lastPaid))
       } catch {
         // No demo payroll.
       }
@@ -268,6 +271,7 @@ function localExpenses(): ExpensesService {
       for (const x of expenses) byCategory[x.category_name] = round2((byCategory[x.category_name] ?? 0) + x.amount)
       return {
         charges, charges_by_reason: byReason, inventory_loss: loss, salaries,
+        salary_days: lastPaid < first ? 0 : daysBetween(first, lastPaid), period_days: daysBetween(first, last),
         expenses: round2(expenses.reduce((s, x) => s + x.amount, 0)), expenses_by_category: byCategory,
       }
     },
@@ -282,6 +286,12 @@ function localExpenses(): ExpensesService {
 }
 
 /** A monthly amount over the days [first, last]: each day counts 1 / (days of its month). Same rule as profit_summary(). */
+/** Days from first to last, both included (ISO dates). */
+export function daysBetween(first: string, last: string): number {
+  const day = (iso: string) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10))
+  return Math.round((day(last) - day(first)) / 86_400_000) + 1
+}
+
 export function prorate(monthly: number, first: string, last: string): number {
   if (!(monthly > 0)) return 0
   const [y, m, d] = first.split('-').map(Number)

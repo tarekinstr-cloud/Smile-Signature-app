@@ -44,6 +44,14 @@ export default function ProfitPage() {
     return computeProfit(sales, menu, costs)
   }, [range, period.preset, workDay])
   const { data, error, setError, reload } = useLoad(load)
+  // « 1 jours / 31 jours du mois » under Salaires: elapsed days counted, out of the period.
+  const salaryHint = (() => {
+    const c = data?.costs
+    if (c?.salary_days == null || c.period_days == null) return t.profitSalariesHint
+    const [from] = range
+    const whole = from.getDate() === 1 && c.period_days === new Date(from.getFullYear(), from.getMonth() + 1, 0).getDate() && period.preset !== 'day'
+    return t.profitSalaryDays(c.salary_days, c.period_days, whole)
+  })()
   useEffect(() => {
     const offs = [repo.subscribeOrders(reload), expenses.subscribe(reload)]
     return () => offs.forEach((off) => off())
@@ -69,7 +77,7 @@ export default function ProfitPage() {
         { label: t.profitGross, value: data.grossMargin, kind: 'sub', pct: data.grossMarginPct },
         { label: t.profitCharges, value: -data.costs.charges, kind: 'minus' },
         { label: t.profitInventory, value: -data.costs.inventory_loss, kind: 'minus' },
-        { label: t.profitSalaries, value: -data.costs.salaries, kind: 'minus', hint: t.profitSalariesHint },
+        { label: t.profitSalaries, value: -data.costs.salaries, kind: 'minus', hint: salaryHint },
         { label: t.profitExpenses, value: -data.costs.expenses, kind: 'minus' },
         { label: t.profitNet, value: data.netProfit, kind: 'total', pct: data.netProfitPct },
       ]
