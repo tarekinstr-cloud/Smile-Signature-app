@@ -147,7 +147,11 @@ export default function FloorPlan({ hall, tables, editable, selectedId, onSelect
               }}
               aria-label={tx.tableAria(t.label, t.seats, t.status === 'free') + (booking ? ` · ${tx.resOnTable(time(booking), booking.client_name, booking.party_size)}` : '')}
             >
-              {booking && <span className="res-mark" aria-hidden title={tx.resBadge(time(booking))}>🕒</span>}
+              {booking && (
+                <span className={`res-mark${new Date(booking.reserved_at) < new Date() ? ' late' : ''}`} aria-hidden title={tx.resBadge(time(booking))}>
+                  🕒 {time(booking)}
+                </span>
+              )}
               <span className="label">{t.label}</span>
               <span className="seats">{t.seats} 👤</span>
             </button>
