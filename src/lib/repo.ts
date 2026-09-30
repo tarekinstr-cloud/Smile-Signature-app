@@ -197,7 +197,7 @@ function check<T>(res: { data: T; error: { message: string } | null }): T {
  * callbacks to it throws. So the channel is created and subscribed once, listeners are
  * kept in a set, and the channel is removed when the last listener leaves.
  */
-function sharedChannel(sb: SupabaseClient, topic: string, tables: string[]) {
+export function sharedChannel(sb: SupabaseClient, topic: string, tables: string[]) {
   const listeners = new Set<() => void>()
   let channel: RealtimeChannel | null = null
   const notify = () => listeners.forEach((l) => l())

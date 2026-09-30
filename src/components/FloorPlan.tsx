@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import type { DiningTable, Hall } from '../lib/types'
+import type { DiningTable, Hall, Reservation } from '../lib/types'
 import { useI18n } from '../lib/i18n'
 
 const GRID = 10
@@ -13,6 +13,10 @@ interface Props {
   onSelect(id: string | null): void
   onTap(t: DiningTable): void
   onMove(id: string, x: number, y: number): void
+  /** Upcoming booking of each table (by table id): a dashed border and a small clock mark. */
+  reservations?: Map<string, Reservation>
+  /** The clock mark was tapped (service mode): show the booking. The rest of the table opens it as usual. */
+  onReservation?(r: Reservation, t: DiningTable): void
 }
 
 interface Drag {
@@ -25,13 +29,16 @@ interface Drag {
   x: number
   y: number
   moved: boolean
+  /** Pressed on the booking's clock mark (pointer capture makes the release target the table itself). */
+  onMark: boolean
 }
 
 const snap = (v: number) => Math.round(v / GRID) * GRID
 const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max)
 
-export default function FloorPlan({ hall, tables, editable, selectedId, onSelect, onTap, onMove }: Props) {
-  const { t: tx } = useI18n()
+export default function FloorPlan({ hall, tables, editable, selectedId, onSelect, onTap, onMove, reservations, onReservation }: Props) {
+  const { t: tx, lang } = useI18n()
+  const time = (r: Reservation) => new Date(r.reserved_at).toLocaleTimeString(lang === 'ar' ? 'ar-DZ' : 'fr-FR', { hour: '2-digit', minute: '2-digit' })
   const wrapRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
   const [drag, setDrag] = useState<Drag | null>(null)
@@ -58,6 +65,7 @@ export default function FloorPlan({ hall, tables, editable, selectedId, onSelect
       id: t.id, pointerId: e.pointerId,
       startClientX: e.clientX, startClientY: e.clientY,
       originX: t.x, originY: t.y, x: t.x, y: t.y, moved: false,
+      onMark: !!(e.target as Element).closest('.res-mark'),
     })
   }
 
@@ -87,7 +95,9 @@ export default function FloorPlan({ hall, tables, editable, selectedId, onSelect
     } else if (editable) {
       onSelect(t.id)
     } else {
-      onTap(t)
+      const booking = reservations?.get(t.id)
+      if (booking && onReservation && d.onMark) onReservation(booking, t)
+      else onTap(t)
     }
   }
 
@@ -105,6 +115,7 @@ export default function FloorPlan({ hall, tables, editable, selectedId, onSelect
       >
         {tables.map((t) => {
           const pos = drag?.id === t.id ? drag : t
+          const booking = reservations?.get(t.id)
           return (
             <button
               key={t.id}
@@ -113,7 +124,9 @@ export default function FloorPlan({ hall, tables, editable, selectedId, onSelect
                 'table', t.shape, t.status,
                 selectedId === t.id ? 'selected' : '',
                 drag?.id === t.id && drag.moved ? 'dragging' : '',
+                booking ? 'reserved' : '',
               ].join(' ')}
+              title={booking ? tx.resOnTable(time(booking), booking.client_name, booking.party_size) : undefined}
               style={{
                 left: pos.x * scale,
                 top: pos.y * scale,
@@ -132,8 +145,9 @@ export default function FloorPlan({ hall, tables, editable, selectedId, onSelect
                   else onTap(t)
                 }
               }}
-              aria-label={tx.tableAria(t.label, t.seats, t.status === 'free')}
+              aria-label={tx.tableAria(t.label, t.seats, t.status === 'free') + (booking ? ` · ${tx.resOnTable(time(booking), booking.client_name, booking.party_size)}` : '')}
             >
+              {booking && <span className="res-mark" aria-hidden title={tx.resBadge(time(booking))}>🕒</span>}
               <span className="label">{t.label}</span>
               <span className="seats">{t.seats} 👤</span>
             </button>
