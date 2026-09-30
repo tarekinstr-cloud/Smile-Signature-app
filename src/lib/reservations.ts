@@ -24,35 +24,29 @@ export interface ReservationsService {
   subscribe(onChange: () => void): () => void
 }
 
-/** Bookings of the next hours are shown even when they fall after midnight. */
+/** A table shows its booking on the floor plan during the hours before it, never after its time. */
 export const UPCOMING_HOURS = 3
+/** A booking still Confirmée this long after its time becomes No-show (same rule in expire_reservations()). */
+export const NO_SHOW_AFTER_MINUTES = 60
 
-/**
- * Bookings shown on the floor plan: every confirmed one of today (local day, including those whose time has passed but
- * that nobody marked Honorée / No-show yet), and those of the next UPCOMING_HOURS after midnight.
- */
+/** Bookings shown on the floor plan: confirmed, from now to UPCOMING_HOURS ahead. */
 export function floorWindow(now = new Date()): [Date, Date] {
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const end = new Date(start)
-  end.setDate(end.getDate() + 1)
-  const ahead = new Date(now.getTime() + UPCOMING_HOURS * 3_600_000)
-  return [start, ahead > end ? ahead : end]
+  return [now, new Date(now.getTime() + UPCOMING_HOURS * 3_600_000)]
 }
 
-/**
- * The booking to show on each table: its next one still to come, or else the latest of today (customer late, status
- * not updated yet).
- */
+/** The booking to show on each table: its next one (the earliest, when a table has several). */
 export function bookingsByTable(list: Reservation[], now = new Date()): Map<string, Reservation> {
   const byTable = new Map<string, Reservation>()
   for (const r of [...list].sort((a, b) => a.reserved_at.localeCompare(b.reserved_at))) {
-    if (r.status !== 'confirmed' || !r.table_id) continue
-    const current = byTable.get(r.table_id)
-    // Sorted by time: a later booking replaces the current one only while the current one is already past.
-    if (!current || new Date(current.reserved_at) < now) byTable.set(r.table_id, r)
+    if (r.status !== 'confirmed' || !r.table_id || new Date(r.reserved_at) < now) continue
+    if (!byTable.has(r.table_id)) byTable.set(r.table_id, r)
   }
   return byTable
 }
+
+/** Whether a Confirmée booking is past the No-show delay. */
+const expired = (r: Reservation, now = Date.now()) =>
+  r.status === 'confirmed' && new Date(r.reserved_at).getTime() < now - NO_SHOW_AFTER_MINUTES * 60_000
 
 const norm = (r: Reservation): Reservation => ({ ...r, party_size: Number(r.party_size), phone: r.phone ?? '', note: r.note ?? '' })
 
@@ -87,11 +81,15 @@ function supabaseReservations(sb: SupabaseClient): ReservationsService {
     return res.data
   }
   const channel = sharedChannel(sb, 'reservations', ['reservations'])
+  /** Confirmée bookings past the delay become No-show before every read (ignored before the migration). */
+  const expire = () => sb.rpc('expire_reservations').then(() => undefined, () => undefined)
   return {
     async list() {
+      await expire()
       return (check(await sb.from('reservations').select('*').order('reserved_at')) as Reservation[]).map(norm)
     },
     async listBetween(from, to) {
+      await expire()
       const res = await sb.from('reservations').select('*').eq('status', 'confirmed')
         .gte('reserved_at', from.toISOString()).lt('reserved_at', to.toISOString()).order('reserved_at')
       return (check(res) as Reservation[]).map(norm)
@@ -118,12 +116,22 @@ const KEY = 'smile.reservations.v1'
 
 function localReservations(): ReservationsService {
   const listeners = new Set<() => void>()
+  /** Saved bookings, with those Confirmée past the delay turned No-show (and saved so). */
   const read = (): Reservation[] => {
+    let rs: Reservation[]
     try {
-      return (JSON.parse(localStorage.getItem(KEY) ?? '[]') as Reservation[]).map(norm)
+      rs = (JSON.parse(localStorage.getItem(KEY) ?? '[]') as Reservation[]).map(norm)
     } catch {
       return []
     }
+    if (!rs.some((r) => expired(r))) return rs
+    rs = rs.map((r) => (expired(r) ? { ...r, status: 'no_show' as const } : r))
+    try {
+      localStorage.setItem(KEY, JSON.stringify(rs))
+    } catch {
+      // Storage blocked: shown as No-show anyway.
+    }
+    return rs
   }
   const write = (rs: Reservation[]) => {
     localStorage.setItem(KEY, JSON.stringify(rs))
