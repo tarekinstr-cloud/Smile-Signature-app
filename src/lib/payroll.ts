@@ -3,6 +3,7 @@ import { sharedChannel, supabase } from './repo'
 import { tr } from './i18n'
 import { loadLocalUsers } from './admin'
 import type { NewSalaryAdvance, PayrollRow, SalaryAdvance } from './types'
+import { newId } from './id'
 
 /**
  * Salaires et acomptes (menu Gestion des employés): each account's fixed monthly salary and the advances paid on it.
@@ -157,7 +158,7 @@ function localPayroll(): PayrollService {
     },
     async addAdvance(advance) {
       const db = read()
-      const row: SalaryAdvance = { id: crypto.randomUUID(), ...clean(advance), created_at: new Date().toISOString() }
+      const row: SalaryAdvance = { id: newId(), ...clean(advance), created_at: new Date().toISOString() }
       db.advances.push(row)
       write(db)
       return row

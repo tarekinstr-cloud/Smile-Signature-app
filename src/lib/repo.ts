@@ -9,6 +9,7 @@ import { demoMenu } from './demoMenu'
 import { buildKitchenTickets, type SendResult } from './kitchen'
 import { tr } from './i18n'
 import { computeBill, normalizeAdjustments } from './billing'
+import { newId } from './id'
 
 /** Data access for halls, tables, menu and orders. Backed by Supabase when configured, localStorage otherwise. */
 export interface Repo {
@@ -607,7 +608,7 @@ function buildMenu(categories: Category[], items: MenuItem[], groups: Omit<Optio
 }
 
 const newOrder = (tableId: string | null): Order => ({
-  id: crypto.randomUUID(), table_id: tableId, status: 'open', note: null, created_at: new Date().toISOString(),
+  id: newId(), table_id: tableId, status: 'open', note: null, created_at: new Date().toISOString(),
   discount_type: null, discount_value: 0, offered: false,
   order_type: 'dine_in', takeaway_no: null, customer_name: null, customer_address: null, invoice_no: null,
   delivery_no: null, customer_phone: null, delivery_status: null,
@@ -622,10 +623,10 @@ interface LocalDb {
 }
 
 function seed(): LocalDb {
-  const h1 = crypto.randomUUID()
-  const h2 = crypto.randomUUID()
+  const h1 = newId()
+  const h2 = newId()
   const t = (hall_id: string, label: string, seats: number, shape: DiningTable['shape'], x: number, y: number, width: number, height: number): DiningTable => ({
-    id: crypto.randomUUID(), hall_id, label, seats, shape, x, y, width, height, status: 'free',
+    id: newId(), hall_id, label, seats, shape, x, y, width, height, status: 'free',
   })
   return {
     halls: [
@@ -729,7 +730,7 @@ function localRepo(): Repo {
   const loadKitchen = () => {
     const db = loadOrders()
     if (!db.printers) {
-      db.printers = demoPrinters.map((name, sort_order) => ({ id: crypto.randomUUID(), name, ip: null, port: 9100, sort_order }))
+      db.printers = demoPrinters.map((name, sort_order) => ({ id: newId(), name, ip: null, port: 9100, sort_order }))
       const byName = Object.fromEntries(db.printers.map((p) => [p.name, p.id]))
       const cats = [...db.categories].sort((a, b) => a.sort_order - b.sort_order)
       db.categoryPrinters = Object.fromEntries(cats.slice(0, demoCategoryPrinter.length).map((c, i) => [c.id, [byName[demoCategoryPrinter[i]]]]))
@@ -781,7 +782,7 @@ function localRepo(): Repo {
     async createHall(name) {
       const db = load()
       const sort_order = db.halls.length ? Math.max(...db.halls.map((h) => h.sort_order)) + 1 : 0
-      const hall: Hall = { id: crypto.randomUUID(), name, width: 1000, height: 640, sort_order }
+      const hall: Hall = { id: newId(), name, width: 1000, height: 640, sort_order }
       db.halls.push(hall)
       commit(db)
       return hall
@@ -806,7 +807,7 @@ function localRepo(): Repo {
       if (db.tables.some((x) => x.hall_id === t.hall_id && x.label === t.label)) {
         throw new Error(tr().duplicateTable(t.label))
       }
-      const table: DiningTable = { ...t, id: crypto.randomUUID() }
+      const table: DiningTable = { ...t, id: newId() }
       db.tables.push(table)
       commit(db)
       return table
@@ -844,7 +845,7 @@ function localRepo(): Repo {
         : buildMenu(cats.filter((c) => c.active), items.filter((i) => i.active && shown.has(i.category_id)), db.groups, db.options)
     },
     async createCategory(c) {
-      const row: Category = { ...c, id: crypto.randomUUID() }
+      const row: Category = { ...c, id: newId() }
       editMenu((db) => db.categories.push(row))
       return row
     },
@@ -859,7 +860,7 @@ function localRepo(): Repo {
       })
     },
     async createItem(i) {
-      const row: MenuItem = { ...i, id: crypto.randomUUID() }
+      const row: MenuItem = { ...i, id: newId() }
       editMenu((db) => db.items.push(row))
       return row
     },
@@ -870,7 +871,7 @@ function localRepo(): Repo {
       editMenu((db) => removeItem(db, id))
     },
     async createOptionGroup(g) {
-      const row = { ...g, id: crypto.randomUUID() }
+      const row = { ...g, id: newId() }
       editMenu((db) => db.groups.push(row))
       return { ...row, options: [] }
     },
@@ -881,7 +882,7 @@ function localRepo(): Repo {
       editMenu((db) => removeGroup(db, id))
     },
     async createOption(o) {
-      const row: ItemOption = { ...o, id: crypto.randomUUID() }
+      const row: ItemOption = { ...o, id: newId() }
       editMenu((db) => db.options.push(row))
       return row
     },
@@ -953,7 +954,7 @@ function localRepo(): Repo {
       order.table_id = tableId
       order.order_type = 'dine_in'
       ;(db.tableMoves ??= []).push({
-        id: crypto.randomUUID(), order_id: orderId, from_table_id: fromId, to_table_id: tableId,
+        id: newId(), order_id: orderId, from_table_id: fromId, to_table_id: tableId,
         from_label: from?.label ?? null, to_label: to.label, moved_by_name: await this.waiterName(), moved_at: new Date().toISOString(),
       })
       commitOrders(db)
@@ -1005,7 +1006,7 @@ function localRepo(): Repo {
       const db = loadOrders()
       const row: OrderLine = {
         is_takeaway: false,
-        ...line, id: crypto.randomUUID(), order_id: orderId, created_at: new Date().toISOString(), sent_at: null,
+        ...line, id: newId(), order_id: orderId, created_at: new Date().toISOString(), sent_at: null,
         discount_type: null, discount_value: 0, offered: false,
       }
       db.lines.push(row)
@@ -1054,7 +1055,7 @@ function localRepo(): Repo {
         const got = method === 'cash' ? received ?? pay : pay
         if (got < pay) throw checkoutError('amount_too_low')
         payments.push({
-          id: crypto.randomUUID(), order_id: orderId, method, amount: pay, received: got, change_amount: Math.round((got - pay) * 100) / 100,
+          id: newId(), order_id: orderId, method, amount: pay, received: got, change_amount: Math.round((got - pay) * 100) / 100,
           created_at: new Date().toISOString(),
         })
         remaining = Math.round((remaining - pay) * 100) / 100
@@ -1106,7 +1107,7 @@ function localRepo(): Repo {
     },
     async createPrinter(p) {
       const db = loadKitchen()
-      const row: Printer = { ...cleanPrinter(p), id: crypto.randomUUID() }
+      const row: Printer = { ...cleanPrinter(p), id: newId() }
       if (printerNameTaken(db, row.name)) throw new Error(tr().errPrinterName)
       db.printers.push(row)
       commitOrders(db)
@@ -1153,7 +1154,7 @@ function localRepo(): Repo {
       if (!sent.length) return { tickets: [], unrouted: [] }
       const itemCategory = Object.fromEntries(db.items.map((i) => [i.id, i.category_id]))
       const built = buildKitchenTickets(sent, itemCategory, db.categoryPrinters, db.printers, { orderId, tableLabel, waiter, at })
-      const tickets = built.tickets.map((t) => ({ ...t, id: crypto.randomUUID() }))
+      const tickets = built.tickets.map((t) => ({ ...t, id: newId() }))
       // The demo keeps only the latest tickets, to stay within the browser's storage.
       db.kitchenTickets = [...(db.kitchenTickets ?? []), ...tickets].slice(-200)
       commitOrders(db)

@@ -3,6 +3,7 @@ import { sharedChannel, supabase } from './repo'
 import { tr } from './i18n'
 import { loadLocalUsers } from './admin'
 import type { DeviceSession } from './types'
+import { newId } from './id'
 
 /**
  * Appareils connectés (menu Gestion des employés): which tablet or PC is used by whom. Visibility only, no limit.
@@ -44,7 +45,7 @@ export function thisDevice(): ThisDevice {
   } catch {
     // Unreadable: a new id below.
   }
-  memory = { id: crypto.randomUUID(), name: '' }
+  memory = { id: newId(), name: '' }
   save(memory)
   return memory
 }

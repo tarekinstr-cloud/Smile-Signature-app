@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { sharedChannel, supabase } from './repo'
 import { tr } from './i18n'
 import type { DeliveryZone, NewDeliveryZone } from './types'
+import { newId } from './id'
 
 /**
  * Delivery zones (menu Édition > Zones de livraison, and the zone picker of a delivery order). Supabase table
@@ -91,7 +92,7 @@ function localZones(): DeliveryZonesService {
       return read().sort(byName)
     },
     async create(zone) {
-      const row = { id: crypto.randomUUID(), ...clean(zone) }
+      const row = { id: newId(), ...clean(zone) }
       refuseDuplicate(row.name)
       write([...read(), row])
       return row
