@@ -272,6 +272,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       : page === 'cashFloat' ? can('cash_open')
       : page === 'cashIn' ? can('cash_in')
       : page === 'cashOut' ? can('cash_out')
+      : page === 'weekly' ? can('weekly_stats')
       : can(page as Permission)
   const shown = (items: (AdminMenuItem | false)[]) => items.filter((i): i is AdminMenuItem => !!i)
   // Menus and entries the account has no permission for are left out, not just greyed.
@@ -313,7 +314,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     can('devices') && { id: 'devices', label: t.devicesTitle, checked: onBo('devices'), onSelect: () => openBo('devices') },
   ])
   // Statistiques / bénéfice, in four groups with a line between them: numbering, caisse, rapports, contrôle.
-  const statsPages: BackOfficePage[] = ['resetNumbers', 'cashFloat', 'cashIn', 'cashOut', 'stats']
+  const statsPages: BackOfficePage[] = ['resetNumbers', 'cashFloat', 'cashIn', 'cashOut', 'stats', 'weekly', 'expenses', 'profit']
   const statsGroups: AdminMenuItem[][] = [
     shown([can('reset_numbers') && { id: 'reset-numbers', label: t.resetTitle, checked: onBo('resetNumbers'), onSelect: () => openBo('resetNumbers') }]),
     shown([
@@ -323,9 +324,9 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     ]),
     shown([
       can('stats') && { id: 'daily', label: t.dailyStatsTitle, checked: onBo('stats'), onSelect: () => openBo('stats') },
-      can('stats') && { id: 'weekly', label: t.weeklyTitle, disabled: true },
-      can('stats') && { id: 'expenses', label: t.expensesTitle, disabled: true },
-      can('stats') && { id: 'profit', label: t.profitTitle, disabled: true },
+      can('weekly_stats') && { id: 'weekly', label: t.weeklyTitle, checked: onBo('weekly'), onSelect: () => openBo('weekly') },
+      can('expenses') && { id: 'expenses', label: t.expensesTitle, checked: onBo('expenses'), onSelect: () => openBo('expenses') },
+      can('profit') && { id: 'profit', label: t.profitTitle, checked: onBo('profit'), onSelect: () => openBo('profit') },
     ]),
     shown([
       can('stats') && { id: 'cancelled-orders', label: t.cancelledOrdersTitle, disabled: true },

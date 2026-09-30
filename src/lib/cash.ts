@@ -4,6 +4,7 @@ import { tr } from './i18n'
 import { newId } from './id'
 import { localUserName } from './backoffice'
 import { purchases } from './purchases'
+import { localIsoDay, readLocalExpenses, writeLocalExpenses } from './expenses'
 import { normalizeAdjustments } from './billing'
 import type { CashDay, CashMovement, DayReport, NewCashMovement, NumberReset, Order, OrderLine, Payment, SalesData } from './types'
 
@@ -47,6 +48,7 @@ function cashError(message: string): Error {
   if (/cash_days|cash_movements|order_number_resets|open_cash_day|close_cash_day|add_cash_movement|reset_order_numbers/.test(message)
     && /does not exist|schema cache|Could not find/i.test(message)) return new Error(t.errMigrationCash)
   if (/no_permission|row-level security|permission denied/i.test(message)) return new Error(t.errNoPermission)
+  if (message.includes('category_not_found')) return new Error(t.errExpenseCategory)
   if (message.includes('day_already_open')) return new Error(t.errDayAlreadyOpen)
   if (message.includes('day_already_closed')) return new Error(t.errDayAlreadyClosed)
   if (message.includes('no_open_day')) return new Error(t.errNoOpenDay)
@@ -63,8 +65,11 @@ function checkMovement(m: NewCashMovement): NewCashMovement {
   if (!(validAmount(m.amount) && m.amount > 0)) throw new Error(t.errCashAmount)
   const reason = m.reason.trim().slice(0, 300)
   if (!reason && !m.supplier_invoice_id) throw new Error(t.errCashReason)
-  if (m.supplier_invoice_id && m.kind !== 'out') throw new Error(t.errCashAmount)
-  return { kind: m.kind, amount: round2(m.amount), reason, supplier_invoice_id: m.supplier_invoice_id ?? null }
+  if ((m.supplier_invoice_id || m.expense_category_id) && m.kind !== 'out') throw new Error(t.errCashAmount)
+  if (m.supplier_invoice_id && m.expense_category_id) throw new Error(t.errCashAmount)
+  return {
+    kind: m.kind, amount: round2(m.amount), reason, supplier_invoice_id: m.supplier_invoice_id ?? null, expense_category_id: m.expense_category_id ?? null,
+  }
 }
 
 const num = (v: unknown) => (v == null ? null : Number(v))
@@ -81,7 +86,12 @@ const normReset = (r: NumberReset): NumberReset => ({
 const normOrder = (o: SalesData['orders'][number]): SalesData['orders'][number] => ({
   ...normalizeAdjustments(o), order_type: o.order_type ?? 'dine_in', total: num(o.total), delivery_fee: Number(o.delivery_fee ?? 0),
 })
-const normLine = (l: OrderLine): OrderLine => ({ ...normalizeAdjustments(l), unit_price: Number(l.unit_price), quantity: Number(l.quantity) })
+const normLine = (l: OrderLine): OrderLine => ({
+  ...normalizeAdjustments(l),
+  unit_price: Number(l.unit_price),
+  quantity: Number(l.quantity),
+  unit_cost: l.unit_cost == null ? null : Number(l.unit_cost),
+})
 const normPayment = (p: Payment): Payment => ({ ...p, amount: Number(p.amount), received: Number(p.received), change_amount: Number(p.change_amount) })
 
 function supabaseCash(sb: SupabaseClient): CashService {
@@ -117,6 +127,7 @@ function supabaseCash(sb: SupabaseClient): CashService {
       const c = checkMovement(m)
       return normMove(check(await sb.rpc('add_cash_movement', {
         p_kind: c.kind, p_amount: c.amount, p_reason: c.reason, p_supplier_invoice_id: c.supplier_invoice_id,
+        p_expense_category_id: c.expense_category_id,
       })) as CashMovement)
     },
     async deleteMovement(id) {
@@ -278,6 +289,17 @@ function localCash(): CashService {
       const fresh = read()
       fresh.movements.push(row)
       write(fresh)
+      if (c.expense_category_id) {
+        const ex = readLocalExpenses()
+        const category = ex.categories.find((x) => x.id === c.expense_category_id)
+        if (category) {
+          ex.expenses.push({
+            id: newId(), category_id: category.id, category_name: category.name, amount: row.amount, date: localIsoDay(), mode: 'cash',
+            note: row.reason, cash_movement_id: row.id, user_name: user, created_at: row.created_at,
+          })
+          writeLocalExpenses(ex)
+        }
+      }
       return row
     },
     async deleteMovement(id) {
@@ -288,6 +310,12 @@ function localCash(): CashService {
       if (row.supplier_invoice_id) throw new Error(tr().errMovementInvoice)
       db.movements = db.movements.filter((m) => m.id !== id)
       write(db)
+      // Like the database: the expense paid by this movement goes with it.
+      const ex = readLocalExpenses()
+      if (ex.expenses.some((e) => e.cash_movement_id === id)) {
+        ex.expenses = ex.expenses.filter((e) => e.cash_movement_id !== id)
+        writeLocalExpenses(ex)
+      }
     },
     async movements(q) {
       return read().movements
@@ -347,6 +375,18 @@ function localCash(): CashService {
       }
     },
   }
+}
+
+/** Demo mode: an expense paid from the drawer changed its amount while its day is open (the database does it in save_expense). */
+export function setLocalMovementAmount(id: string, amount: number) {
+  const raw = localStorage.getItem(KEY)
+  const db = raw ? (JSON.parse(raw) as LocalCash) : null
+  const m = db?.movements.find((x) => x.id === id)
+  if (!db || !m) return
+  if (db.days.find((d) => d.id === m.day_id)?.closed_at) throw new Error(tr().errExpenseDayClosed)
+  m.amount = round2(amount)
+  localStorage.setItem(KEY, JSON.stringify(db))
+  window.dispatchEvent(new StorageEvent('storage', { key: KEY }))
 }
 
 export const cash: CashService = supabase ? supabaseCash(supabase) : localCash()
