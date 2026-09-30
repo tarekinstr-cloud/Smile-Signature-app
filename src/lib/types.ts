@@ -169,6 +169,8 @@ export interface ChosenOption {
   group: string
   name: string
   price_delta: number
+  /** The menu option picked: fiches techniques find it by id (older lines only have group and name). */
+  option_id?: string
 }
 
 export interface OrderLine extends Adjustments {
@@ -292,7 +294,7 @@ export interface KitchenTicket {
 
 // ───────────── Back-office (Statistiques, Stock, Fournisseurs, Employés) ─────────────
 
-/** An ingredient or product counted in stock, in two places: the Dépôt and the Cuisine. Not linked to sales yet. */
+/** An ingredient or product counted in stock, in two places: the Dépôt and the Cuisine. Sales consume the Cuisine through the fiches techniques. */
 export interface StockItem {
   id: string
   name: string
@@ -304,16 +306,21 @@ export interface StockItem {
   unit: string
   /** Stock minimum (Dépôt + Cuisine): at or below it, « Stock bas ». null: no alert. */
   min_quantity: number | null
+  /** Unité d'achat (fardeau…), '' when bought in the stock unit. */
+  purchase_unit: string
+  /** 1 purchase unit = purchase_factor stock units (1 fardeau = 6 bouteilles); null without a purchase unit. */
+  purchase_factor: number | null
   updated_at: string
 }
 
-export type NewStockItem = Pick<StockItem, 'name' | 'quantity' | 'unit'> & Partial<Pick<StockItem, 'min_quantity'>>
+export type NewStockItem = Pick<StockItem, 'name' | 'quantity' | 'unit'> & Partial<Pick<StockItem, 'min_quantity' | 'purchase_unit' | 'purchase_factor'>>
 
 /** Where stock is kept. */
 export type StockLocation = 'depot' | 'kitchen'
 /** Transfer (Dépôt → Cuisine) or return (Cuisine → Dépôt). */
 export type TransferDirection = 'to_kitchen' | 'to_depot'
-export type StockMovementType = 'purchase' | 'transfer' | 'return' | 'charge' | 'adjustment'
+/** consumption: taken from the Cuisine by a paid order, through the fiches techniques. */
+export type StockMovementType = 'purchase' | 'transfer' | 'return' | 'charge' | 'adjustment' | 'consumption'
 /** Motif of a kitchen charge: Consommation, Perte / Périmé, Casse, Repas personnel, Autre. */
 export type ChargeReason = 'consumption' | 'loss' | 'breakage' | 'staff_meal' | 'other'
 export const CHARGE_REASONS: ChargeReason[] = ['consumption', 'loss', 'breakage', 'staff_meal', 'other']
@@ -341,6 +348,8 @@ export interface StockMovement {
   invoice_id?: string | null
   /** Adjustment: the inventaire physique it came from. */
   inventory_id?: string | null
+  /** Consumption: the paid order it came from. */
+  order_id?: string | null
   /** Signed-in employee. */
   user_name: string
   created_at: string
@@ -359,7 +368,7 @@ export interface MovementFilter {
   stock_item_id?: string
   reason?: ChargeReason
 }
-export type StockItemPatch = Partial<Pick<StockItem, 'name' | 'unit' | 'min_quantity'>>
+export type StockItemPatch = Partial<Pick<StockItem, 'name' | 'unit' | 'min_quantity' | 'purchase_unit' | 'purchase_factor'>>
 
 /** État du stock: an item with its last purchase (price and supplier) and every supplier it was bought from. */
 export interface StockStateRow extends StockItem {
@@ -371,7 +380,7 @@ export interface StockStateRow extends StockItem {
 
 /**
  * Mouvements par période, for one item over [from, to[: quantities at the start and at the end of the period (Dépôt and
- * Cuisine), and what moved in between. initial + purchases − charges + adjustments = final (Dépôt + Cuisine).
+ * Cuisine), and what moved in between. initial + purchases − charges − consumption + adjustments = final (Dépôt + Cuisine).
  */
 export interface StockReportRow {
   id: string
@@ -387,6 +396,8 @@ export interface StockReportRow {
   returns: number
   /** Sorties (charges cuisine). */
   charges: number
+  /** Consommation (ventes): what the paid orders took from the Cuisine through the fiches techniques. */
+  consumption: number
   /** Ajustements ± and inventory gaps, signed. */
   adjustments: number
   final_depot: number
@@ -464,6 +475,8 @@ export interface SupplierInvoiceItem {
   quantity: number
   unit: string
   unit_price: number
+  /** Stock units per invoice unit: 6 when bought by the fardeau of 6 bouteilles, 1 otherwise. */
+  factor: number
 }
 
 /** A payment (full or partial) of a supplier invoice. */
@@ -474,6 +487,52 @@ export interface SupplierPayment {
   /** YYYY-MM-DD */
   date: string
   created_at: string
+}
+
+// ───────────── Fiches techniques ─────────────
+
+/**
+ * One ingredient of a fiche technique: quantity per portion, in the stock item's unit. option_id null: the item's own
+ * fiche (every size); otherwise the fiche of one size or supplement, added to it. input_unit / input_quantity keep what
+ * was typed (50 g for a stock in kg).
+ */
+export interface RecipeLine {
+  id: string
+  item_id: string
+  option_id: string | null
+  stock_item_id: string
+  quantity: number
+  input_unit: string
+  input_quantity: number | null
+  position: number
+}
+
+/** What the fiche technique screen sends for one item: every line of its base, sizes and supplements. */
+export type RecipeLineInput = Pick<RecipeLine, 'option_id' | 'stock_item_id' | 'quantity' | 'input_unit' | 'input_quantity'>
+
+/** An ingredient offered in the fiches techniques, with its last purchase price per stock unit (null: never bought). */
+export interface RecipeStockItem {
+  id: string
+  name: string
+  unit: string
+  purchase_unit: string
+  purchase_factor: number | null
+  last_price: number | null
+}
+
+/**
+ * Consommation théorique vs réelle, for one item over a period: what the sales took (theoretical), the declared charges,
+ * the inventory gaps (counted − theoretical, signed) and the real consumption = theoretical + charges − inventory_gap.
+ */
+export interface ConsumptionRow {
+  id: string
+  name: string
+  unit: string
+  theoretical: number
+  charges: number
+  inventory_gap: number
+  actual: number
+  last_price: number | null
 }
 
 /** Effectuer un achat: what the form sends. */

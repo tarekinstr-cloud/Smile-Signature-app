@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { repo } from '../lib/repo'
-import type { Category, CategoryPrinters, Menu, MenuItem, Printer } from '../lib/types'
+import type { Category, CategoryPrinters, Menu, MenuItem, Printer, RecipeLine } from '../lib/types'
+import { missingRecipe, recipes } from '../lib/recipes'
+import { usePermissions } from '../lib/permissions'
+import RecipeEditor from './RecipeEditor'
 import { money } from '../lib/format'
 import { useDialog } from './Dialog'
 import ItemEditor, { type ItemDraft } from './ItemEditor'
@@ -25,6 +28,11 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
   const [links, setLinks] = useState<CategoryPrinters>({})
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const [editing, setEditing] = useState<MenuItem | 'new' | null>(null)
+  /** Item whose fiche technique is open. */
+  const [recipeFor, setRecipeFor] = useState<MenuItem | null>(null)
+  const [recipeLines, setRecipeLines] = useState<RecipeLine[] | null>(null)
+  const { can } = usePermissions()
+  const canRecipes = can('recipes')
   const [catName, setCatName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -48,7 +56,9 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
     setPrinters(p)
     setLinks(l)
     setCategoryId((id) => (id && m.categories.some((c) => c.id === id) ? id : m.categories[0]?.id ?? null))
-  }, [])
+    // The « Sans fiche » tags; the menu stays usable before the fiches techniques migration.
+    if (canRecipes) setRecipeLines(await recipes.list().catch(() => null))
+  }, [canRecipes])
 
   useEffect(() => {
     run(reload)
@@ -305,8 +315,16 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
                               {groups.length > 0 && <span className="muted small"> · {groups.map((g) => g.name).join(t.listSep)}</span>}
                             </span>
                             {!item.active && <span className="tag">{t.hiddenM}</span>}
+                            {recipeLines && (() => {
+                              const missing = missingRecipe(item, groups, recipeLines)
+                              return missing === 'none' ? <span className="tag warn">{t.recipeNone}</span>
+                                : missing ? <span className="tag warn">{t.recipeSizesMissing(missing.join(t.listSep))}</span> : null
+                            })()}
                             <span className="price">{money(item.price)}</span>
                           </button>
+                          {canRecipes && (
+                            <button className="recipe-btn" onClick={() => setRecipeFor(item)} title={t.recipeOpen}>{t.recipeOpen}</button>
+                          )}
                           <span className="order-btns">
                             <button className="ghost" disabled={i === 0 || busy} onClick={() => moveItem(i, -1)} aria-label={t.moveUp}>▲</button>
                             <button className="ghost" disabled={i === items.length - 1 || busy} onClick={() => moveItem(i, 1)} aria-label={t.moveDown}>▼</button>
@@ -338,6 +356,10 @@ export default function MenuAdmin({ onBack }: { onBack(): void }) {
           onSave={saveItem}
           onDelete={editing === 'new' ? undefined : () => deleteItem(editing)}
         />
+      )}
+      {recipeFor && menu && (
+        <RecipeEditor item={recipeFor} menu={menu} onClose={() => setRecipeFor(null)}
+          onSaved={() => { if (canRecipes) recipes.list().then(setRecipeLines, () => {}) }} />
       )}
       {dialog.element}
     </div>

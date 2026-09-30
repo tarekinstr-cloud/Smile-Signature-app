@@ -1,4 +1,4 @@
 /** Back-office pages, opened from the administration menus. */
 export type BackOfficePage = 'stats' | 'stock' | 'suppliers' | 'staff' | 'settings' | 'users' | 'permissions' | 'backup' | 'ticket'
   | 'reservations' | 'reservationNew' | 'zones' | 'zoneNew' | 'menuCsv' | 'payroll' | 'devices'
-  | 'purchaseNew' | 'purchases' | 'stockTransfer' | 'kitchenCharges' | 'stockState'
+  | 'purchaseNew' | 'purchases' | 'stockTransfer' | 'kitchenCharges' | 'stockState' | 'recipes'

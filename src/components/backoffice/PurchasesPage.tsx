@@ -35,7 +35,7 @@ interface Line {
   key: string
   stockId: string
   qty: string
-  /** Typed only for an item without a unit; otherwise the item's unit. */
+  /** Typed only for an item without a unit; otherwise the item's unit or its unité d'achat (fardeau…). */
   unit: string
   price: string
 }
@@ -93,7 +93,7 @@ export function NewPurchasePage({ onSaved }: { onSaved(invoice: SupplierInvoice)
       if (q === null || q <= 0) return setError(t.errQuantity)
       if (p === null || p < 0) return setError(t.errPurchasePrice)
       const item = byId.get(l.stockId)
-      out.push({ stock_item_id: l.stockId, quantity: q, unit: item?.unit || l.unit, unit_price: p })
+      out.push({ stock_item_id: l.stockId, quantity: q, unit: item?.unit ? (l.unit === item.purchase_unit && item.purchase_unit ? l.unit : item.unit) : l.unit, unit_price: p })
     }
     if (paid === null || paid < 0 || paid > total || (status === 'partial' && (paid <= 0 || paid >= total))) return setError(t.errPurchasePaid)
     setBusy(true)
@@ -152,7 +152,7 @@ export function NewPurchasePage({ onSaved }: { onSaved(invoice: SupplierInvoice)
                   <div className="pur-line" role="row" key={l.key}>
                     <label className="pur-item">
                       <span className="pur-label">{t.purColItem}</span>
-                      <select value={l.stockId} onChange={(e) => setLine(l.key, { stockId: e.target.value })}>
+                      <select value={l.stockId} onChange={(e) => setLine(l.key, { stockId: e.target.value, unit: byId.get(e.target.value)?.purchase_unit ?? '' })}>
                         <option value="">{t.purChooseItem}</option>
                         {stock.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
@@ -164,7 +164,17 @@ export function NewPurchasePage({ onSaved }: { onSaved(invoice: SupplierInvoice)
                     </label>
                     <label>
                       <span className="pur-label">{t.colUnit}</span>
-                      {item?.unit ? (
+                      {item?.unit && item.purchase_unit && item.purchase_factor ? (
+                        <>
+                          <select value={l.unit === item.purchase_unit ? l.unit : item.unit} onChange={(e) => setLine(l.key, { unit: e.target.value })}>
+                            <option value={item.purchase_unit}>{item.purchase_unit}</option>
+                            <option value={item.unit}>{item.unit}</option>
+                          </select>
+                          {l.unit === item.purchase_unit && parseNum(l.qty) != null && (
+                            <span className="muted small" dir="ltr">= {qtyText(item, Math.round(parseNum(l.qty)! * item.purchase_factor * 1000) / 1000)}</span>
+                          )}
+                        </>
+                      ) : item?.unit ? (
                         <input value={item.unit} readOnly tabIndex={-1} className="readonly" />
                       ) : (
                         <input value={l.unit} placeholder={t.stockUnitPh} onChange={(e) => setLine(l.key, { unit: e.target.value })} />

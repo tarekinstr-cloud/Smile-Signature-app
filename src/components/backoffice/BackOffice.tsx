@@ -18,6 +18,7 @@ import DevicesPage from './DevicesPage'
 import { InvoicesList, NewPurchasePage } from './PurchasesPage'
 import { KitchenChargesPage, StockTransferPage } from './StockMovesPage'
 import StockStatePage from './StockStatePage'
+import RecipesPage from './RecipesPage'
 import type { SupplierInvoice } from '../../lib/types'
 
 interface Props {
@@ -38,7 +39,7 @@ interface Props {
 
 /**
  * Back-office screen under the administration menus: Statistiques, Stock, Fournisseurs, Employés, Paramètres, and the
- * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket), Clients (réservations), Édition > Zones de livraison and Gestion des employés (Salaires et acomptes, Appareils connectés), Gestion du Stock (Effectuer un achat, Factures fournisseurs, Transfert dépôt / cuisine, Charges cuisine, État du stock).
+ * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket), Clients (réservations), Édition > Zones de livraison and Gestion des employés (Salaires et acomptes, Appareils connectés), Gestion du Stock (Effectuer un achat, Factures fournisseurs, Transfert dépôt / cuisine, Charges cuisine, État du stock), Édition > Fiches techniques.
  */
 export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrinters, onOpenTicket, onPage, onOpenOrder }: Props) {
   const { t } = useI18n()
@@ -73,6 +74,7 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     stockTransfer: [t.transferItem, t.transferSub],
     kitchenCharges: [t.chargesItem, t.chargesSub],
     stockState: [t.stateItem, t.stateSub],
+    recipes: [t.recipesTitle, t.recipesSub],
   }
   return (
     <div className="app back-office">
@@ -141,6 +143,7 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'stockTransfer' && <StockTransferPage />}
       {page === 'kitchenCharges' && <KitchenChargesPage />}
       {page === 'stockState' && <StockStatePage />}
+      {page === 'recipes' && <RecipesPage />}
     </div>
   )
 }

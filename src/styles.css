@@ -778,3 +778,38 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .inventory-table tr.inv-counted td { background: #fffbeb; }
 .inv-lines { font-size: 14px; }
 .inv-lines td, .inv-lines th { padding: 4px 6px; }
+
+/* ───────────── Fiches techniques et consommation ───────────── */
+.recipe-editor { width: min(820px, 100%); }
+.recipe-tabs { flex-wrap: wrap; align-self: flex-start; max-width: 100%; }
+.recipe-tabs button { min-height: 44px; }
+.recipe-dot { color: var(--free); font-size: 10px; margin-inline-start: 6px; vertical-align: middle; }
+.segmented button.on .recipe-dot { color: #bbf7d0; }
+.recipe-lines .pur-line { grid-template-columns: minmax(180px, 2fr) minmax(90px, 1fr) minmax(90px, 1fr) minmax(100px, 1fr) 44px; }
+.recipe-lines .pur-amount { padding-top: 10px; align-self: start; text-align: end; }
+.recipe-lines input[aria-invalid] { border-color: var(--occ); }
+.recipe-tiles { margin: 4px 0; }
+.recipe-tiles .stat-tile .neg { color: var(--occ); }
+.recipe-summary { font-size: 14px; }
+.recipe-summary td, .recipe-summary th { padding: 4px 8px; }
+.recipe-summary tr.on td { background: #fffbeb; }
+.recipe-summary .neg { color: var(--occ); }
+.recipe-copy { align-items: flex-end; flex-wrap: wrap; }
+.recipe-copy label { flex: 1; min-width: 200px; }
+.recipe-btn { flex-shrink: 0; min-height: 44px; }
+.recipes-table tr.recipe-size-row td { border-top-style: dashed; }
+.recipes-table .recipe-size { font-size: 13px; color: var(--muted); }
+.recipes-table .tag { margin-inline-start: 6px; }
+.ok-text { color: #15803d; }
+.banner.warn-banner, .bo-content > .banner.error[role='alert'] { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; cursor: default; }
+.banner.warn-banner span, .bo-content > .banner.error[role='alert'] span { flex: 1; }
+.tag.state-level.negative { background: #7f1d1d; color: #fff; }
+.state-count.negative { background: var(--occ-bg); color: var(--occ); }
+@media (max-width: 760px) {
+  .recipe-lines .pur-line { grid-template-columns: 1fr 1fr; }
+  .recipe-lines .pur-amount { text-align: start; font-size: 15px; }
+  .recipe-lines .pur-amount .pur-label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); }
+}
+.recipe-editor > * { flex-shrink: 0; }
+.report-table td.payroll-name { min-width: 150px; }
+.recipe-copy button { flex: 0 0 auto; }
