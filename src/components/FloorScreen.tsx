@@ -261,6 +261,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   const pageAllowed = (page: BackOfficePage) =>
     page === 'users' || page === 'permissions' ? isAdmin
       : page === 'reservations' || page === 'reservationNew' ? can('reservations')
+      : page === 'menuCsv' ? can('edit')
       : can(page as Permission)
   const shown = (items: (AdminMenuItem | false)[]) => items.filter((i): i is AdminMenuItem => !!i)
   // Menus and entries the account has no permission for are left out, not just greyed.
@@ -290,10 +291,11 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       ],
     }] : []),
     ...(can('edit') ? [{
-      id: 'edit', label: t.navEdit, items: [
+      id: 'edit', label: t.navEdit, current: onBo('menuCsv'), items: [
         { id: 'plan', label: t.editPlanItem, checked: !backOffice && mode === 'edit', onSelect: () => { toFloor(); setMode('edit') } },
         { id: 'hall', label: t.addHall, onSelect: () => { toFloor(); addHall() } },
         { id: 'menu', label: t.menuTitle, onSelect: () => { toFloor(); setMenuAdmin(true) } },
+        { id: 'menu-csv', label: t.csvTitle, checked: onBo('menuCsv'), onSelect: () => openBo('menuCsv') },
       ],
     }] : []),
     ...(can('staff') ? [{ id: 'staff', label: t.staff, current: onBo('staff'), onSelect: () => setBackOffice('staff') }] : []),

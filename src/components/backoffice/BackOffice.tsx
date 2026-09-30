@@ -11,6 +11,7 @@ import BackupPage from './BackupPage'
 import TicketPage from './TicketPage'
 import PermissionsPage from './PermissionsPage'
 import { NewReservationPage, ReservationsList } from './ReservationsPage'
+import MenuCsvPage from './MenuCsvPage'
 
 interface Props {
   page: BackOfficePage
@@ -48,6 +49,7 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     ticket: [t.ticketTitle, t.ticketSub],
     reservations: [t.reservationsTitle, t.reservationsSub],
     reservationNew: [t.resNewItem, t.resNewSub],
+    menuCsv: [t.csvTitle, t.csvSub],
   }
   return (
     <div className="app back-office">
@@ -88,6 +90,7 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'ticket' && <TicketPage />}
       {page === 'reservationNew' && <NewReservationPage onSaved={(r) => { setCreated(r.id); onPage('reservations') }} />}
       {page === 'reservations' && <ReservationsList onOpenOrder={onOpenOrder} highlight={created} />}
+      {page === 'menuCsv' && <MenuCsvPage />}
     </div>
   )
 }
