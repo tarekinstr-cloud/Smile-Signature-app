@@ -44,14 +44,19 @@ export interface Bill {
   subtotal: number
   /** Discount on the whole order. */
   orderDiscount: number
+  /** Delivery fee of the order's zone (0 while the order is empty or entirely offered). */
+  delivery: number
   total: number
   paid: number
   /** Left to pay; 0 once the order is settled. */
   remaining: number
 }
 
-/** Totals of an order: lines, discounts, offers and payments. Must match public.order_total() in the checkout migration. */
-export function computeBill(order: Adjustments | null, lines: OrderLine[], payments: Pick<Payment, 'amount'>[] = []): Bill {
+/**
+ * Totals of an order: lines, discounts, offers, delivery fee and payments. Must match public.order_total() (latest
+ * version: migration 20260930030000_delivery_zones.sql).
+ */
+export function computeBill(order: (Adjustments & { delivery_fee?: number }) | null, lines: OrderLine[], payments: Pick<Payment, 'amount'>[] = []): Bill {
   const allOffered = !!order?.offered
   const billed = lines.map((line): BilledLine => {
     const gross = cents(line.unit_price * line.quantity)
@@ -62,7 +67,9 @@ export function computeBill(order: Adjustments | null, lines: OrderLine[], payme
   const sum = (f: (l: BilledLine) => number) => cents(billed.reduce((s, l) => s + f(l), 0))
   const subtotal = sum((l) => l.net)
   const orderDiscount = allOffered || !order ? 0 : discountAmount(subtotal, order)
-  const total = cents(subtotal - orderDiscount)
+  // Added after the order discount, which applies to the food only.
+  const delivery = allOffered || !lines.length ? 0 : cents(Number(order?.delivery_fee ?? 0))
+  const total = cents(subtotal - orderDiscount + delivery)
   const paid = cents(payments.reduce((s, p) => s + p.amount, 0))
   return {
     lines: billed,
@@ -71,6 +78,7 @@ export function computeBill(order: Adjustments | null, lines: OrderLine[], payme
     lineDiscounts: sum((l) => l.discount),
     subtotal,
     orderDiscount,
+    delivery,
     total,
     paid,
     remaining: Math.max(0, cents(total - paid)),

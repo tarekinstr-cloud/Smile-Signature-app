@@ -117,6 +117,12 @@ export interface Order extends Adjustments {
   delivery_status: DeliveryStatus | null
   /** Set the first time an invoice is made for the order. */
   invoice_no: number | null
+  /** Delivery zone chosen for a delivery (null: none, or the zone was deleted since). */
+  delivery_zone_id?: string | null
+  /** Name of that zone when it was chosen; stays after the zone is renamed or deleted. */
+  delivery_zone_name?: string | null
+  /** Delivery fee added to the total (0 without a zone), copied from the zone when it was chosen. */
+  delivery_fee?: number
 }
 
 /** Customer details typed for an invoice; both optional. */
@@ -125,12 +131,25 @@ export interface InvoiceCustomer {
   address: string
 }
 
-/** Customer of a delivery order. */
+/** Customer of a delivery order, and the delivery zone (optional) whose fee is added to the order. */
 export interface DeliveryCustomer {
   name: string
   phone: string
   address: string
+  /** Undefined keeps the current zone; null removes it. */
+  zone?: DeliveryZone | null
 }
+
+/** Area delivered to (quartier, ville), with its fee in DA and an estimated delivery time. Menu Édition. */
+export interface DeliveryZone {
+  id: string
+  name: string
+  fee: number
+  /** Minutes; null when not given. */
+  estimated_time: number | null
+}
+
+export type NewDeliveryZone = Omit<DeliveryZone, 'id'>
 
 /** One "Changement de Table" (or switch to takeaway), kept in the table_moves log. */
 export interface TableMove {

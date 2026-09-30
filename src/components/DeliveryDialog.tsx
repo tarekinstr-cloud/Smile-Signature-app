@@ -1,11 +1,25 @@
-import { useState, type FormEvent } from 'react'
-import type { DeliveryCustomer } from '../lib/types'
+import { useEffect, useState, type FormEvent } from 'react'
+import type { DeliveryCustomer, DeliveryZone } from '../lib/types'
 import { useI18n } from '../lib/i18n'
+import { money } from '../lib/format'
+import { deliveryZones, zoneLabel } from '../lib/deliveryZones'
+
+/** Zone already on the order: its id (null once the zone was deleted), the name and fee copied when it was chosen. */
+export interface CurrentZone {
+  id: string | null
+  name: string | null
+  fee: number
+}
+
+/** Value of the zone picker for a zone the order keeps although it was deleted from the list. */
+const KEPT = 'kept'
 
 interface Props {
   /** Shown in the title: "Livraison n° 3" when editing, nothing for a new delivery. */
   place?: string
   initial?: DeliveryCustomer
+  /** Zone of the order being edited, if it has one. */
+  zone?: CurrentZone | null
   /** Label of the save button. */
   submitLabel: string
   onCancel(): void
@@ -13,12 +27,28 @@ interface Props {
   onSubmit(customer: DeliveryCustomer): Promise<void>
 }
 
-/** Customer of a delivery: name (optional), phone and address (needed to deliver). */
-export default function DeliveryDialog({ place, initial, submitLabel, onCancel, onSubmit }: Props) {
+/**
+ * Customer of a delivery: name (optional), phone and address (needed to deliver), and the delivery zone (optional) whose
+ * fee is added to the order.
+ */
+export default function DeliveryDialog({ place, initial, zone, submitLabel, onCancel, onSubmit }: Props) {
   const { t } = useI18n()
   const [name, setName] = useState(initial?.name ?? '')
   const [phone, setPhone] = useState(initial?.phone ?? '')
   const [address, setAddress] = useState(initial?.address ?? '')
+  const initialZone = zone?.id ?? (zone && (zone.name || zone.fee > 0) ? KEPT : '')
+  const [zoneId, setZoneId] = useState(initialZone)
+  const [zones, setZones] = useState<DeliveryZone[]>([])
+  const [zonesError, setZonesError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const load = () => deliveryZones.list().then(setZones, (e) => setZonesError(e instanceof Error ? e.message : String(e)))
+    load()
+    return deliveryZones.subscribe(load)
+  }, [])
+
+  const minutes = (n: number) => t.zoneMinutes(n)
+  const picked = zones.find((z) => z.id === zoneId) ?? null
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -28,7 +58,10 @@ export default function DeliveryDialog({ place, initial, submitLabel, onCancel, 
     setBusy(true)
     setError(null)
     try {
-      await onSubmit({ name, phone, address })
+      // The zone is only written when it changed, so a database without the zones migration still takes deliveries.
+      const changed = zoneId !== initialZone
+      if (changed && zoneId && !picked) throw new Error(t.errZoneGone)
+      await onSubmit({ name, phone, address, ...(changed && { zone: picked }) })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setBusy(false)
@@ -52,6 +85,21 @@ export default function DeliveryDialog({ place, initial, submitLabel, onCancel, 
           {t.customerAddress}
           <textarea rows={2} value={address} onChange={(e) => setAddress(e.target.value)} required />
         </label>
+        <label>
+          {t.deliveryZone}
+          <select value={zoneId} onChange={(e) => setZoneId(e.target.value)}>
+            <option value="">{t.deliveryNoZone}</option>
+            {zoneId === KEPT && zone && (
+              <option value={KEPT}>{`${zone.name ?? '—'} · ${money(zone.fee)} (${t.zoneDeleted})`}</option>
+            )}
+            {zone?.id && !zones.some((z) => z.id === zone.id) && (
+              <option value={zone.id}>{`${zone.name ?? '—'} · ${money(zone.fee)}`}</option>
+            )}
+            {zones.map((z) => <option key={z.id} value={z.id}>{zoneLabel(z, money, minutes)}</option>)}
+          </select>
+        </label>
+        {picked && <p className="muted small">{t.deliveryFeeAdded(money(picked.fee))}</p>}
+        {zonesError && <p className="muted small">{zonesError}</p>}
         {error && <p className="error small">{error}</p>}
         <div className="dialog-actions">
           <button type="button" onClick={onCancel} disabled={busy}>{t.cancel}</button>
