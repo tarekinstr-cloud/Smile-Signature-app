@@ -586,7 +586,6 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
   font-size: 12px; font-weight: 700; line-height: 1.2; background: #fffbeb; color: #92400e;
   border: 1px solid #f59e0b; box-shadow: 0 1px 3px rgba(0,0,0,0.15); cursor: pointer;
 }
-.table .res-mark.late { background: #fee2e2; color: #991b1b; border-color: #f87171; }
 .res-form { display: flex; flex-direction: column; gap: 14px; }
 .res-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
 .res-plan { display: flex; flex-direction: column; gap: 6px; }
