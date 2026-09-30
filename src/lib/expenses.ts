@@ -4,6 +4,7 @@ import { editLocalStock, localUserName } from './backoffice'
 import { loadLocalUsers } from './admin'
 import { consumptionNeeds } from './recipes'
 import { tr } from './i18n'
+import { money } from './format'
 import { newId } from './id'
 import type { CostStatus, Expense, ExpenseCategory, NewExpense, OrderLine, ProfitCosts, RecipeLine, StockMovement } from './types'
 
@@ -30,6 +31,8 @@ const validAmount = (n: number) => Number.isFinite(n) && n > 0 && n <= 1e9
 
 function expensesError(message: string): Error {
   const t = tr()
+  const short = /insufficient_cash:(-?[\d.]+)/.exec(message)
+  if (short) return new Error(t.errCashShort(money(Number(short[1]))))
   if (/expense|profit_summary/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return new Error(t.errMigrationExpenses)
   if (/no_permission|row-level security|permission denied/i.test(message)) return new Error(t.errNoPermission)
   if (message.includes('no_open_day')) return new Error(t.errExpenseNoDay)
@@ -89,6 +92,7 @@ function supabaseExpenses(sb: SupabaseClient): ExpensesService {
       return {
         charges: Number(r.charges ?? 0), charges_by_reason: numbers(r.charges_by_reason as Record<string, unknown>),
         inventory_loss: Number(r.inventory_loss ?? 0), salaries: Number(r.salaries ?? 0),
+        ...(r.salary_days != null && { salary_days: Number(r.salary_days), period_days: Number(r.period_days) }),
         expenses: Number(r.expenses ?? 0), expenses_by_category: numbers(r.expenses_by_category as Record<string, unknown>),
       }
     },
@@ -203,12 +207,23 @@ function localExpenses(): ExpensesService {
       }
       const old = db.expenses.find((x) => x.id === id)
       if (!old) throw new Error(tr().errExpenseCategory)
-      if (old.mode !== c.mode) throw new Error(tr().errExpenseMode)
-      if (old.cash_movement_id && old.amount !== c.amount) {
+      // Like save_expense: the drawer movement follows the mode and the amount while its day is open.
+      let moveId = old.cash_movement_id
+      let date = old.cash_movement_id ? old.date : c.date
+      if (old.cash_movement_id && c.mode === 'other') {
+        const { removeLocalMovement } = await import('./cash')
+        removeLocalMovement(old.cash_movement_id)
+        moveId = null
+        date = c.date
+      } else if (old.cash_movement_id && old.amount !== c.amount) {
         const { setLocalMovementAmount } = await import('./cash')
         setLocalMovementAmount(old.cash_movement_id, c.amount)
+      } else if (!old.cash_movement_id && c.mode === 'cash') {
+        const { cash } = await import('./cash')
+        moveId = (await cash.addMovement({ kind: 'out', amount: c.amount, reason: c.note || category.name })).id
+        date = localIsoDay()
       }
-      const row = { ...old, category_id: category.id, category_name: category.name, amount: c.amount, note: c.note, date: old.cash_movement_id ? old.date : c.date }
+      const row = { ...readLocalExpenses().expenses.find((x) => x.id === id)!, category_id: category.id, category_name: category.name, amount: c.amount, note: c.note, mode: c.mode, cash_movement_id: moveId, date }
       edit((d) => { d.expenses = d.expenses.map((x) => (x.id === id ? row : x)) })
       return row
     },
@@ -242,10 +257,12 @@ function localExpenses(): ExpensesService {
         return { charges: round2(charges), byReason, loss: round2(loss) }
       })
       let salaries = 0
+      // Like profit_summary: only the elapsed days, up to today included.
+      const lastPaid = last < localIsoDay() ? last : localIsoDay()
       try {
         const payroll = JSON.parse(localStorage.getItem('smile.payroll.v1') ?? 'null') as { salaries?: Record<string, number> } | null
         const monthly = loadLocalUsers().filter((u) => u.active).reduce((s, u) => s + (payroll?.salaries?.[u.id] ?? 0), 0)
-        salaries = round2(prorate(monthly, first, last))
+        salaries = lastPaid < first ? 0 : round2(prorate(monthly, first, lastPaid))
       } catch {
         // No demo payroll.
       }
@@ -254,6 +271,7 @@ function localExpenses(): ExpensesService {
       for (const x of expenses) byCategory[x.category_name] = round2((byCategory[x.category_name] ?? 0) + x.amount)
       return {
         charges, charges_by_reason: byReason, inventory_loss: loss, salaries,
+        salary_days: lastPaid < first ? 0 : daysBetween(first, lastPaid), period_days: daysBetween(first, last),
         expenses: round2(expenses.reduce((s, x) => s + x.amount, 0)), expenses_by_category: byCategory,
       }
     },
@@ -268,6 +286,12 @@ function localExpenses(): ExpensesService {
 }
 
 /** A monthly amount over the days [first, last]: each day counts 1 / (days of its month). Same rule as profit_summary(). */
+/** Days from first to last, both included (ISO dates). */
+export function daysBetween(first: string, last: string): number {
+  const day = (iso: string) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10))
+  return Math.round((day(last) - day(first)) / 86_400_000) + 1
+}
+
 export function prorate(monthly: number, first: string, last: string): number {
   if (!(monthly > 0)) return 0
   const [y, m, d] = first.split('-').map(Number)
