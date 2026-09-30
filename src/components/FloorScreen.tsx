@@ -263,6 +263,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       : page === 'reservations' || page === 'reservationNew' ? can('reservations')
       : page === 'menuCsv' ? can('edit')
       : page === 'zones' || page === 'zoneNew' ? can('delivery_zones')
+      : page === 'purchases' || page === 'purchaseNew' ? can('purchases')
       : can(page as Permission)
   const shown = (items: (AdminMenuItem | false)[]) => items.filter((i): i is AdminMenuItem => !!i)
   // Menus and entries the account has no permission for are left out, not just greyed.
@@ -279,6 +280,10 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   const stockItems = shown([
     can('stock') && { id: 'stock', label: t.stockSub, checked: onBo('stock'), onSelect: () => setBackOffice('stock') },
     can('suppliers') && { id: 'suppliers', label: t.suppliers, checked: onBo('suppliers'), onSelect: () => setBackOffice('suppliers') },
+    can('purchases') && {
+      id: 'purchase-new', label: t.purNewItem, separator: can('stock') || can('suppliers'), checked: onBo('purchaseNew'), onSelect: () => openBo('purchaseNew'),
+    },
+    can('purchases') && { id: 'purchases', label: t.purInvoicesItem, checked: onBo('purchases'), onSelect: () => openBo('purchases') },
   ])
   const staffItems = shown([
     can('staff') && { id: 'staff-list', label: t.staffListItem, checked: onBo('staff'), onSelect: () => openBo('staff') },
@@ -308,7 +313,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     }] : []),
     ...(editItems.length ? [{ id: 'edit', label: t.navEdit, current: onBo('zones') || onBo('zoneNew') || onBo('menuCsv'), items: editItems }] : []),
     ...(staffItems.length ? [{ id: 'staff', label: t.staff, current: onBo('staff') || onBo('payroll') || onBo('devices'), items: staffItems }] : []),
-    ...(stockItems.length ? [{ id: 'stock', label: t.stock, current: onBo('stock') || onBo('suppliers'), items: stockItems }] : []),
+    ...(stockItems.length ? [{ id: 'stock', label: t.stock, current: onBo('stock') || onBo('suppliers') || onBo('purchaseNew') || onBo('purchases'), items: stockItems }] : []),
     ...(can('stats') ? [{
       id: 'stats', label: t.navStats, current: onBo('stats'), items: [
         { id: 'sales', label: t.statsSales, checked: onBo('stats'), onSelect: () => setBackOffice('stats') },
