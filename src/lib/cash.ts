@@ -6,6 +6,7 @@ import { localUserName } from './backoffice'
 import { purchases } from './purchases'
 import { localIsoDay, readLocalExpenses, writeLocalExpenses } from './expenses'
 import { normalizeAdjustments } from './billing'
+import { money } from './format'
 import type { CashDay, CashMovement, DayReport, NewCashMovement, NumberReset, Order, OrderLine, Payment, SalesData } from './types'
 
 /**
@@ -43,8 +44,16 @@ export interface CashService {
 const round2 = (n: number) => Math.round(n * 100) / 100
 const validAmount = (n: number) => Number.isFinite(n) && n >= 0 && n <= 1e9
 
+/** « Espèces insuffisantes en caisse (disponible : X DA)… » from the database error insufficient_cash:<available>. */
+export function insufficientCash(message: string): Error | null {
+  const m = /insufficient_cash:(-?[\d.]+)/.exec(message)
+  return m ? new Error(tr().errCashShort(money(Number(m[1])))) : null
+}
+
 function cashError(message: string): Error {
   const t = tr()
+  const short = insufficientCash(message)
+  if (short) return short
   if (/cash_days|cash_movements|order_number_resets|open_cash_day|close_cash_day|add_cash_movement|reset_order_numbers/.test(message)
     && /does not exist|schema cache|Could not find/i.test(message)) return new Error(t.errMigrationCash)
   if (/no_permission|row-level security|permission denied/i.test(message)) return new Error(t.errNoPermission)
@@ -182,6 +191,14 @@ interface LocalCash {
   resets: NumberReset[]
 }
 
+function readOrders(): LocalOrders {
+  try {
+    return (JSON.parse(localStorage.getItem(ORDERS_KEY) ?? 'null') as LocalOrders | null) ?? {}
+  } catch {
+    return {}
+  }
+}
+
 interface LocalOrders {
   orders?: (Order & { total?: number | null; closed_at?: string | null })[]
   lines?: OrderLine[]
@@ -212,13 +229,6 @@ function localCash(): CashService {
   window.addEventListener('storage', (e) => {
     if (e.key === KEY) listeners.forEach((l) => l())
   })
-  const readOrders = (): LocalOrders => {
-    try {
-      return (JSON.parse(localStorage.getItem(ORDERS_KEY) ?? 'null') as LocalOrders | null) ?? {}
-    } catch {
-      return {}
-    }
-  }
   const reset = (reason: NumberReset['reason'], user: string): NumberReset => {
     const o = readOrders()
     const row: NumberReset = {
@@ -270,6 +280,7 @@ function localCash(): CashService {
       const db = read()
       const day = openDay(db)
       if (!day) throw new Error(tr().errNoOpenDay)
+      if (round2(float) < day.opening_float) requireLocalCash(db, day, day.opening_float - round2(float))
       Object.assign(day, { opening_float: round2(float), float_updated_at: now(), float_updated_by_name: user })
       write(db)
       return day
@@ -280,6 +291,7 @@ function localCash(): CashService {
       const db = read()
       const day = openDay(db)
       if (!day) throw new Error(tr().errNoOpenDay)
+      if (c.kind === 'out') requireLocalCash(db, day, c.amount)
       let supplier: string | null = null
       if (c.supplier_invoice_id) supplier = (await purchases.pay(c.supplier_invoice_id, c.amount, now().slice(0, 10))).supplier_name
       const row: CashMovement = {
@@ -308,6 +320,7 @@ function localCash(): CashService {
       if (!row) return
       if (db.days.find((d) => d.id === row.day_id)?.closed_at) throw new Error(tr().errDayClosed)
       if (row.supplier_invoice_id) throw new Error(tr().errMovementInvoice)
+      if (row.kind === 'in') requireLocalCash(db, db.days.find((d) => d.id === row.day_id)!, row.amount)
       db.movements = db.movements.filter((m) => m.id !== id)
       write(db)
       // Like the database: the expense paid by this movement goes with it.
@@ -383,10 +396,39 @@ export function setLocalMovementAmount(id: string, amount: number) {
   const db = raw ? (JSON.parse(raw) as LocalCash) : null
   const m = db?.movements.find((x) => x.id === id)
   if (!db || !m) return
-  if (db.days.find((d) => d.id === m.day_id)?.closed_at) throw new Error(tr().errExpenseDayClosed)
+  const day = db.days.find((d) => d.id === m.day_id)
+  if (!day || day.closed_at) throw new Error(tr().errExpenseDayClosed)
+  if (round2(amount) > m.amount) requireLocalCash(db, day, round2(amount) - m.amount)
   m.amount = round2(amount)
   localStorage.setItem(KEY, JSON.stringify(db))
   window.dispatchEvent(new StorageEvent('storage', { key: KEY }))
+}
+
+/** Demo mode: an expense paid from the drawer switched to « Autre » while its day is open: its Fond de sortie goes, the expense stays. */
+export function removeLocalMovement(id: string) {
+  const raw = localStorage.getItem(KEY)
+  const db = raw ? (JSON.parse(raw) as LocalCash) : null
+  const m = db?.movements.find((x) => x.id === id)
+  if (!db || !m) return
+  if (db.days.find((d) => d.id === m.day_id)?.closed_at) throw new Error(tr().errExpenseDayClosed)
+  db.movements = db.movements.filter((x) => x.id !== id)
+  localStorage.setItem(KEY, JSON.stringify(db))
+  window.dispatchEvent(new StorageEvent('storage', { key: KEY }))
+}
+
+/** Demo mode: cash expected in the drawer now (float + cash sales + entrées − sorties), as cash_available() does. */
+function localAvailable(db: LocalCash, day: CashDay): number {
+  const sales = (readOrders().payments ?? [])
+    .filter((p) => p.method === 'cash' && p.created_at >= day.period_start)
+    .reduce((s, p) => s + Number(p.amount), 0)
+  const mine = db.movements.filter((m) => m.day_id === day.id)
+  const moves = mine.reduce((s, m) => s + (m.kind === 'in' ? m.amount : -m.amount), 0)
+  return round2(day.opening_float + sales + moves)
+}
+
+function requireLocalCash(db: LocalCash, day: CashDay, amount: number) {
+  const available = localAvailable(db, day)
+  if (round2(amount) > available) throw new Error(tr().errCashShort(money(available)))
 }
 
 export const cash: CashService = supabase ? supabaseCash(supabase) : localCash()

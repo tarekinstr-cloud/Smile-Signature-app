@@ -4,6 +4,7 @@ import { editLocalStock, localUserName } from './backoffice'
 import { loadLocalUsers } from './admin'
 import { consumptionNeeds } from './recipes'
 import { tr } from './i18n'
+import { money } from './format'
 import { newId } from './id'
 import type { CostStatus, Expense, ExpenseCategory, NewExpense, OrderLine, ProfitCosts, RecipeLine, StockMovement } from './types'
 
@@ -30,6 +31,8 @@ const validAmount = (n: number) => Number.isFinite(n) && n > 0 && n <= 1e9
 
 function expensesError(message: string): Error {
   const t = tr()
+  const short = /insufficient_cash:(-?[\d.]+)/.exec(message)
+  if (short) return new Error(t.errCashShort(money(Number(short[1]))))
   if (/expense|profit_summary/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return new Error(t.errMigrationExpenses)
   if (/no_permission|row-level security|permission denied/i.test(message)) return new Error(t.errNoPermission)
   if (message.includes('no_open_day')) return new Error(t.errExpenseNoDay)
@@ -203,12 +206,23 @@ function localExpenses(): ExpensesService {
       }
       const old = db.expenses.find((x) => x.id === id)
       if (!old) throw new Error(tr().errExpenseCategory)
-      if (old.mode !== c.mode) throw new Error(tr().errExpenseMode)
-      if (old.cash_movement_id && old.amount !== c.amount) {
+      // Like save_expense: the drawer movement follows the mode and the amount while its day is open.
+      let moveId = old.cash_movement_id
+      let date = old.cash_movement_id ? old.date : c.date
+      if (old.cash_movement_id && c.mode === 'other') {
+        const { removeLocalMovement } = await import('./cash')
+        removeLocalMovement(old.cash_movement_id)
+        moveId = null
+        date = c.date
+      } else if (old.cash_movement_id && old.amount !== c.amount) {
         const { setLocalMovementAmount } = await import('./cash')
         setLocalMovementAmount(old.cash_movement_id, c.amount)
+      } else if (!old.cash_movement_id && c.mode === 'cash') {
+        const { cash } = await import('./cash')
+        moveId = (await cash.addMovement({ kind: 'out', amount: c.amount, reason: c.note || category.name })).id
+        date = localIsoDay()
       }
-      const row = { ...old, category_id: category.id, category_name: category.name, amount: c.amount, note: c.note, date: old.cash_movement_id ? old.date : c.date }
+      const row = { ...readLocalExpenses().expenses.find((x) => x.id === id)!, category_id: category.id, category_name: category.name, amount: c.amount, note: c.note, mode: c.mode, cash_movement_id: moveId, date }
       edit((d) => { d.expenses = d.expenses.map((x) => (x.id === id ? row : x)) })
       return row
     },
