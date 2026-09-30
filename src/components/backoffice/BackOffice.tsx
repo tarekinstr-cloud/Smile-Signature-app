@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useI18n } from '../../lib/i18n'
 import type { BackOfficePage } from './pages'
 import StatsPage from './StatsPage'
@@ -15,6 +15,8 @@ import MenuCsvPage from './MenuCsvPage'
 import { NewZonePage, ZonesList } from './DeliveryZonesPage'
 import PayrollPage from './PayrollPage'
 import DevicesPage from './DevicesPage'
+import { InvoicesList, NewPurchasePage } from './PurchasesPage'
+import type { SupplierInvoice } from '../../lib/types'
 
 interface Props {
   page: BackOfficePage
@@ -34,7 +36,7 @@ interface Props {
 
 /**
  * Back-office screen under the administration menus: Statistiques, Stock, Fournisseurs, Employés, Paramètres, and the
- * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket), Clients (réservations), Édition > Zones de livraison and Gestion des employés (Salaires et acomptes, Appareils connectés).
+ * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket), Clients (réservations), Édition > Zones de livraison and Gestion des employés (Salaires et acomptes, Appareils connectés), Gestion du Stock (Effectuer un achat, Factures fournisseurs).
  */
 export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrinters, onOpenTicket, onPage, onOpenOrder }: Props) {
   const { t } = useI18n()
@@ -42,6 +44,11 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
   const [created, setCreated] = useState<string | null>(null)
   /** Zone just added, highlighted in the list. */
   const [createdZone, setCreatedZone] = useState<string | null>(null)
+  /** Purchase just validated in Effectuer un achat, announced and highlighted in Factures fournisseurs. */
+  const [createdInvoice, setCreatedInvoice] = useState<SupplierInvoice | null>(null)
+  useEffect(() => {
+    if (page !== 'purchases') setCreatedInvoice(null)
+  }, [page])
   const title: Record<BackOfficePage, [string, string]> = {
     stats: [t.statistics, t.statsSub],
     stock: [t.stock, t.stockSub],
@@ -59,6 +66,8 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     zoneNew: [t.zoneNewItem, t.zonesSub],
     payroll: [t.payrollTitle, t.payrollSub],
     devices: [t.devicesTitle, t.devicesSub],
+    purchaseNew: [t.purNewItem, t.purNewSub],
+    purchases: [t.purInvoicesItem, t.purInvoicesSub],
   }
   return (
     <div className="app back-office">
@@ -97,6 +106,15 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
           ))}
         </div>
       )}
+      {(page === 'purchaseNew' || page === 'purchases') && (
+        <div className="segmented bo-tabs" role="tablist" aria-label={t.stock}>
+          {(['purchaseNew', 'purchases'] as const).map((p) => (
+            <button key={p} type="button" role="tab" aria-selected={page === p} className={page === p ? 'on' : ''} onClick={() => onPage(p)}>
+              {p === 'purchaseNew' ? t.purNewItem : t.purInvoicesItem}
+            </button>
+          ))}
+        </div>
+      )}
       {page === 'stats' && <StatsPage />}
       {page === 'stock' && <StockPage />}
       {page === 'suppliers' && <SuppliersPage />}
@@ -113,6 +131,8 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'menuCsv' && <MenuCsvPage />}
       {page === 'zoneNew' && <NewZonePage onSaved={(z) => { setCreatedZone(z.id); onPage('zones') }} />}
       {page === 'zones' && <ZonesList highlight={createdZone} />}
+      {page === 'purchaseNew' && <NewPurchasePage onSaved={(i) => { setCreatedInvoice(i); onPage('purchases') }} />}
+      {page === 'purchases' && <InvoicesList key={createdInvoice?.id} highlight={createdInvoice} />}
     </div>
   )
 }

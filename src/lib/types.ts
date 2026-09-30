@@ -315,6 +315,55 @@ export interface Supplier {
 
 export type NewSupplier = Omit<Supplier, 'id'>
 
+/** Payment state of a supplier invoice, from what was paid on it. */
+export type SupplierPaymentStatus = 'unpaid' | 'partial' | 'paid'
+export const SUPPLIER_PAYMENT_STATUSES: SupplierPaymentStatus[] = ['unpaid', 'partial', 'paid']
+
+/** A purchase from a supplier (menu Gestion du Stock > Factures fournisseurs). */
+export interface SupplierInvoice {
+  id: string
+  /** null when the supplier was deleted since; supplier_name keeps its name. */
+  supplier_id: string | null
+  supplier_name: string
+  /** Day of the purchase, YYYY-MM-DD. */
+  date: string
+  total_amount: number
+  paid_amount: number
+  payment_status: SupplierPaymentStatus
+  created_at: string
+}
+
+/** One line of a supplier invoice: its quantity was added to the stock item. */
+export interface SupplierInvoiceItem {
+  id: string
+  invoice_id: string
+  /** null when the stock item was deleted since; item_name keeps its name. */
+  stock_item_id: string | null
+  item_name: string
+  quantity: number
+  unit: string
+  unit_price: number
+}
+
+/** A payment (full or partial) of a supplier invoice. */
+export interface SupplierPayment {
+  id: string
+  invoice_id: string
+  amount: number
+  /** YYYY-MM-DD */
+  date: string
+  created_at: string
+}
+
+/** Effectuer un achat: what the form sends. */
+export interface NewPurchase {
+  supplier_id: string
+  date: string
+  lines: { stock_item_id: string; quantity: number; unit: string; unit_price: number }[]
+  /** Paid at purchase: 0 (Non payé), the total (Payé) or in between (Partiellement payé). */
+  paid: number
+}
+
 /** An account that signs in to the app. There are no roles yet: every account is staff. */
 export interface StaffAccount {
   id: string
