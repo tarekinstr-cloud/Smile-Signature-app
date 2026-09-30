@@ -18,18 +18,31 @@ export default function ProfitPage() {
   const { t, lang } = useI18n()
   const loc = locale(lang)
   const [period, setPeriod] = useState<Period>(() => initialPeriod('month'))
-  const range = useMemo(() => periodRange(period), [period])
+  /** Journée en cours: working day in progress (since the last closing), not midnight to midnight. */
+  const [workDay, setWorkDay] = useState<{ start: string; date: string } | null>(null)
+  useEffect(() => {
+    if (period.preset !== 'day') return
+    let live = true
+    Promise.all([cash.currentDay(), cash.closedDays(new Date(0), new Date(Date.now() + 86_400_000))]).then(([day, closed]) => {
+      if (!live) return
+      const start = day?.period_start ?? closed[0]?.closed_at ?? null
+      setWorkDay(start ? { start, date: isoDay(new Date(day?.opened_at ?? Date.now())) } : null)
+    }, () => live && setWorkDay(null))
+    return () => { live = false }
+  }, [period.preset])
+  const range = useMemo(() => periodRange(period, workDay?.start), [period, workDay])
   const load = useCallback(async () => {
     const [from, to] = range
-    const first = isoDay(from)
-    const last = isoDay(new Date(to.getTime() - 1))
+    // Salaries and expenses of the working day: its date only.
+    const first = period.preset === 'day' ? workDay?.date ?? isoDay(new Date()) : isoDay(from)
+    const last = period.preset === 'day' ? first : isoDay(new Date(to.getTime() - 1))
     const [sales, menu, costs] = await Promise.all([
       cash.sales(from, to),
       repo.getMenu({ includeHidden: true }).catch(() => null),
       expenses.profitCosts(from, to, first, last),
     ])
     return computeProfit(sales, menu, costs)
-  }, [range])
+  }, [range, period.preset, workDay])
   const { data, error, setError, reload } = useLoad(load)
   useEffect(() => {
     const offs = [repo.subscribeOrders(reload), expenses.subscribe(reload)]
@@ -87,7 +100,7 @@ export default function ProfitPage() {
     <main className="content bo-content">
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
       <div className="bo-toolbar">
-        <PeriodFilter value={period} onChange={setPeriod} presets={['today', '7d', 'month', 'lastMonth', 'custom']} />
+        <PeriodFilter value={period} onChange={setPeriod} presets={['day', 'today', '7d', 'month', 'lastMonth', 'custom']} />
         <span className="muted small">{rangeLabel(range, loc)}</span>
         <div className="spacer" />
         <button type="button" onClick={exportCsv} disabled={!data}>{t.exportCsv}</button>
