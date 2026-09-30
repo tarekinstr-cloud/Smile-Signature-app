@@ -460,7 +460,8 @@ function Consumption({ version }: { version: number }) {
   const shown = (rows ?? []).filter((r) => !q || r.name.toLowerCase().includes(q))
   /** What the sales and the charges do not explain: the inventory shortfall, as a quantity and a value (a loss is < 0). */
   const loss = (r: ConsumptionRow) => stockValue(r.inventory_gap, r.last_price)
-  const gapPct = (r: ConsumptionRow) => (r.theoretical > 0 ? Math.round(((r.actual - r.theoretical) / r.theoretical) * 1000) / 10 : null)
+  /** The unexplained share: inventory gaps / theoretical consumption, with the sign of the gap (charges are declared, so left out). */
+  const gapPct = (r: ConsumptionRow) => (r.theoretical > 0 ? Math.round((r.inventory_gap / r.theoretical) * 1000) / 10 : null)
   const totalLoss = round2(shown.reduce((a, r) => a + (loss(r) ?? 0), 0))
   const theoreticalValue = round2(shown.reduce((a, r) => a + (stockValue(r.theoretical, r.last_price) ?? 0), 0))
   const lastDay = isoDay(new Date(endKey - 1))
@@ -522,7 +523,7 @@ function Consumption({ version }: { version: number }) {
                     {r.inventory_gap ? <bdi className={r.inventory_gap < 0 ? 'neg' : 'pos'}>{signed(r, r.inventory_gap)}</bdi> : '—'}
                   </td>
                   <td className="num strong" data-label={t.consColActual}><bdi>{qtyText({ quantity: r.actual, unit: r.unit })}</bdi></td>
-                  <td className={`num${pct != null && pct > 0 ? ' neg' : ''}`} data-label={t.consColGapPct}>
+                  <td className={`num${pct ? (pct < 0 ? ' neg' : ' pos') : ''}`} data-label={t.consColGapPct}>
                     {pct == null ? '—' : `${pct > 0 ? '+' : ''}${pct.toLocaleString('fr-FR')} %`}
                   </td>
                   <td className="num" data-label={t.consColLoss} title={r.inventory_gap && value == null ? t.invNoPrice : undefined}>
