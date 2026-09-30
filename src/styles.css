@@ -616,3 +616,8 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
   .res-table th { white-space: normal; }
   .res-table .show-phone .tag { display: inline-block; margin-top: 4px; }
 }
+
+/* Zones de livraison (Édition) */
+.zones-table tr.highlight td { background: #fffbeb; }
+.zones-table .row-actions { text-align: end; white-space: nowrap; }
+.zones-table .row-actions button + button { margin-inline-start: 6px; }

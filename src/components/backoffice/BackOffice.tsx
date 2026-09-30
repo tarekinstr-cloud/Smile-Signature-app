@@ -11,6 +11,7 @@ import BackupPage from './BackupPage'
 import TicketPage from './TicketPage'
 import PermissionsPage from './PermissionsPage'
 import { NewReservationPage, ReservationsList } from './ReservationsPage'
+import { NewZonePage, ZonesList } from './DeliveryZonesPage'
 
 interface Props {
   page: BackOfficePage
@@ -30,12 +31,14 @@ interface Props {
 
 /**
  * Back-office screen under the administration menus: Statistiques, Stock, Fournisseurs, Employés, Paramètres, and the
- * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket) and Clients (réservations).
+ * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket), Clients (réservations) and Édition > Zones de livraison.
  */
 export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrinters, onOpenTicket, onPage, onOpenOrder }: Props) {
   const { t } = useI18n()
   /** Booking just created from Nouvelle réservation, highlighted in the list. */
   const [created, setCreated] = useState<string | null>(null)
+  /** Zone just added, highlighted in the list. */
+  const [createdZone, setCreatedZone] = useState<string | null>(null)
   const title: Record<BackOfficePage, [string, string]> = {
     stats: [t.statistics, t.statsSub],
     stock: [t.stock, t.stockSub],
@@ -48,6 +51,8 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     ticket: [t.ticketTitle, t.ticketSub],
     reservations: [t.reservationsTitle, t.reservationsSub],
     reservationNew: [t.resNewItem, t.resNewSub],
+    zones: [t.zonesEditItem, t.zonesSub],
+    zoneNew: [t.zoneNewItem, t.zonesSub],
   }
   return (
     <div className="app back-office">
@@ -77,6 +82,15 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
           ))}
         </div>
       )}
+      {(page === 'zones' || page === 'zoneNew') && (
+        <div className="segmented bo-tabs" role="tablist" aria-label={t.zonesTitle}>
+          {(['zoneNew', 'zones'] as const).map((p) => (
+            <button key={p} type="button" role="tab" aria-selected={page === p} className={page === p ? 'on' : ''} onClick={() => onPage(p)}>
+              {p === 'zoneNew' ? t.zoneNewItem : t.zonesEditItem}
+            </button>
+          ))}
+        </div>
+      )}
       {page === 'stats' && <StatsPage />}
       {page === 'stock' && <StockPage />}
       {page === 'suppliers' && <SuppliersPage />}
@@ -88,6 +102,8 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'ticket' && <TicketPage />}
       {page === 'reservationNew' && <NewReservationPage onSaved={(r) => { setCreated(r.id); onPage('reservations') }} />}
       {page === 'reservations' && <ReservationsList onOpenOrder={onOpenOrder} highlight={created} />}
+      {page === 'zoneNew' && <NewZonePage onSaved={(z) => { setCreatedZone(z.id); onPage('zones') }} />}
+      {page === 'zones' && <ZonesList highlight={createdZone} />}
     </div>
   )
 }

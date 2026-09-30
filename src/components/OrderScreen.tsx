@@ -482,7 +482,7 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
           <strong>{where}</strong>
           <span>
             {place ? <><bdi>{place.hall.name}</bdi> · {t.seatsCount(place.table.seats)}</>
-              : isDelivery ? <bdi>{[deliveryContact(order), order.customer_address].filter(Boolean).join(' · ')}</bdi>
+              : isDelivery ? <bdi>{[deliveryContact(order), order.customer_address, order.delivery_zone_name].filter(Boolean).join(' · ')}</bdi>
               : t.takeaway}
           </span>
         </div>
@@ -618,6 +618,9 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
               {bill.total !== bill.gross && (
                 <div className="ticket-sub"><span>{t.subtotal}</span><span>{money(bill.gross)}</span></div>
               )}
+              {bill.delivery > 0 && (
+                <div className="ticket-sub"><span>{t.deliveryFee}</span><span>{money(bill.delivery)}</span></div>
+              )}
               {bill.paid > 0 && (
                 <div className="ticket-sub"><span>{t.alreadyPaid}</span><span>{minus(bill.paid)}</span></div>
               )}
@@ -677,6 +680,7 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
       {modal === 'delivery' && order && (
         <DeliveryDialog place={where} submitLabel={t.save} onCancel={() => setModal(null)}
           initial={{ name: order.customer_name ?? '', phone: order.customer_phone ?? '', address: order.customer_address ?? '' }}
+          zone={{ id: order.delivery_zone_id ?? null, name: order.delivery_zone_name ?? null, fee: order.delivery_fee ?? 0 }}
           onSubmit={async (customer) => {
             setOrder(await repo.updateDelivery(order.id, customer))
             setModal(null)
