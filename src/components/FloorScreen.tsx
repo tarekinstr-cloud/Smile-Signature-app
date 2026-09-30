@@ -20,7 +20,7 @@ import ServiceTabs from './nav/ServiceTabs'
 import type { BackOfficePage } from './backoffice/pages'
 import type { SessionUser } from '../lib/auth'
 import { usePermissions, type Permission } from '../lib/permissions'
-import { reservations as reservationsService, upcomingWindow } from '../lib/reservations'
+import { bookingsByTable, floorWindow, reservations as reservationsService } from '../lib/reservations'
 import type { Reservation } from '../lib/types'
 import { timeText } from './backoffice/ReservationsPage'
 
@@ -55,6 +55,8 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   const [info, setInfo] = useState<'account' | 'about' | null>(null)
   /** Confirmed bookings of the next hours, shown as a small mark on their table. */
   const [upcoming, setUpcoming] = useState<Reservation[]>([])
+  /** Bookings could not be read (e.g. migration not run): said on the floor plan instead of silently showing none. */
+  const [resError, setResError] = useState<string | null>(null)
   /** Mark tapped on the floor plan: the booking's details. */
   const [resInfo, setResInfo] = useState<{ reservation: Reservation; table: DiningTable } | null>(null)
   const [restaurant, setRestaurant] = useState('Smile Signature')
@@ -103,8 +105,17 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
 
   // The window moves with the clock, so bookings are read again every minute as well as on every change.
   const reloadUpcoming = useCallback(() => {
-    const [from, to] = upcomingWindow()
-    reservationsService.listBetween(from, to).then(setUpcoming, () => setUpcoming([]))
+    const [from, to] = floorWindow()
+    reservationsService.listBetween(from, to).then(
+      (list) => {
+        setUpcoming(list)
+        setResError(null)
+      },
+      (e) => {
+        setUpcoming([])
+        setResError(e instanceof Error ? e.message : String(e))
+      },
+    )
   }, [])
   useEffect(() => {
     reloadUpcoming()
@@ -114,13 +125,9 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       window.clearInterval(timer)
       unsubscribe()
     }
-  }, [reloadUpcoming, backOffice])
-  /** Next booking of each table (the earliest, when a table has several). */
-  const reservedTables = useMemo(() => {
-    const byTable = new Map<string, Reservation>()
-    for (const r of upcoming) if (r.table_id && !byTable.has(r.table_id)) byTable.set(r.table_id, r)
-    return byTable
-  }, [upcoming])
+  }, [reloadUpcoming, backOffice, hallId])
+  // Recomputed with the list, which is read again every minute, so a booking whose time passes moves on to the next.
+  const reservedTables = useMemo(() => bookingsByTable(upcoming), [upcoming])
 
   const reloadTakeaways = useCallback(() => {
     repo.listOpenOrders('takeaway').then(setTakeaways, () => setTakeaways([]))
@@ -374,6 +381,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
         <div className="banner">{t.demoBanner}</div>
       )}
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
+      {resError && <div className="banner error" onClick={() => setResError(null)}>{resError}</div>}
 
       <main className="content">
         {loading ? (

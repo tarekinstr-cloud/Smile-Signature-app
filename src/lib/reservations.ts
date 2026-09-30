@@ -10,21 +10,41 @@ import type { NewReservation, Reservation, ReservationPatch } from './types'
 export interface ReservationsService {
   /** All bookings, oldest first. */
   list(): Promise<Reservation[]>
-  /** Confirmed bookings whose time falls between `from` and `to`, for the floor plan. */
+  /** Confirmed bookings whose time falls between `from` and `to`, for the floor plan. Errors are thrown, not hidden. */
   listBetween(from: Date, to: Date): Promise<Reservation[]>
   create(r: NewReservation): Promise<Reservation>
   update(id: string, patch: ReservationPatch): Promise<void>
   subscribe(onChange: () => void): () => void
 }
 
-/** A table shows its booking on the floor plan from this long before the time… */
+/** Bookings of the next hours are shown even when they fall after midnight. */
 export const UPCOMING_HOURS = 3
-/** …until this long after it, while the customer may still be on their way. */
-export const LATE_MINUTES = 30
 
-/** Bookings shown on the floor plan right now: confirmed, with a table, from LATE_MINUTES ago to UPCOMING_HOURS ahead. */
-export function upcomingWindow(now = new Date()): [Date, Date] {
-  return [new Date(now.getTime() - LATE_MINUTES * 60_000), new Date(now.getTime() + UPCOMING_HOURS * 3_600_000)]
+/**
+ * Bookings shown on the floor plan: every confirmed one of today (local day, including those whose time has passed but
+ * that nobody marked Honorée / No-show yet), and those of the next UPCOMING_HOURS after midnight.
+ */
+export function floorWindow(now = new Date()): [Date, Date] {
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const end = new Date(start)
+  end.setDate(end.getDate() + 1)
+  const ahead = new Date(now.getTime() + UPCOMING_HOURS * 3_600_000)
+  return [start, ahead > end ? ahead : end]
+}
+
+/**
+ * The booking to show on each table: its next one still to come, or else the latest of today (customer late, status
+ * not updated yet).
+ */
+export function bookingsByTable(list: Reservation[], now = new Date()): Map<string, Reservation> {
+  const byTable = new Map<string, Reservation>()
+  for (const r of [...list].sort((a, b) => a.reserved_at.localeCompare(b.reserved_at))) {
+    if (r.status !== 'confirmed' || !r.table_id) continue
+    const current = byTable.get(r.table_id)
+    // Sorted by time: a later booking replaces the current one only while the current one is already past.
+    if (!current || new Date(current.reserved_at) < now) byTable.set(r.table_id, r)
+  }
+  return byTable
 }
 
 const norm = (r: Reservation): Reservation => ({ ...r, party_size: Number(r.party_size), phone: r.phone ?? '', note: r.note ?? '' })
@@ -62,10 +82,8 @@ function supabaseReservations(sb: SupabaseClient): ReservationsService {
     },
     async listBetween(from, to) {
       const res = await sb.from('reservations').select('*').eq('status', 'confirmed')
-        .gte('reserved_at', from.toISOString()).lte('reserved_at', to.toISOString()).order('reserved_at')
-      // Before the migration the floor plan simply shows no bookings.
-      if (res.error) return []
-      return (res.data as Reservation[]).map(norm)
+        .gte('reserved_at', from.toISOString()).lt('reserved_at', to.toISOString()).order('reserved_at')
+      return (check(res) as Reservation[]).map(norm)
     },
     async create(r) {
       return norm(check(await sb.from('reservations').insert(clean(r)).select().single()) as Reservation)
@@ -101,7 +119,7 @@ function localReservations(): ReservationsService {
       return sorted(read())
     },
     async listBetween(from, to) {
-      return sorted(read()).filter((r) => r.status === 'confirmed' && new Date(r.reserved_at) >= from && new Date(r.reserved_at) <= to)
+      return sorted(read()).filter((r) => r.status === 'confirmed' && new Date(r.reserved_at) >= from && new Date(r.reserved_at) < to)
     },
     async create(r) {
       const row: Reservation = { id: crypto.randomUUID(), status: 'confirmed', created_at: new Date().toISOString(), ...clean(r) }
