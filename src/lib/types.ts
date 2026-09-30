@@ -403,3 +403,31 @@ export interface Reservation {
 
 export type NewReservation = Pick<Reservation, 'client_name' | 'phone' | 'party_size' | 'hall_id' | 'table_id' | 'reserved_at' | 'note'>
 export type ReservationPatch = Partial<NewReservation> & { status?: ReservationStatus }
+
+/** One employee on the Salaires et acomptes page, for one month (amounts in DA). */
+export interface PayrollRow {
+  user_id: string
+  username: string
+  display_name: string
+  role: UserRole | null
+  active: boolean
+  monthly_salary: number
+  /** Sum of the advances dated in the month. */
+  advances: number
+  advances_count: number
+  /** monthly_salary − advances (negative when more was advanced than the salary). */
+  remaining: number
+}
+
+/** An acompte: money paid to an employee ahead of their salary. */
+export interface SalaryAdvance {
+  id: string
+  user_id: string
+  amount: number
+  /** Day it was paid, YYYY-MM-DD. */
+  date: string
+  note: string | null
+  created_at: string
+}
+
+export type NewSalaryAdvance = Pick<SalaryAdvance, 'user_id' | 'amount' | 'date' | 'note'>
