@@ -4,6 +4,7 @@ import type {
   NewCategory, NewItemOption, NewMenuItem, NewOptionGroup, NewOrderLine, NewTable, OptionGroup, OptionGroupPatch, Order,
   OrderLine, OrderLinePatch, PaidOrder, Payment, PaymentMethod, ReceiptSettings, TablePatch, AdjustmentsPatch,
   CategoryPrinters, KitchenTicket, NewPrinter, Printer, PrinterPatch, InvoiceCustomer, TableMove, DeliveryCustomer, DeliveryStatus,
+  Cancellation, CancelledOrder, PriceChange,
 } from './types'
 import { demoMenu } from './demoMenu'
 import { buildKitchenTickets, type SendResult } from './kitchen'
@@ -68,8 +69,20 @@ export interface Repo {
   issueInvoice(orderId: string, customer: InvoiceCustomer): Promise<Order>
   /** Kitchen tickets already sent for an order (reprint), oldest first. */
   listKitchenTickets(orderId: string): Promise<KitchenTicket[]>
-  /** Cancels an open order and frees its table. Refused once a payment has been made on it. */
-  cancelOrder(orderId: string): Promise<void>
+  /**
+   * Cancels an open order and frees its table. Refused once a payment has been made on it. An order with items needs
+   * a reason (the database refuses it otherwise); an empty order left behind does not.
+   */
+  cancelOrder(orderId: string, why?: Cancellation): Promise<void>
+  /** The bill (Addition) of an open order was printed: cancelling it afterwards needs the cancel_invoice permission. */
+  markPrinted(orderId: string): Promise<void>
+  /**
+   * Annule un ticket déjà encaissé (permission cancel_invoice, journée de caisse ouverte): the order is cancelled and
+   * its cash part leaves the drawer of the open day.
+   */
+  voidTicket(orderId: string, why: Cancellation): Promise<void>
+  /** Cancelled orders that had items, cancelled during [from, to), newest first, with their lines. */
+  listCancelled(from: Date, to: Date): Promise<CancelledOrder[]>
   addLine(orderId: string, line: NewOrderLine): Promise<OrderLine>
   updateLine(id: string, patch: OrderLinePatch): Promise<void>
   deleteLine(id: string): Promise<void>
@@ -168,6 +181,65 @@ export const defaultReceiptSettings = (): ReceiptSettings => ({
 })
 
 /** A payment refused because no working day is open (Fond de caisse not entered, or the day was just closed). */
+/** Demo price log (Liste des modifications des prix), like the database triggers. Read by control.ts. */
+export const PRICE_LOG_KEY = 'smile.pricelog.v1'
+function logLocalPrice(c: Omit<PriceChange, 'id' | 'user_name' | 'created_at'>) {
+  try {
+    const list = JSON.parse(localStorage.getItem(PRICE_LOG_KEY) ?? '[]') as PriceChange[]
+    list.push({ ...c, id: newId(), user_name: demoUserName ?? '', created_at: new Date().toISOString() })
+    localStorage.setItem(PRICE_LOG_KEY, JSON.stringify(list.slice(-5000)))
+  } catch {
+    // Not persisted (private mode).
+  }
+}
+
+/** Demo: permissions of the signed-in account, kept by permissions.ts (the database checks them otherwise). */
+let demoCan: (p: string) => boolean = () => true
+export function setDemoPermissionCheck(fn: (p: string) => boolean) {
+  demoCan = fn
+}
+const localCan = (p: string) => demoCan(p)
+
+/** Cancelled orders with their lines; empty orders left behind are not cancellations worth listing. */
+function cancelledWithLines(orders: Order[], lines: OrderLine[]): CancelledOrder[] {
+  const byOrder = new Map<string, OrderLine[]>()
+  for (const l of lines) (byOrder.get(l.order_id) ?? byOrder.set(l.order_id, []).get(l.order_id)!).push(l)
+  return orders
+    .filter((o) => byOrder.has(o.id))
+    .map((o) => {
+      const mine = byOrder.get(o.id)!
+      return { ...o, cancelled_total: o.cancelled_total == null ? null : Number(o.cancelled_total), void_cash: Number(o.void_cash ?? 0), lines: mine, sent: mine.filter((l) => l.sent_at).length }
+    })
+}
+
+/** Demo: id of the open working day in the demo cash store (cash.ts), or null. */
+function localOpenDayId(): string | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem('smile.cash.v1') ?? 'null') as { days?: { id: string; closed_at: string | null }[] } | null
+    return saved?.days?.find((d) => !d.closed_at)?.id ?? null
+  } catch {
+    return null
+  }
+}
+
+/** Demo: cash expected in the drawer of the open day (float + cash payments − cash given back + entrées − sorties). */
+function localDrawerCash(dayId: string, db: LocalOrdersDb): number {
+  try {
+    const saved = JSON.parse(localStorage.getItem('smile.cash.v1') ?? 'null') as {
+      days: { id: string; period_start: string; opening_float: number }[]
+      movements: { day_id: string; kind: 'in' | 'out'; amount: number }[]
+    }
+    const day = saved.days.find((d) => d.id === dayId)
+    if (!day) return 0
+    const sales = (db.payments ?? []).filter((p) => p.method === 'cash' && p.created_at >= day.period_start).reduce((n, p) => n + Number(p.amount), 0)
+    const back = db.orders.filter((o) => o.voided && o.voided_day_id === dayId).reduce((n, o) => n + Number(o.void_cash ?? 0), 0)
+    const moves = saved.movements.filter((m) => m.day_id === dayId).reduce((n, m) => n + (m.kind === 'in' ? m.amount : -m.amount), 0)
+    return Math.round((day.opening_float + sales - back + moves) * 100) / 100
+  } catch {
+    return 0
+  }
+}
+
 /** Demo: whether a working day is open in the demo cash store (cash.ts, key smile.cash.v1). */
 function localDayOpen(): boolean {
   try {
@@ -183,6 +255,12 @@ export class CashClosedError extends Error {}
 function checkoutError(code: string): Error {
   const t = tr()
   if (code.includes('no_open_day')) return new CashClosedError(t.errCashClosedPay)
+  if (code.includes('cancel_reason_required')) return new Error(t.errCancelReason)
+  if (code.includes('cancel_note_required')) return new Error(t.errCancelNote)
+  if (code.includes('permission_denied:cancel_invoice')) return new Error(t.errCancelInvoice)
+  if (code.includes('void_by_rpc_only')) return new Error(t.errCancelPaid)
+  const short = /insufficient_cash:(-?[\d.]+)/.exec(code)
+  if (short) return new Error(t.errCashShort(`${Number(short[1]).toLocaleString('fr-FR')} ${t.currency}`))
   if (code.includes('order_not_open') || code.includes('order_not_found')) return new Error(t.errOrderClosed)
   if (code.includes('order_empty')) return new Error(t.errOrderEmpty)
   if (code.includes('amount_too_low')) return new Error(t.errAmountTooLow)
@@ -436,9 +514,31 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       }
       return normalizeOrder(check(res) as Order)
     },
-    async cancelOrder(orderId) {
+    async cancelOrder(orderId, why) {
       if ((await this.listPayments(orderId)).length) throw checkoutError('cancel_paid')
-      check(await sb.from('orders').update({ status: 'cancelled' }).eq('id', orderId).eq('status', 'open'))
+      const reason = why ? { cancel_reason: why.reason, cancel_note: why.note.trim() } : {}
+      const res = await sb.from('orders').update({ status: 'cancelled', ...reason }).eq('id', orderId).eq('status', 'open')
+      if (res.error) throw checkoutError(res.error.message)
+    },
+    async voidTicket(orderId, why) {
+      const res = await sb.rpc('void_paid_order', { p_order_id: orderId, p_reason: why.reason, p_note: why.note.trim() })
+      if (res.error) throw checkoutError(res.error.message)
+    },
+    async listCancelled(from, to) {
+      const res = await sb.from('orders').select('*').eq('status', 'cancelled').gte('cancelled_at', from.toISOString())
+        .lt('cancelled_at', to.toISOString()).order('cancelled_at', { ascending: false })
+      if (res.error) throw checkoutError(res.error.message)
+      const orders = (res.data as Order[]).map(normalizeOrder)
+      const lines: OrderLine[] = []
+      for (let i = 0; i < orders.length; i += 100) {
+        const ids = orders.slice(i, i + 100).map((o) => o.id)
+        lines.push(...(check(await sb.from('order_items').select('*').in('order_id', ids)) as OrderLine[]).map(normalizeLine))
+      }
+      return cancelledWithLines(orders, lines)
+    },
+    async markPrinted(orderId) {
+      // Before migration 20260930140000_control.sql the column does not exist: printing still works.
+      await sb.from('orders').update({ printed_at: new Date().toISOString() }).eq('id', orderId).eq('status', 'open').is('printed_at', null)
     },
     async addLine(orderId, line) {
       return normalizeLine(check(await sb.from('order_items').insert({ ...line, order_id: orderId }).select().single()) as OrderLine)
@@ -896,7 +996,13 @@ function localRepo(): Repo {
       return row
     },
     async updateItem(id, patch) {
-      editMenu((db) => (db.items = db.items.map((i) => (i.id === id ? { ...i, ...patch } : i))))
+      editMenu((db) => {
+        const old = db.items.find((i) => i.id === id)
+        if (old && patch.price !== undefined && Number(patch.price) !== Number(old.price)) {
+          logLocalPrice({ kind: 'item', item_id: id, option_id: null, item_name: patch.name ?? old.name, group_name: '', option_name: '', old_price: Number(old.price), new_price: Number(patch.price) })
+        }
+        db.items = db.items.map((i) => (i.id === id ? { ...i, ...patch } : i))
+      })
     },
     async deleteItem(id) {
       editMenu((db) => removeItem(db, id))
@@ -918,7 +1024,51 @@ function localRepo(): Repo {
       return row
     },
     async updateOption(id, patch) {
-      editMenu((db) => (db.options = db.options.map((o) => (o.id === id ? { ...o, ...patch } : o))))
+      editMenu((db) => {
+        const old = db.options.find((o) => o.id === id)
+        if (old && patch.price_delta !== undefined && Number(patch.price_delta) !== Number(old.price_delta)) {
+          const g = db.groups.find((x) => x.id === old.group_id)
+          logLocalPrice({
+            kind: g && g.min_select >= 1 && g.max_select === 1 ? 'size' : 'supplement', item_id: g?.item_id ?? null, option_id: id,
+            item_name: db.items.find((i) => i.id === g?.item_id)?.name ?? '', group_name: g?.name ?? '', option_name: patch.name ?? old.name,
+            old_price: Number(old.price_delta), new_price: Number(patch.price_delta),
+          })
+        }
+        db.options = db.options.map((o) => (o.id === id ? { ...o, ...patch } : o))
+      })
+    },
+    async voidTicket(orderId, why) {
+      if (!localCan('cancel_invoice')) throw checkoutError('permission_denied:cancel_invoice')
+      const db = loadOrders()
+      const order = db.orders.find((o) => o.id === orderId)
+      if (!order || order.status !== 'paid') throw checkoutError('order_not_open')
+      const dayId = localOpenDayId()
+      if (!dayId) throw checkoutError('no_open_day')
+      if (!why.reason) throw checkoutError('cancel_reason_required')
+      if (why.reason === 'other' && !why.note.trim()) throw checkoutError('cancel_note_required')
+      const cash = (db.payments ?? []).filter((p) => p.order_id === orderId && p.method === 'cash').reduce((s, p) => s + p.amount, 0)
+      const available = localDrawerCash(dayId, db)
+      if (cash > available) throw checkoutError(`insufficient_cash:${available}`)
+      Object.assign(order, {
+        status: 'cancelled', cancel_reason: why.reason, cancel_note: why.note.trim().slice(0, 300), cancelled_at: new Date().toISOString(),
+        cancelled_by_name: demoUserName ?? '', cancelled_total: (order as PaidOrder).total ?? 0, voided: true, voided_day_id: dayId,
+        void_cash: Math.round(cash * 100) / 100,
+      })
+      commitOrders(db)
+    },
+    async listCancelled(from, to) {
+      const db = loadOrders()
+      const inRange = (iso?: string | null) => !!iso && new Date(iso) >= from && new Date(iso) < to
+      const orders = db.orders.filter((o) => o.status === 'cancelled' && inRange(o.cancelled_at)).map(normalizeOrder)
+      return cancelledWithLines(orders, db.lines.filter((l) => orders.some((o) => o.id === l.order_id)).map(normalizeAdjustments))
+        .sort((a, b) => (b.cancelled_at ?? '').localeCompare(a.cancelled_at ?? ''))
+    },
+    async markPrinted(orderId) {
+      const db = loadOrders()
+      const order = db.orders.find((o) => o.id === orderId && o.status === 'open')
+      if (!order || order.printed_at) return
+      order.printed_at = new Date().toISOString()
+      commitOrders(db)
     },
     async deleteOption(id) {
       editMenu((db) => (db.options = db.options.filter((o) => o.id !== id)))
@@ -1024,11 +1174,22 @@ function localRepo(): Repo {
       setTableStatus(tableId, 'occupied')
       return order
     },
-    async cancelOrder(orderId) {
+    async cancelOrder(orderId, why) {
       const db = loadOrders()
       const order = db.orders.find((o) => o.id === orderId && o.status === 'open')
       if (!order) return
       if ((db.payments ?? []).some((p) => p.order_id === orderId)) throw checkoutError('cancel_paid')
+      // Same rules as the database trigger (orders_cancel_guard).
+      const lines = db.lines.filter((l) => l.order_id === orderId).map(normalizeAdjustments)
+      if (lines.length) {
+        if (!why?.reason) throw checkoutError('cancel_reason_required')
+        if (why.reason === 'other' && !why.note.trim()) throw checkoutError('cancel_note_required')
+        if ((order.printed_at || order.invoice_no) && !localCan('cancel_invoice')) throw checkoutError('permission_denied:cancel_invoice')
+      }
+      Object.assign(order, {
+        cancel_reason: why?.reason ?? '', cancel_note: why?.note.trim().slice(0, 300) ?? '', cancelled_at: new Date().toISOString(),
+        cancelled_by_name: demoUserName ?? '', cancelled_total: computeBill(normalizeOrder(order), lines).total,
+      })
       order.status = 'cancelled'
       commitOrders(db)
       setTableStatus(order.table_id, 'free')

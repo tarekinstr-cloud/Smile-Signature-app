@@ -85,6 +85,14 @@ export function computeDayReport(
       }
     }
   }
+  const voidList = data.voids ?? []
+  const voids = voidList.length
+    ? {
+        orders: voidList.length,
+        amount: cents(voidList.reduce((s, o) => s + (o.cancelled_total ?? 0), 0)),
+        cash: cents(voidList.reduce((s, o) => s + (o.void_cash ?? 0), 0)),
+      }
+    : null
   return {
     from, to,
     gross: cents(gross), discounts: cents(discounts), offered: cents(offered), delivery: cents(delivery), net: cents(net),
@@ -95,6 +103,7 @@ export function computeDayReport(
     employees: [...employees.values()].sort(byAmount),
     cash,
     closedSales,
+    voids,
   }
 }
 
@@ -112,6 +121,7 @@ export function reportCsvRows(r: DayReport): Record<string, unknown>[] {
   line(t.daySummary, t.paidOrders, r.orders, '')
   line(t.daySummary, t.avgTicket, '', r.avgTicket)
   if (r.closedSales) line(t.daySummary, t.dayClosedSales, r.closedSales.orders, r.closedSales.amount)
+  if (r.voids) line(t.daySummary, t.dayVoids, r.voids.orders, -r.voids.cash)
   for (const [m, v] of Object.entries(r.payments)) line(t.dayPayments, (t.payMethod as Record<string, string>)[m] ?? m, '', v)
   for (const type of ['dine_in', 'takeaway', 'delivery'] as const) line(t.dayByType, t.dayTypes[type], r.byType[type].orders, r.byType[type].amount)
   if (r.cash) {

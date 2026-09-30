@@ -55,6 +55,9 @@ export function DayReportView({ report, day }: { report: DayReport; day: CashDay
               )}
             </tbody>
           </table>
+          {report.voids && (
+            <p className="muted small day-voids">{t.dayVoidsHint(report.voids.orders, money(report.voids.amount), money(report.voids.cash))}</p>
+          )}
           {report.closedSales && <p className="muted small">{t.dayClosedSalesHint(money(report.closedSales.cash))}</p>}
           <h3 className="day-sub">{t.dayPayments}</h3>
           <table className="bo-table day-summary">
@@ -63,6 +66,9 @@ export function DayReportView({ report, day }: { report: DayReport; day: CashDay
               {methods.map(([m, v]) => (
                 <tr key={m}><td>{(t.payMethod as Record<string, string>)[m] ?? m}</td><td className="num">{money(v)}</td></tr>
               ))}
+              {report.voids && report.voids.cash > 0 && (
+                <tr><td>{t.dayVoids}</td><td className="num neg">−{money(report.voids.cash)}</td></tr>
+              )}
             </tbody>
           </table>
           <h3 className="day-sub">{t.dayByType}</h3>
@@ -187,6 +193,7 @@ export function ZTicket({ day, report, settings }: { day: CashDay; report: DayRe
       {row(t.paidOrders, String(report.orders))}
       {row(t.avgTicket, money(report.avgTicket))}
       {report.closedSales && row(`${t.dayClosedSales} (${report.closedSales.orders})`, money(report.closedSales.amount))}
+      {report.voids && row(`${t.dayVoids} (${report.voids.orders})`, `−${money(report.voids.cash)}`)}
       <div className="receipt-sep" />
       <div className="receipt-subtitle">{t.dayPayments}</div>
       {Object.entries(report.payments).map(([m, v]) => row((t.payMethod as Record<string, string>)[m] ?? m, money(v)))}

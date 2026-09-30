@@ -57,7 +57,9 @@ async function loadLive(): Promise<Live> {
     day ? cash.movements({ dayId: day.id }) : Promise.resolve([]),
   ])
   const sum = (k: 'in' | 'out') => moves.filter((m) => m.kind === k).reduce((s, m) => s + m.amount, 0)
-  const cashSales = sales.payments.filter((p) => p.method === 'cash').reduce((s, p) => s + p.amount, 0)
+  // Cash given back for tickets cancelled today (Factures annulées) leaves the drawer, as in cash_day_totals.
+  const refunded = (sales.voids ?? []).filter((v) => day && v.voided_day_id === day.id).reduce((s, v) => s + (v.void_cash ?? 0), 0)
+  const cashSales = sales.payments.filter((p) => p.method === 'cash').reduce((s, p) => s + p.amount, 0) - refunded
   const box = day ? cashSummary(day.opening_float, cashSales, sum('in'), sum('out')) : null
   const now = new Date().toISOString()
   // Drawer closed: everything since the last closing was taken with the drawer closed.

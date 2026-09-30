@@ -1,16 +1,16 @@
 import { useSyncExternalStore } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { supabase } from './repo'
+import { setDemoPermissionCheck, supabase } from './repo'
 import { tr } from './i18n'
 import { USER_ROLES, type UserRole } from './types'
 
 /**
  * What an account may open or do beyond the service screen (plan de salle, commandes, encaissement, à emporter,
  * livraison), which every account has. Same keys as the database (migrations 20260930000000_permissions.sql, 20260930010000_reservations.sql,
- * 20260930030000_delivery_zones.sql, 20260930050000_payroll.sql, 20260930060000_devices.sql, 20260930070000_supplier_purchases.sql, 20260930080000_stock_locations.sql, 20260930090000_stock_state.sql, 20260930100000_recipes.sql, 20260930110000_cash_register.sql and 20260930120000_expenses_profit.sql).
+ * 20260930030000_delivery_zones.sql, 20260930050000_payroll.sql, 20260930060000_devices.sql, 20260930070000_supplier_purchases.sql, 20260930080000_stock_locations.sql, 20260930090000_stock_state.sql, 20260930100000_recipes.sql, 20260930110000_cash_register.sql, 20260930120000_expenses_profit.sql and 20260930140000_control.sql).
  */
-export const SECTION_PERMISSIONS = ['staff', 'payroll', 'devices', 'stock', 'suppliers', 'purchases', 'stock_transfer', 'kitchen_charges', 'stock_state', 'stats', 'weekly_stats', 'expenses', 'profit', 'settings', 'edit', 'recipes', 'backup', 'ticket', 'reservations', 'delivery_zones'] as const
-export const ACTION_PERMISSIONS = ['cancel_order', 'offer', 'discount', 'inventory', 'reset_numbers', 'cash_open', 'cash_in', 'cash_out', 'day_close'] as const
+export const SECTION_PERMISSIONS = ['staff', 'payroll', 'devices', 'stock', 'suppliers', 'purchases', 'stock_transfer', 'kitchen_charges', 'stock_state', 'stats', 'weekly_stats', 'expenses', 'profit', 'cancelled_orders', 'cancelled_invoices', 'price_log', 'settings', 'edit', 'recipes', 'backup', 'ticket', 'reservations', 'delivery_zones'] as const
+export const ACTION_PERMISSIONS = ['cancel_order', 'offer', 'discount', 'inventory', 'reset_numbers', 'cash_open', 'cash_in', 'cash_out', 'day_close', 'cancel_invoice'] as const
 export const PERMISSIONS = [...SECTION_PERMISSIONS, ...ACTION_PERMISSIONS] as const
 export type Permission = (typeof PERMISSIONS)[number]
 
@@ -145,6 +145,8 @@ export const permissions: PermissionsService = supabase ? supabasePermissions(su
 let granted: ReadonlySet<Permission> = new Set()
 let signedIn: { id: string; role: UserRole } | null = null
 const listeners = new Set<() => void>()
+// Demo mode: the local order store checks the same rights as the database triggers.
+setDemoPermissionCheck((p) => granted.has(p as Permission))
 
 /** Loads the permissions of the account that just signed in (null after sign out). */
 export async function loadMyPermissions(user: { id: string; role: UserRole } | null) {

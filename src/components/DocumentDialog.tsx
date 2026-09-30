@@ -22,13 +22,15 @@ function useReceiptSettings() {
 }
 
 /** A printable paper (bill or invoice) inside a dialog, with a browser print button. */
-function Paper({ title, kind, doc, settings, extra, actions, onClose }: {
+function Paper({ title, kind, doc, settings, extra, actions, onPrinted, onClose }: {
   title: string
   kind: ReceiptKind
   doc: DocProps
   settings: ReceiptSettings | null
   extra?: ReactNode
   actions?: ReactNode
+  /** Called when the paper is sent to the printer. */
+  onPrinted?(): void
   onClose(): void
 }) {
   const { t } = useI18n()
@@ -44,7 +46,7 @@ function Paper({ title, kind, doc, settings, extra, actions, onClose }: {
         <div className="dialog-actions">
           {actions}
           <div className="spacer" />
-          <button type="button" onClick={() => window.print()} disabled={!settings}>{t.print}</button>
+          <button type="button" onClick={() => { onPrinted?.(); window.print() }} disabled={!settings}>{t.print}</button>
           <button type="button" className="primary" autoFocus onClick={onClose}>{t.close}</button>
         </div>
       </div>
@@ -58,7 +60,9 @@ function Paper({ title, kind, doc, settings, extra, actions, onClose }: {
 export function BillDialog({ onClose, ...doc }: DocProps & { onClose(): void }) {
   const { t } = useI18n()
   const settings = useReceiptSettings()
-  return <Paper title={t.bill} kind="bill" doc={doc} settings={settings} onClose={onClose} />
+  // A printed bill can only be cancelled with the cancel_invoice permission (Factures annulées).
+  const printed = () => repo.markPrinted(doc.order.id).catch(() => {})
+  return <Paper title={t.bill} kind="bill" doc={doc} settings={settings} onPrinted={printed} onClose={onClose} />
 }
 
 /**

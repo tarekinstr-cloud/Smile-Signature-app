@@ -66,7 +66,7 @@ const SUPABASE_TABLES: [string, string][] = [
   ['app_users', 'user_id'], ['backups_log', 'id'], ['role_permissions', 'role'], ['user_permissions', 'user_id'],
   ['reservations', 'id'], ['delivery_zones', 'id'], ['salary_advances', 'id'], ['device_sessions', 'id'],
   ['supplier_invoices', 'id'], ['supplier_invoice_items', 'id'], ['supplier_invoice_payments', 'id'], ['stock_movements', 'id'],
-  ['cash_days', 'id'], ['cash_movements', 'id'], ['order_number_resets', 'id'], ['expense_categories', 'id'], ['expenses', 'id'],
+  ['cash_days', 'id'], ['cash_movements', 'id'], ['order_number_resets', 'id'], ['expense_categories', 'id'], ['expenses', 'id'], ['price_changes', 'id'],
 ]
 const PAGE = 1000
 
