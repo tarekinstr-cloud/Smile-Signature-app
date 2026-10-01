@@ -272,7 +272,7 @@ function write(db: LocalRecipes) {
 /** Last purchase price per stock unit of each item, from the demo purchase movements. */
 const lastPrices = (moves: StockMovement[]) => {
   const last = new Map<string, number>()
-  for (const m of moves) if (m.type === 'purchase' && m.stock_item_id && m.unit_cost != null) last.set(m.stock_item_id, m.unit_cost)
+  for (const m of moves) if (m.type === 'purchase' && !m.voided && m.stock_item_id && m.unit_cost != null) last.set(m.stock_item_id, m.unit_cost)
   return last
 }
 

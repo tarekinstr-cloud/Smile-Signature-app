@@ -215,24 +215,62 @@ interface LocalOrders {
   lastDelivery?: number
 }
 
+const localListeners = new Set<() => void>()
+const readLocalCash = (): LocalCash => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<LocalCash> | null
+    return { days: (saved?.days ?? []).map(normDay), movements: (saved?.movements ?? []).map(normMove), resets: saved?.resets ?? [] }
+  } catch {
+    return { days: [], movements: [], resets: [] }
+  }
+}
+const writeLocalCash = (db: LocalCash) => {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(db))
+  } catch {
+    // Not persisted (private mode); the change is lost on reload.
+  }
+  localListeners.forEach((l) => l())
+}
+
+/** Demo mode: cash taken from the drawer for a supplier invoice (its Fonds de sortie − what already came back). */
+export function localSupplierCash(invoiceId: string): number {
+  return round2(readLocalCash().movements
+    .filter((m) => m.supplier_invoice_id === invoiceId)
+    .reduce((s, m) => s + (m.kind === 'out' ? m.amount : -m.amount), 0))
+}
+
+/**
+ * Demo mode, like cancel_supplier_invoice(): the cash paid from the drawer for a cancelled supplier invoice comes back
+ * as a Fond d'entrée of the open day. `check` only verifies that a day is open. Returns the amount.
+ */
+export function localSupplierRefund(invoiceId: string, reason: string, supplier: string, user: string, check = false): number {
+  const amount = localSupplierCash(invoiceId)
+  if (amount <= 0) return 0
+  const db = readLocalCash()
+  const day = db.days.find((d) => !d.closed_at)
+  if (!day) throw new Error(tr().errRefundNoOpenDay)
+  if (check) return amount
+  db.movements.push({
+    id: newId(), day_id: day.id, kind: 'in', amount, reason, supplier_invoice_id: invoiceId, supplier_name: supplier, user_name: user,
+    created_at: new Date().toISOString(),
+  })
+  writeLocalCash(db)
+  return amount
+}
+
+/** Demo mode, like replace_supplier_invoice(): the drawer payments of a corrected invoice now belong to its replacement. */
+export function localMoveSupplierCash(fromId: string, toId: string) {
+  const db = readLocalCash()
+  if (!db.movements.some((m) => m.supplier_invoice_id === fromId)) return
+  for (const m of db.movements) if (m.supplier_invoice_id === fromId) m.supplier_invoice_id = toId
+  writeLocalCash(db)
+}
+
 function localCash(): CashService {
-  const listeners = new Set<() => void>()
-  const read = (): LocalCash => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<LocalCash> | null
-      return { days: (saved?.days ?? []).map(normDay), movements: (saved?.movements ?? []).map(normMove), resets: saved?.resets ?? [] }
-    } catch {
-      return { days: [], movements: [], resets: [] }
-    }
-  }
-  const write = (db: LocalCash) => {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(db))
-    } catch {
-      // Not persisted (private mode); the change is lost on reload.
-    }
-    listeners.forEach((l) => l())
-  }
+  const listeners = localListeners
+  const read = readLocalCash
+  const write = writeLocalCash
   window.addEventListener('storage', (e) => {
     if (e.key === KEY) listeners.forEach((l) => l())
   })

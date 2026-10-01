@@ -707,6 +707,23 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .tag.pay-status.unpaid { background: var(--occ-bg); color: var(--occ); }
 .tag.pay-status.partial { background: #fef3c7; color: #92400e; }
 .tag.pay-status.paid { background: #dcfce7; color: #166534; }
+.tag.pay-status.cancelled { background: var(--line); color: var(--muted); }
+.invoices-table tr.cancelled td { color: var(--muted); }
+.invoices-table tr.cancelled .payroll-name bdi { text-decoration: line-through; }
+.pur-cancel-info { display: flex; flex-direction: column; gap: 2px; border-radius: 8px; margin: 4px 0 8px; }
+.pur-invoice-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; padding: 4px 0 8px; }
+.pur-invoice-actions button { min-height: 44px; }
+.pur-shortage { display: flex; flex-direction: column; gap: 8px; border-radius: 8px; padding: 12px; }
+.pur-shortage .bo-table { background: #fff; border-radius: 6px; color: var(--ink); }
+.pur-shortage .bo-table td:first-child { min-width: 90px; }
+.pur-shortage .bo-table th, .pur-shortage .bo-table td { padding: 6px 8px; font-size: 13px; }
+.dialog.pur-cancel-dialog { width: min(620px, 100%); max-height: calc(100dvh - 24px); overflow-y: auto; }
+.pur-cancel-dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 600; }
+.pur-cancel-effects { margin: 0; padding-inline-start: 18px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.pur-reason { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 600; width: 100%; }
+.pur-return-lines { display: flex; flex-direction: column; gap: 6px; }
+.pur-return-line { display: grid !important; grid-template-columns: 1fr 120px; align-items: center; gap: 10px; font-weight: 400 !important; }
+.pur-return-line input { min-height: 40px; }
 @media (max-width: 760px) {
   .pur-line-head { display: none; }
   .pur-line { position: relative; grid-template-columns: 1fr 1fr; padding: 10px 0; border-bottom: 1px solid var(--line); }
@@ -811,7 +828,11 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
   .recipe-lines .pur-amount .pur-label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); }
 }
 .recipe-editor > * { flex-shrink: 0; }
-.report-table td.payroll-name { min-width: 150px; }
+.report-table td.payroll-name { min-width: 120px; }
+.report-table th.num { white-space: normal; overflow-wrap: normal; word-break: keep-all; vertical-align: bottom; }
+.panel:has(> .report-table) { overflow-x: auto; }
+.report-table { font-size: 14px; }
+.report-table th, .report-table td { padding-inline: 6px; }
 .recipe-copy button { flex: 0 0 auto; }
 
 /* ───────────── Statistiques / bénéfice : caisse, Statistique Journalier, rapport Z ───────────── */
