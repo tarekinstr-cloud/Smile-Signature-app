@@ -412,10 +412,10 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     }] : []),
     ...(can('settings') ? [{
       id: 'settings', label: t.settings, current: onBo('settings') || onBo('wallpaper') || onBo('config'), items: [
-        { id: 'general', label: t.settingsGeneral, checked: onBo('settings'), onSelect: () => setBackOffice('settings') },
+        // Order of i-Restaurant: Configurations, imprimantes, fond d'écran (the next ones come with later updates).
         { id: 'config', label: t.cfgTitle, checked: onBo('config'), onSelect: () => openBo('config') },
+        { id: 'printers', label: t.printersManage, onSelect: () => { toFloor(); setPrinterSettings(true) } },
         { id: 'wallpaper', label: t.bgTitle, checked: onBo('wallpaper'), onSelect: () => openBo('wallpaper') },
-        { id: 'printers', label: t.printers, onSelect: () => { toFloor(); setPrinterSettings(true) } },
       ],
     }] : []),
     { id: 'help', label: t.navHelp, items: [{ id: 'about', label: t.about, onSelect: () => setInfo('about') }] },

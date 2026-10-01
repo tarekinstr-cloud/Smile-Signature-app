@@ -291,6 +291,9 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .receipt-header, .receipt-footer { text-align: center; }
 .receipt-footer { font-weight: 700; margin-top: 4px; }
 .receipt-sep { border-top: 1px dashed #000; margin: 8px 0; }
+.receipt.w58 { width: 48mm; font-size: 12px; }
+.receipt.w58 .receipt-meta { flex-wrap: wrap; gap: 0 8px; }
+.receipt-ids { display: flex; flex-wrap: wrap; justify-content: center; gap: 0 10px; font-size: 11px; margin-top: 2px; }
 .receipt-meta, .receipt-row { display: flex; justify-content: space-between; gap: 8px; }
 .receipt-row > span:last-child, .receipt-meta > * { white-space: nowrap; }
 .receipt-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -1015,3 +1018,7 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 }
 .area-empty { text-align: center; color: var(--muted); margin-top: 24px; }
 .drivers-table input[type=tel] { max-width: 180px; }
+
+/* Paramètres > Configurations */
+.cfg-tabs { margin: 12px auto 0; max-width: calc(100% - 32px); flex-wrap: wrap; }
+.cfg-ids { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }

@@ -216,7 +216,23 @@ export const defaultReceiptSettings = (): ReceiptSettings => ({
   header: '',
   footer: 'Merci de votre visite — Bon Appétit !',
   logo: null,
+  address: '', phone: '', nif: '', rc: '', nis: '', ai: '',
+  paper_width: 80, ticket_lang: null, show_waiter: true, show_table: true,
 })
+
+/** Receipt settings with every field (rows saved before the Configurations migration lack the new ones). */
+export function normalizeReceipt(r: Partial<ReceiptSettings>): ReceiptSettings {
+  const d = defaultReceiptSettings()
+  const text = (v: string | null | undefined) => v ?? ''
+  return {
+    name: r.name ?? d.name, header: text(r.header), footer: r.footer ?? d.footer, logo: r.logo ?? null,
+    address: text(r.address), phone: text(r.phone), nif: text(r.nif), rc: text(r.rc), nis: text(r.nis), ai: text(r.ai),
+    paper_width: Number(r.paper_width) === 58 ? 58 : 80,
+    ticket_lang: r.ticket_lang === 'fr' || r.ticket_lang === 'ar' ? r.ticket_lang : null,
+    show_waiter: r.show_waiter ?? true,
+    show_table: r.show_table ?? true,
+  }
+}
 
 /** A payment refused because no working day is open (Fond de caisse not entered, or the day was just closed). */
 /** Demo price log (Liste des modifications des prix), like the database triggers. Read by control.ts. */
@@ -839,10 +855,13 @@ function supabaseRepo(sb: SupabaseClient): Repo {
     async getReceiptSettings() {
       // All columns: the logo column comes with a later migration.
       const row = check(await sb.from('receipt_settings').select('*').eq('id', 1).maybeSingle()) as ReceiptSettings | null
-      return row ? { name: row.name, header: row.header, footer: row.footer, logo: row.logo ?? null } : defaultReceiptSettings()
+      return row ? normalizeReceipt(row) : defaultReceiptSettings()
     },
     async updateReceiptSettings(patch) {
-      check(await sb.from('receipt_settings').upsert({ id: 1, ...patch }))
+      const res = await sb.from('receipt_settings').upsert({ id: 1, ...patch })
+      if (res.error && /address|paper_width|ticket_lang|show_waiter|show_table|nif\b/.test(res.error.message)
+        && /schema cache|Could not find|does not exist/i.test(res.error.message)) throw new Error(tr().errMigrationSettings)
+      check(res)
     },
 
     async listPrinters() {
@@ -1708,7 +1727,7 @@ function localRepo(): Repo {
       commitOrders(db)
     },
     async getReceiptSettings() {
-      return { ...defaultReceiptSettings(), ...loadOrders().receipt }
+      return normalizeReceipt({ ...defaultReceiptSettings(), ...loadOrders().receipt })
     },
     async updateReceiptSettings(patch) {
       const db = loadOrders()

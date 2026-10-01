@@ -370,6 +370,18 @@ export interface ReceiptSettings {
   footer: string
   /** Logo printed at the top, as an image data URL. Empty: the app icon. */
   logo?: string | null
+  /** Restaurant (Paramètres > Configurations): address, phone and tax identifiers printed on tickets and invoices. */
+  address?: string
+  phone?: string
+  nif?: string
+  rc?: string
+  nis?: string
+  ai?: string
+  /** Ticket: paper width in mm, language of the printed ticket (null: the device's), waiter and table shown or not. */
+  paper_width?: 58 | 80
+  ticket_lang?: 'fr' | 'ar' | null
+  show_waiter?: boolean
+  show_table?: boolean
 }
 
 /** A kitchen / bar / cashier printer. The IP address is only needed once tickets are really printed. */
