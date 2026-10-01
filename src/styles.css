@@ -953,3 +953,27 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .control-lines { margin: 4px 0 0; padding-inline-start: 18px; font-size: 13px; color: var(--muted); }
 .control-lines .tag { margin-inline-start: 6px; }
 .search-input { min-width: 180px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+
+/* À emporter / Livraison en cartes */
+.svc-count { font-weight: 700; }
+.orders-board { width: min(1100px, 100%); max-height: calc(100dvh - 32px); overflow: auto; }
+.board-new { align-self: flex-start; }
+.board-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(190px, calc(50% - 6px)), 1fr)); gap: 12px; }
+.board-card { display: flex; flex-direction: column; border: 2px solid #d6d3d1; border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+.board-card.paid { border-color: var(--free); background: var(--free-bg); }
+.board-card.status-handed { opacity: 0.75; }
+.board-card.status-ready { border-color: #f59e0b; background: #fef3c7; animation: board-ready 1.4s ease-in-out infinite; }
+@keyframes board-ready { 50% { box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.45); } }
+@media (prefers-reduced-motion: reduce) { .board-card.status-ready { animation: none; box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.45); } }
+.board-open { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 10px 12px; border: 0; border-radius: 0; background: transparent; text-align: start; color: var(--ink); }
+.board-open:disabled { cursor: default; opacity: 1; }
+.board-open .table-timer { align-self: flex-start; }
+.board-no { font-size: 34px; font-weight: 800; line-height: 1.05; letter-spacing: 0.5px; }
+.board-who { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.board-status { display: flex; border-radius: 0; border: 0; border-top: 1px solid var(--line); }
+.board-status button { flex: 1 1 0; min-width: 0; padding: 10px 4px; font-size: 13px; border: 0; border-radius: 0; white-space: normal; line-height: 1.15; }
+.board-status button + button { border-inline-start: 1px solid var(--line); }
+.takeaway-start.kb-open { align-items: flex-start; flex-direction: column; justify-content: flex-start; }
+.takeaway-start.kb-open .dialog { align-self: center; margin-top: 16px; }
+.takeaway-start .touch-kb { margin-top: auto; align-self: center; }

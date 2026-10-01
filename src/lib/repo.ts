@@ -4,7 +4,7 @@ import type {
   NewCategory, NewItemOption, NewMenuItem, NewOptionGroup, NewOrderLine, NewTable, OptionGroup, OptionGroupPatch, Order,
   OrderLine, OrderLinePatch, PaidOrder, Payment, PaymentMethod, ReceiptSettings, TablePatch, AdjustmentsPatch,
   CategoryPrinters, KitchenTicket, NewPrinter, Printer, PrinterPatch, InvoiceCustomer, TableMove, DeliveryCustomer, DeliveryStatus,
-  Cancellation, CancelledOrder, PriceChange, TableOrderInfo, FloorConfig,
+  Cancellation, CancelledOrder, PriceChange, TableOrderInfo, FloorConfig, PickupStatus,
 } from './types'
 import { demoMenu } from './demoMenu'
 import { buildKitchenTickets, type SendResult } from './kitchen'
@@ -66,13 +66,19 @@ export interface Repo {
   /** Opens an order on the table (marking it occupied), or returns the one already open. */
   openOrder(tableId: string): Promise<Order>
   /** Opens a takeaway order: no table, and the next takeaway number. */
-  openTakeaway(): Promise<Order>
+  openTakeaway(customerName?: string): Promise<Order>
   /** Opens a delivery order for this customer: no table, the next delivery number, status « En préparation ». */
   openDelivery(customer: DeliveryCustomer): Promise<Order>
   /** Changes a delivery's customer or status. */
   updateDelivery(orderId: string, patch: DeliveryPatch): Promise<Order>
   /** Open takeaway or delivery orders, oldest first, with their lines and payments. */
   listOpenOrders(type: 'takeaway' | 'delivery'): Promise<OpenOrder[]>
+  /** À emporter already paid but not handed to the customer yet (last 24 h), oldest first: they stay on the board. */
+  listPickupWaiting(): Promise<OpenOrder[]>
+  /** À emporter: En préparation, Prête or Remise au client (open or already paid). */
+  setPickupStatus(orderId: string, status: PickupStatus): Promise<void>
+  /** Customer's name on a takeaway order (shown on its card and kitchen tickets); empty text removes it. */
+  setCustomerName(orderId: string, name: string): Promise<void>
   /** Every table of every hall (Changement de Table). */
   listAllTables(): Promise<DiningTable[]>
   /**
@@ -547,8 +553,9 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       ])
       return { order, lines: (check(lines) as OrderLine[]).map(normalizeLine), payments }
     },
-    async openTakeaway() {
-      const res = await sb.from('orders').insert({ table_id: null, order_type: 'takeaway' }).select(ORDER_COLS).single()
+    async openTakeaway(customerName) {
+      const name = customerName?.trim().slice(0, 60) || null
+      const res = await sb.from('orders').insert({ table_id: null, order_type: 'takeaway', ...(name && { customer_name: name }) }).select(ORDER_COLS).single()
       if (res.error) throw checkoutError(res.error.message)
       return normalizeOrder(res.data as Order)
     },
@@ -586,6 +593,25 @@ function supabaseRepo(sb: SupabaseClient): Repo {
     },
     async listAllTables() {
       return check(await sb.from('tables').select('*').order('created_at')) as DiningTable[]
+    },
+    async listPickupWaiting() {
+      const since = new Date(Date.now() - 24 * 3600_000).toISOString()
+      const res = await sb.from('orders').select(ORDER_COLS).eq('status', 'paid').eq('order_type', 'takeaway')
+        .in('pickup_status', ['preparing', 'ready']).gte('closed_at', since).order('created_at')
+      // Before the takeaway-board migration there is no pickup status: nothing waits.
+      if (res.error) return []
+      const orders = (res.data as Order[]).map(normalizeOrder)
+      if (!orders.length) return []
+      const lines = (check(await sb.from('order_items').select('*').in('order_id', orders.map((o) => o.id))) as OrderLine[]).map(normalizeLine)
+      return orders.map((order) => ({ order, lines: lines.filter((l) => l.order_id === order.id), payments: [] }))
+    },
+    async setPickupStatus(orderId, status) {
+      const res = await sb.from('orders').update({ pickup_status: status }).eq('id', orderId).eq('order_type', 'takeaway')
+      if (res.error) throw /pickup_status/.test(res.error.message) ? new Error(tr().errMigrationTakeaway) : checkoutError(res.error.message)
+    },
+    async setCustomerName(orderId, name) {
+      const res = await sb.from('orders').update({ customer_name: name.trim().slice(0, 60) || null }).eq('id', orderId)
+      if (res.error) throw checkoutError(res.error.message)
     },
     async moveOrder(orderId, tableId) {
       const res = await sb.rpc('move_order', { p_order_id: orderId, p_table_id: tableId, p_user_name: await this.waiterName() })
@@ -780,6 +806,7 @@ function normalizeOrder(o: Order): Order {
     guests: o.guests == null ? null : Number(o.guests),
     served_at: o.served_at ?? null,
     timer_at: o.timer_at ?? null,
+    pickup_status: o.order_type === 'takeaway' ? o.pickup_status ?? 'preparing' : null,
   }
 }
 
@@ -1255,10 +1282,12 @@ function localRepo(): Repo {
       const order = db.orders.find((o) => o.id === orderId && o.status === 'open')
       return order ? openOrderOf(db, order) : null
     },
-    async openTakeaway() {
+    async openTakeaway(customerName) {
       const db = loadOrders()
       const takeaway_no = (db.lastTakeaway ?? 0) + 1
-      const order: Order = { ...newOrder(null), order_type: 'takeaway', takeaway_no }
+      const order: Order = {
+        ...newOrder(null), order_type: 'takeaway', takeaway_no, pickup_status: 'preparing', customer_name: customerName?.trim().slice(0, 60) || null,
+      }
       db.lastTakeaway = takeaway_no
       db.orders.push(order)
       commitOrders(db)
@@ -1290,6 +1319,29 @@ function localRepo(): Repo {
     },
     async listAllTables() {
       return load().tables
+    },
+    async listPickupWaiting() {
+      const db = loadOrders()
+      const since = new Date(Date.now() - 24 * 3600_000).toISOString()
+      return db.orders
+        .filter((o) => o.status === 'paid' && o.order_type === 'takeaway' && (o.pickup_status === 'preparing' || o.pickup_status === 'ready')
+          && (o as { closed_at?: string }).closed_at! >= since)
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        .map((o) => openOrderOf(db, o))
+    },
+    async setPickupStatus(orderId, status) {
+      const db = loadOrders()
+      const order = db.orders.find((o) => o.id === orderId && o.order_type === 'takeaway')
+      if (!order) throw checkoutError('order_not_found')
+      order.pickup_status = status
+      commitOrders(db)
+    },
+    async setCustomerName(orderId, name) {
+      const db = loadOrders()
+      const order = db.orders.find((o) => o.id === orderId)
+      if (!order) throw checkoutError('order_not_found')
+      order.customer_name = name.trim().slice(0, 60) || null
+      commitOrders(db)
     },
     // Mirrors public.move_order() in the order-actions migration.
     async moveOrder(orderId, tableId) {

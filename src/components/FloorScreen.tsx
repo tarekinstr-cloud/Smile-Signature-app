@@ -12,8 +12,9 @@ import { money } from '../lib/format'
 import { computeBill } from '../lib/billing'
 import LangToggle from './LangToggle'
 import { useI18n } from '../lib/i18n'
-import { deliveryContact, placeText } from '../lib/place'
 import DeliveryDialog from './DeliveryDialog'
+import OrdersBoard from './OrdersBoard'
+import TakeawayStartDialog from './TakeawayStartDialog'
 import BackOffice from './backoffice/BackOffice'
 import AdminMenu, { type AdminMenuGroup, type AdminMenuItem } from './nav/AdminMenu'
 import ServiceTabs from './nav/ServiceTabs'
@@ -40,7 +41,9 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
    * Takeaway or delivery order on screen: an open one (its id), or a new takeaway (null id, with a key so each is
    * a fresh screen). A delivery is created with its customer before the screen opens, so it always has an id.
    */
-  const [takeaway, setTakeaway] = useState<{ orderId: string | null; key: number } | null>(null)
+  const [takeaway, setTakeaway] = useState<{ orderId: string | null; key: number; customerName?: string } | null>(null)
+  /** Nouvelle commande à emporter: the customer's name, before the order screen. */
+  const [startingTakeaway, setStartingTakeaway] = useState(false)
   const [takeaways, setTakeaways] = useState<OpenOrder[]>([])
   const [deliveries, setDeliveries] = useState<OpenOrder[]>([])
   const [openList, setOpenList] = useState<NoTable | null>(null)
@@ -149,7 +152,8 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   }, [backOffice])
 
   const reloadTakeaways = useCallback(() => {
-    repo.listOpenOrders('takeaway').then(setTakeaways, () => setTakeaways([]))
+    // Open ones, and the paid ones not handed to the customer yet: both stay on the board.
+    Promise.all([repo.listOpenOrders('takeaway'), repo.listPickupWaiting()]).then(([open, waiting]) => setTakeaways([...open, ...waiting]), () => setTakeaways([]))
     repo.listOpenOrders('delivery').then(setDeliveries, () => setDeliveries([]))
   }, [])
   useEffect(() => {
@@ -157,11 +161,20 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     return repo.subscribeOrders(reloadTakeaways)
   }, [reloadTakeaways])
 
-  function openTakeaway(orderId: string | null) {
+  function openTakeaway(orderId: string | null, customerName?: string) {
     setOpenList(null)
     setNewDelivery(false)
+    setStartingTakeaway(false)
     setOrderTableId(null)
-    setTakeaway({ orderId, key: Date.now() })
+    setTakeaway({ orderId, key: Date.now(), customerName })
+  }
+
+  /** Nouvelle commande à emporter: asks the customer's name (optional) first. */
+  function askTakeaway() {
+    setOpenList(null)
+    setTakeaway(null)
+    setOrderTableId(null)
+    setStartingTakeaway(true)
   }
 
   function startDelivery() {
@@ -442,14 +455,14 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   if (takeaway) {
     return (
       <OrderScreen key={`takeaway-${takeaway.orderId ?? takeaway.key}`} table={null} hall={null} orderId={takeaway.orderId ?? undefined}
-        onBack={leaveOrder} onNewTakeaway={() => openTakeaway(null)} onNewDelivery={startDelivery} />
+        customerName={takeaway.customerName} onBack={leaveOrder} onNewTakeaway={askTakeaway} onNewDelivery={startDelivery} />
     )
   }
   const orderTable = tables.find((t) => t.id === orderTableId)
   if (orderTable && hall) {
     return (
       <OrderScreen key={orderTable.id} table={orderTable} hall={hall} startCheckout={checkoutFirst}
-        onBack={leaveOrder} onNewTakeaway={() => openTakeaway(null)} onNewDelivery={startDelivery} />
+        onBack={leaveOrder} onNewTakeaway={askTakeaway} onNewDelivery={startDelivery} />
     )
   }
 
@@ -542,36 +555,14 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
         </div>
       )}
       {openList && (
-        <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setOpenList(null)}>
-          <div className="dialog table-actions" role="dialog" aria-modal="true" aria-labelledby="takeaway-title"
-            onKeyDown={(e) => e.key === 'Escape' && setOpenList(null)}>
-            <div className="panel-head">
-              <h2 id="takeaway-title">{openList === 'delivery' ? t.deliveryOrders : t.takeawayOrders}</h2>
-              <button className="ghost" onClick={() => setOpenList(null)} aria-label={t.close}>✕</button>
-            </div>
-            <button className="primary big" autoFocus onClick={() => (openList === 'delivery' ? startDelivery() : openTakeaway(null))}>
-              {openList === 'delivery' ? t.newDelivery : t.newTakeaway}
-            </button>
-            {(openList === 'delivery' ? deliveries : takeaways).length === 0 ? (
-              <p className="muted small">{openList === 'delivery' ? t.noDeliveries : t.noTakeaways}</p>
-            ) : (
-              (openList === 'delivery' ? deliveries : takeaways).map(({ order, lines, payments }) => (
-                <button key={order.id} className="big takeaway-row" onClick={() => openTakeaway(order.id)}>
-                  <span>
-                    {placeText(t, order, null)}
-                    {order.order_type === 'delivery' && (
-                      <span className="muted small delivery-row-info"><bdi>{deliveryContact(order) ?? ''}</bdi></span>
-                    )}
-                  </span>
-                  {order.delivery_status && <span className={`tag delivery-status ${order.delivery_status}`}>{t.deliveryStatuses[order.delivery_status]}</span>}
-                  <span className="muted small">{t.itemCount(lines.reduce((s, l) => s + l.quantity, 0))}</span>
-                  <strong>{money(computeBill(order, lines, payments).remaining)}</strong>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
+        <OrdersBoard type={openList} orders={openList === 'delivery' ? deliveries : takeaways} timer={floorConfig}
+          onClose={() => setOpenList(null)}
+          onNew={() => (openList === 'delivery' ? startDelivery() : askTakeaway())}
+          onOpen={(order) => openTakeaway(order.id)}
+          onPickup={(order, status) => run(async () => { await repo.setPickupStatus(order.id, status); reloadTakeaways() })}
+          onDelivery={(order, status) => run(async () => { await repo.updateDelivery(order.id, { status }); reloadTakeaways() })} />
       )}
+      {startingTakeaway && <TakeawayStartDialog onCancel={() => setStartingTakeaway(false)} onStart={(name) => openTakeaway(null, name)} />}
       {newDelivery && (
         <DeliveryDialog submitLabel={t.deliveryStart} onCancel={() => setNewDelivery(false)}
           onSubmit={async (customer) => {

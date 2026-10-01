@@ -99,6 +99,8 @@ export type OrderType = 'dine_in' | 'takeaway' | 'delivery'
 
 /** Where a delivery is: En préparation → En route → Livrée. */
 export type DeliveryStatus = 'preparing' | 'on_the_way' | 'delivered'
+/** À emporter: En préparation → Prête (call the customer) → Remise au client. */
+export type PickupStatus = 'preparing' | 'ready' | 'handed'
 
 export interface Order extends Adjustments {
   id: string
@@ -147,6 +149,8 @@ export interface Order extends Adjustments {
   served_at?: string | null
   /** Start of the waiting timer after a « Servi » then a new send; null: since the order was opened. */
   timer_at?: string | null
+  /** À emporter only (null otherwise): where the order is between the kitchen and the customer. */
+  pickup_status?: PickupStatus | null
 }
 
 /** Open order of a table, as the floor plan shows it: waiter, guests and waiting timer. */
