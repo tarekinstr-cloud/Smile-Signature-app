@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { defaultFloorConfig, repo, type OpenOrder } from '../lib/repo'
-import type { DiningTable, FloorConfig, Hall, Order, PickupStatus, TableOrderInfo, TablePatch } from '../lib/types'
+import type { DeliveryStatus, DiningTable, FloorConfig, Hall, Order, PickupStatus, TableOrderInfo, TablePatch } from '../lib/types'
 import FloorPlan from './FloorPlan'
 import TablePanel from './TablePanel'
 import HallPanel from './HallPanel'
@@ -41,7 +41,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
    * Takeaway or delivery order on screen: an open one (its id), or a new takeaway (null id, with a key so each is
    * a fresh screen). A delivery is created with its customer before the screen opens, so it always has an id.
    */
-  const [takeaway, setTakeaway] = useState<{ orderId: string | null; key: number; guests?: number } | null>(null)
+  const [takeaway, setTakeaway] = useState<{ orderId: string | null; key: number } | null>(null)
   /** Nouvelle commande à emporter: the number of people, before the order screen. */
   const [startingTakeaway, setStartingTakeaway] = useState(false)
   const [takeaways, setTakeaways] = useState<OpenOrder[]>([])
@@ -154,31 +154,36 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   const reloadTakeaways = useCallback(() => {
     // Open ones, and the paid ones not handed to the customer yet: both stay on the board.
     Promise.all([repo.listOpenOrders('takeaway'), repo.listPickupWaiting()]).then(([open, waiting]) => setTakeaways([...open, ...waiting]), () => setTakeaways([]))
-    repo.listOpenOrders('delivery').then(setDeliveries, () => setDeliveries([]))
+    // Open ones, and the paid ones not delivered yet: both stay in the view (their numbers are in use).
+    Promise.all([repo.listOpenOrders('delivery'), repo.listDeliveryWaiting()]).then(([open, waiting]) => setDeliveries([...open, ...waiting]), () => setDeliveries([]))
   }, [])
   useEffect(() => {
     reloadTakeaways()
     return repo.subscribeOrders(reloadTakeaways)
   }, [reloadTakeaways])
 
-  function openTakeaway(orderId: string | null, guests?: number) {
+  function openTakeaway(orderId: string | null) {
     setNewDelivery(false)
     setStartingTakeaway(false)
     setOrderTableId(null)
-    setTakeaway({ orderId, key: Date.now(), guests })
+    setTakeaway({ orderId, key: Date.now() })
   }
 
   /** À emporter already paid, tapped in the view: Prête / Remise (it leaves the view once handed). */
   const [pickupFor, setPickupFor] = useState<Order | null>(null)
-  function setPickup(order: Order, status: PickupStatus) {
+  function setPickup(order: Order, status: PickupStatus | DeliveryStatus) {
     setPickupFor(null)
     run(async () => {
-      await repo.setPickupStatus(order.id, status)
+      if (order.order_type === 'delivery') await repo.updateDelivery(order.id, { status: status as DeliveryStatus })
+      else await repo.setPickupStatus(order.id, status as PickupStatus)
       reloadTakeaways()
     })
   }
+  /** Numbers of the orders in progress in each mode: greyed out when a new one is created. */
+  const takeawayUsed = useMemo(() => new Set(takeaways.map((o) => o.order.takeaway_no).filter((n): n is number => n != null)), [takeaways])
+  const deliveryUsed = useMemo(() => new Set(deliveries.map((o) => o.order.delivery_no).filter((n): n is number => n != null)), [deliveries])
 
-  /** Nouvelle commande à emporter: asks the number of people first. */
+  /** Nouvelle commande à emporter: asks the customer's number first. */
   function askTakeaway() {
     setTakeaway(null)
     setOrderTableId(null)
@@ -462,7 +467,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   if (takeaway) {
     return (
       <OrderScreen key={`takeaway-${takeaway.orderId ?? takeaway.key}`} table={null} hall={null} orderId={takeaway.orderId ?? undefined}
-        startGuests={takeaway.guests} onBack={leaveOrder} onNewTakeaway={askTakeaway} onNewDelivery={startDelivery} />
+        onBack={leaveOrder} onNewTakeaway={askTakeaway} onNewDelivery={startDelivery} />
     )
   }
   const orderTable = tables.find((t) => t.id === orderTableId)
@@ -569,22 +574,45 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
         <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setPickupFor(null)}>
           <div className="dialog table-actions" role="dialog" aria-modal="true" aria-labelledby="pickup-title" onKeyDown={(e) => e.key === 'Escape' && setPickupFor(null)}>
             <div className="panel-head">
-              <h2 id="pickup-title">{t.takeawayShort(String(pickupFor.takeaway_no ?? '?'))}{pickupFor.guests ? ` · ${t.peopleCount(pickupFor.guests)}` : ''}</h2>
+              <h2 id="pickup-title">{pickupFor.order_type === 'delivery' ? t.deliveryShort(String(pickupFor.delivery_no ?? '?')) : t.takeawayShort(String(pickupFor.takeaway_no ?? '?'))}</h2>
               <button className="ghost" onClick={() => setPickupFor(null)} aria-label={t.close}>✕</button>
             </div>
-            <p className="muted small">{t.pickupPaidHint}</p>
-            {pickupFor.pickup_status !== 'ready' && (
-              <button className="big" autoFocus onClick={() => setPickup(pickupFor, 'ready')}>🔔 {t.pickupStatuses.ready}</button>
+            {pickupFor.order_type === 'delivery' ? (
+              <>
+                <p className="muted small">{t.deliveryPaidHint}</p>
+                {pickupFor.delivery_status !== 'on_the_way' && (
+                  <button className="big" autoFocus onClick={() => setPickup(pickupFor, 'on_the_way')}>🛵 {t.deliveryStatuses.on_the_way}</button>
+                )}
+                <button className="primary big" onClick={() => setPickup(pickupFor, 'delivered')}>✓ {t.deliveryStatuses.delivered}</button>
+              </>
+            ) : (
+              <>
+                <p className="muted small">{t.pickupPaidHint}</p>
+                {pickupFor.pickup_status !== 'ready' && (
+                  <button className="big" autoFocus onClick={() => setPickup(pickupFor, 'ready')}>🔔 {t.pickupStatuses.ready}</button>
+                )}
+                <button className="primary big" onClick={() => setPickup(pickupFor, 'handed')}>✓ {t.pickupStatuses.handed}</button>
+              </>
             )}
-            <button className="primary big" onClick={() => setPickup(pickupFor, 'handed')}>✓ {t.pickupStatuses.handed}</button>
           </div>
         </div>
       )}
-      {startingTakeaway && <TakeawayStartDialog defaultGuests={floorConfig.takeaway_default_guests} onCancel={() => setStartingTakeaway(false)} onStart={(guests) => openTakeaway(null, guests)} />}
+      {startingTakeaway && (
+        <TakeawayStartDialog min={floorConfig.takeaway_number_min} max={floorConfig.takeaway_number_max} used={takeawayUsed}
+          onCancel={() => setStartingTakeaway(false)}
+          onStart={async (number) => {
+            // Created now: the number is reserved at once (an empty order is cancelled when left).
+            const order = await repo.openTakeaway(number)
+            reloadTakeaways()
+            openTakeaway(order.id)
+          }} />
+      )}
       {newDelivery && (
-        <DeliveryDialog submitLabel={t.deliveryStart} defaultGuests={floorConfig.delivery_default_guests} onCancel={() => setNewDelivery(false)}
+        <DeliveryDialog submitLabel={t.deliveryStart} numbers={{ min: floorConfig.delivery_number_min, max: floorConfig.delivery_number_max, used: deliveryUsed }}
+          onCancel={() => setNewDelivery(false)}
           onSubmit={async (customer) => {
             const order = await repo.openDelivery(customer)
+            reloadTakeaways()
             openTakeaway(order.id)
           }} />
       )}

@@ -56,9 +56,9 @@ export default function Receipt({ settings, order, lines, payments, place, hallN
           {hallName && <bdi>{hallName}</bdi>}
         </div>
       )}
-      {(!!order.guests || !!order.pager_no) && (
+      {((!!order.guests && order.order_type === 'dine_in') || !!order.pager_no) && (
         <div className="receipt-meta">
-          <span>{order.guests ? t.peopleCount(order.guests) : ''}</span>
+          <span>{order.guests && order.order_type === 'dine_in' ? t.peopleCount(order.guests) : ''}</span>
           {order.pager_no && <strong>{t.pagerShort(order.pager_no)}</strong>}
         </div>
       )}
@@ -67,7 +67,7 @@ export default function Receipt({ settings, order, lines, payments, place, hallN
         <div className="receipt-customer receipt-delivery">
           <div><strong>[{t.delivery}]</strong></div>
           {deliveryContact(order) && <div dir="auto">{deliveryContact(order)}</div>}
-          {order.customer_address && textLines(order.customer_address)}
+          {order.customer_address?.trim() ? textLines(order.customer_address) : <div><em>{t.addressNone}</em></div>}
           {order.delivery_zone_name && <div>{t.deliveryZone} : <bdi>{order.delivery_zone_name}</bdi></div>}
           {order.driver_name && <div>{t.driverCol} : <bdi>{order.driver_name}</bdi>{order.driver_phone && <> · <bdi dir="ltr">{order.driver_phone}</bdi></>}</div>}
         </div>

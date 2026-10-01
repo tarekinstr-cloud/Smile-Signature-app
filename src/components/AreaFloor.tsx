@@ -75,11 +75,11 @@ export default function AreaFloor({ area, orders, config, onNew, onOpen }: Props
           const label = delivery ? t.deliveryShort(no) : t.takeawayShort(no)
           return (
             <button key={order.id} type="button" className={`area-item status-${status}${paid ? ' paid' : ''}`} onClick={() => onOpen(order)}
-              aria-label={[label, order.guests ? t.peopleCount(order.guests) : '', t.floorWaitAria(minutes),
+              aria-label={[label, t.floorWaitAria(minutes),
                 delivery ? t.deliveryStatuses[order.delivery_status ?? 'preparing'] : t.pickupStatuses[order.pickup_status ?? 'preparing']].filter(Boolean).join(' · ')}>
               {delivery ? <ScooterIcon /> : <PersonIcon />}
               <span className="area-tag">
-                <strong className="area-no">{label}{order.guests ? <span className="area-guests"> · {order.guests} 👤</span> : null}</strong>
+                <strong className="area-no">{label}</strong>
                 <span className={`table-timer ${timerLevel(minutes, config)}`}>⏱ {t.floorMinutes(minutes)}</span>
                 {!delivery && order.pager_no && <span className="area-pager">{t.pagerShort(order.pager_no)}</span>}
                 {delivery && (

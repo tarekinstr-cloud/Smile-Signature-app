@@ -38,6 +38,8 @@ export interface WeekDay {
   /** Personnes servies (1 for an order without its number of people) and the ticket moyen par personne. */
   guests: number
   avgGuest: number
+  /** Sales of the tables (the only orders with a number of people), for the ticket moyen par personne. */
+  dineNet: number
   cash: number
   card: number
   expenses: number
@@ -63,7 +65,7 @@ export function weekDays(first: Date, n: number, sales: SalesData, days: CashDay
   const rows = new Map<string, WeekDay>()
   for (let i = 0; i < n; i++) {
     const day = isoDay(addDays(first, i))
-    rows.set(day, { day, net: 0, orders: 0, avg: 0, guests: 0, avgGuest: 0, cash: 0, card: 0, expenses: 0, gap: null })
+    rows.set(day, { day, net: 0, orders: 0, avg: 0, guests: 0, avgGuest: 0, dineNet: 0, cash: 0, card: 0, expenses: 0, gap: null })
   }
   for (const o of sales.orders) {
     const r = rows.get(keyOf(o.closed_at ?? o.created_at))
@@ -71,6 +73,7 @@ export function weekDays(first: Date, n: number, sales: SalesData, days: CashDay
     r.net += o.total ?? 0
     r.orders += 1
     r.guests += guestsOf(o)
+    if ((o.order_type ?? 'dine_in') === 'dine_in') r.dineNet += o.total ?? 0
   }
   for (const p of sales.payments) {
     const r = rows.get(keyOf(p.created_at))
@@ -87,7 +90,7 @@ export function weekDays(first: Date, n: number, sales: SalesData, days: CashDay
   const c = da
   return [...rows.values()].map((r) => ({
     ...r, net: c(r.net), cash: c(r.cash), card: c(r.card), expenses: c(r.expenses), gap: r.gap === null ? null : c(r.gap),
-    avg: r.orders ? c(r.net / r.orders) : 0, avgGuest: r.guests ? c(r.net / r.guests) : 0,
+    avg: r.orders ? c(r.net / r.orders) : 0, avgGuest: r.guests ? c(r.dineNet / r.guests) : 0, dineNet: c(r.dineNet),
   }))
 }
 
@@ -141,7 +144,7 @@ export default function WeeklyPage() {
     const gaps = rows.filter((r) => r.gap !== null)
     return {
       net: s((r) => r.net), orders, avg: orders ? da(s((r) => r.net) / orders) : 0, cash: s((r) => r.cash),
-      guests: s((r) => r.guests), avgGuest: s((r) => r.guests) ? da(s((r) => r.net) / s((r) => r.guests)) : 0,
+      guests: s((r) => r.guests), avgGuest: s((r) => r.guests) ? da(s((r) => r.dineNet) / s((r) => r.guests)) : 0, dineNet: s((r) => r.dineNet),
       card: s((r) => r.card), expenses: s((r) => r.expenses), gap: gaps.length ? s((r) => r.gap ?? 0) : null,
     }
   }
