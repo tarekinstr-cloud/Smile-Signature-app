@@ -62,6 +62,7 @@ export function computeDayReport(
   const items = new Map<string, SalesRow>()
   const cats = new Map<string, SalesRow>()
   const employees = new Map<string, SalesRow>()
+  const drivers = new Map<string, SalesRow>()
   const byType: DayReport['byType'] = { dine_in: { orders: 0, amount: 0, guests: 0 }, takeaway: { orders: 0, amount: 0, guests: 0 }, delivery: { orders: 0, amount: 0, guests: 0 } }
   let guests = 0
   let gross = 0, discounts = 0, offered = 0, delivery = 0, net = 0
@@ -83,6 +84,10 @@ export function computeDayReport(
     byType[type].amount = da(byType[type].amount + total)
     const who = o.created_by_name?.trim() || t.dayUnknownEmployee
     add(employees, who, { name: who }, 0, total, 1)
+    if (type === 'delivery') {
+      const driver = o.driver_name?.trim() || t.dayNoDriver
+      add(drivers, driver, { name: driver }, 0, total, 1)
+    }
     // Share of the order discount on each line, so the lines add up to what was paid for the food.
     const ratio = bill.subtotal > 0 ? (bill.subtotal - bill.orderDiscount) / bill.subtotal : 0
     for (const b of bill.lines) {
@@ -126,6 +131,7 @@ export function computeDayReport(
     items: wholeDinars([...items.values()]).sort(byAmount),
     categories: wholeDinars([...cats.values()]).sort(byAmount),
     employees: wholeDinars([...employees.values()]).sort(byAmount),
+    drivers: wholeDinars([...drivers.values()]).sort(byAmount),
     cash,
     closedSales,
     voids,
@@ -166,5 +172,6 @@ export function reportCsvRows(r: DayReport): Record<string, unknown>[] {
   for (const c of r.categories) line(t.dayByCategory, c.name, c.quantity, c.amount)
   for (const i of r.items) line(t.dayByItem, `${i.name} (${i.category})`, i.quantity, i.amount)
   for (const e of r.employees) line(t.dayByEmployee, e.name, e.orders ?? 0, e.amount)
+  for (const d of r.drivers ?? []) line(t.dayByDriver, d.name, d.orders ?? 0, d.amount)
   return rows
 }

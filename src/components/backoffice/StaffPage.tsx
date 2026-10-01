@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { backOffice } from '../../lib/backoffice'
 import { repo, supabase } from '../../lib/repo'
 import { useI18n } from '../../lib/i18n'
-import { locale, useLoad } from './useLoad'
+import { errorText, locale, useLoad } from './useLoad'
+import type { StaffDriver } from '../../lib/types'
 
 /** Gestion des employés: the accounts that sign in, read-only (roles do not exist yet). */
 export default function StaffPage() {
@@ -50,6 +51,62 @@ export default function StaffPage() {
         )}
         <p className="muted small">{repo.mode === 'local' ? t.staffDemo : t.staffNote}</p>
       </section>
+      <DriversPanel />
     </main>
+  )
+}
+
+/** Livreurs: which accounts deliver, and their phone (shown under the scooter and given to the customer). */
+function DriversPanel() {
+  const { t } = useI18n()
+  const load = useCallback(() => repo.listStaffDrivers(), [])
+  const { data, error, setError, reload } = useLoad(load)
+  const [phones, setPhones] = useState<Record<string, string>>({})
+
+  async function save(d: StaffDriver, isDriver: boolean, phone: string) {
+    try {
+      await repo.setStaffDriver(d.user_id, isDriver, phone)
+      reload()
+    } catch (e) {
+      setError(errorText(e))
+    }
+  }
+
+  return (
+    <section className="panel">
+      <h2>{t.driversTitle}</h2>
+      <p className="muted small">{t.driversHint}</p>
+      {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
+      {!data ? (
+        !error && <p className="muted">{t.loading}</p>
+      ) : (
+        <table className="bo-table drivers-table">
+          <thead>
+            <tr><th>{t.driverCol}</th><th>{t.driverBox}</th><th>{t.customerPhone}</th></tr>
+          </thead>
+          <tbody>
+            {data.map((d) => {
+              const phone = phones[d.user_id] ?? d.phone ?? ''
+              return (
+                <tr key={d.user_id}>
+                  <td><bdi>{d.name}</bdi> <span className="muted small">({d.username})</span></td>
+                  <td>
+                    <label className="check">
+                      <input type="checkbox" checked={d.is_driver} onChange={(e) => save(d, e.target.checked, phone)} />
+                      {t.driverBox}
+                    </label>
+                  </td>
+                  <td>
+                    <input type="tel" inputMode="tel" dir="ltr" value={phone} maxLength={30} placeholder="0550 00 00 00"
+                      onChange={(e) => setPhones((p) => ({ ...p, [d.user_id]: e.target.value }))}
+                      onBlur={() => phone !== (d.phone ?? '') && save(d, d.is_driver, phone)} />
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+    </section>
   )
 }

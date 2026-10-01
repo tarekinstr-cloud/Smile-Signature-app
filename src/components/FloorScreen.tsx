@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { defaultFloorConfig, repo, type OpenOrder } from '../lib/repo'
-import type { DiningTable, FloorConfig, Hall, TableOrderInfo, TablePatch } from '../lib/types'
+import type { DiningTable, FloorConfig, Hall, Order, PickupStatus, TableOrderInfo, TablePatch } from '../lib/types'
 import FloorPlan from './FloorPlan'
 import TablePanel from './TablePanel'
 import HallPanel from './HallPanel'
@@ -13,7 +13,7 @@ import { computeBill } from '../lib/billing'
 import LangToggle from './LangToggle'
 import { useI18n } from '../lib/i18n'
 import DeliveryDialog from './DeliveryDialog'
-import OrdersBoard from './OrdersBoard'
+import AreaFloor from './AreaFloor'
 import TakeawayStartDialog from './TakeawayStartDialog'
 import BackOffice from './backoffice/BackOffice'
 import AdminMenu, { type AdminMenuGroup, type AdminMenuItem } from './nav/AdminMenu'
@@ -162,23 +162,30 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   }, [reloadTakeaways])
 
   function openTakeaway(orderId: string | null, guests?: number) {
-    setOpenList(null)
     setNewDelivery(false)
     setStartingTakeaway(false)
     setOrderTableId(null)
     setTakeaway({ orderId, key: Date.now(), guests })
   }
 
+  /** À emporter already paid, tapped in the view: Prête / Remise (it leaves the view once handed). */
+  const [pickupFor, setPickupFor] = useState<Order | null>(null)
+  function setPickup(order: Order, status: PickupStatus) {
+    setPickupFor(null)
+    run(async () => {
+      await repo.setPickupStatus(order.id, status)
+      reloadTakeaways()
+    })
+  }
+
   /** Nouvelle commande à emporter: asks the number of people first. */
   function askTakeaway() {
-    setOpenList(null)
     setTakeaway(null)
     setOrderTableId(null)
     setStartingTakeaway(true)
   }
 
   function startDelivery() {
-    setOpenList(null)
     setTakeaway(null)
     setOrderTableId(null)
     setNewDelivery(true)
@@ -470,7 +477,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     <div className={`app mode-${mode}`}>
       {adminMenu}
       <ServiceTabs restaurant={restaurant} halls={halls} hallId={hallId} takeaways={takeaways.length} deliveries={deliveries.length}
-        onAccount={() => setInfo('account')} onHall={(id) => { setHallId(id); setSelectedId(null) }} onAddHall={can('edit') ? addHall : undefined}
+        area={openList} onAccount={() => setInfo('account')} onHall={(id) => { setOpenList(null); setHallId(id); setSelectedId(null) }} onAddHall={can('edit') ? addHall : undefined}
         onTakeaway={() => setOpenList('takeaway')} onDelivery={() => setOpenList('delivery')} />
 
       {repo.mode === 'local' && (
@@ -480,7 +487,11 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       {resError && <div className="banner error" onClick={() => setResError(null)}>{resError}</div>}
 
       <main className="content">
-        {loading ? (
+        {openList ? (
+          <AreaFloor area={openList} orders={openList === 'delivery' ? deliveries : takeaways} config={floorConfig}
+            onNew={() => (openList === 'delivery' ? startDelivery() : askTakeaway())}
+            onOpen={(order) => (order.status === 'paid' ? setPickupFor(order) : openTakeaway(order.id))} />
+        ) : loading ? (
           <div className="center muted">{t.loading}</div>
         ) : !hall ? (
           <div className="center">
@@ -554,13 +565,20 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
           </div>
         </div>
       )}
-      {openList && (
-        <OrdersBoard type={openList} orders={openList === 'delivery' ? deliveries : takeaways} timer={floorConfig}
-          onClose={() => setOpenList(null)}
-          onNew={() => (openList === 'delivery' ? startDelivery() : askTakeaway())}
-          onOpen={(order) => openTakeaway(order.id)}
-          onPickup={(order, status) => run(async () => { await repo.setPickupStatus(order.id, status); reloadTakeaways() })}
-          onDelivery={(order, status) => run(async () => { await repo.updateDelivery(order.id, { status }); reloadTakeaways() })} />
+      {pickupFor && (
+        <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setPickupFor(null)}>
+          <div className="dialog table-actions" role="dialog" aria-modal="true" aria-labelledby="pickup-title" onKeyDown={(e) => e.key === 'Escape' && setPickupFor(null)}>
+            <div className="panel-head">
+              <h2 id="pickup-title">{t.takeawayShort(String(pickupFor.takeaway_no ?? '?'))}{pickupFor.guests ? ` · ${t.peopleCount(pickupFor.guests)}` : ''}</h2>
+              <button className="ghost" onClick={() => setPickupFor(null)} aria-label={t.close}>✕</button>
+            </div>
+            <p className="muted small">{t.pickupPaidHint}</p>
+            {pickupFor.pickup_status !== 'ready' && (
+              <button className="big" autoFocus onClick={() => setPickup(pickupFor, 'ready')}>🔔 {t.pickupStatuses.ready}</button>
+            )}
+            <button className="primary big" onClick={() => setPickup(pickupFor, 'handed')}>✓ {t.pickupStatuses.handed}</button>
+          </div>
+        </div>
       )}
       {startingTakeaway && <TakeawayStartDialog defaultGuests={floorConfig.takeaway_default_guests} onCancel={() => setStartingTakeaway(false)} onStart={(guests) => openTakeaway(null, guests)} />}
       {newDelivery && (
