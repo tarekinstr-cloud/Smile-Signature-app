@@ -960,13 +960,17 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .takeaway-start.kb-open .dialog { align-self: center; margin-top: 16px; }
 .takeaway-start .touch-kb { margin-top: auto; align-self: center; }
 
-/* Nombre de personnes */
-.guests-picker { display: flex; flex-direction: column; gap: 8px; }
-.guests-quick { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
-.guests-quick button { min-height: 52px; font-size: 20px; font-weight: 700; padding: 0; }
-.guests-quick button.on { background: var(--accent); border-color: var(--accent); color: #1c1917; }
-.guests-more input { max-width: 120px; font-size: 20px; text-align: center; }
-.guests-picker .touch-kb { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); width: min(1100px, 100vw); z-index: 1000; }
+/* Numéro du client / de livraison */
+.number-dialog { width: min(640px, 100%); max-height: calc(100dvh - 32px); overflow: auto; }
+.number-picker { display: flex; flex-direction: column; gap: 8px; }
+.number-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 6px; max-height: 46vh; overflow: auto; padding: 2px; }
+.number-grid button { min-height: 50px; padding: 0; font-size: 19px; font-weight: 700; }
+.number-grid button.on { background: var(--accent); border-color: var(--accent); color: #1c1917; }
+.number-grid button:disabled { background: #e7e5e4; color: #a8a29e; text-decoration: line-through; cursor: not-allowed; opacity: 1; }
+.number-typed button.on { border-color: var(--accent); background: #fef3c7; }
+.number-typed input { max-width: 120px; font-size: 20px; text-align: center; }
+.number-picker .touch-kb { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); width: min(1100px, 100vw); z-index: 1000; }
+.config-label { min-width: 110px; align-self: center; }
 
 /* Vues À emporter / Livraison (comme une salle) */
 .area-floor {
@@ -997,7 +1001,6 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
   background: rgba(255, 255, 255, 0.92); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); font-size: 13px; line-height: 1.25; text-align: center;
 }
 .area-no { font-size: 20px; font-weight: 800; white-space: nowrap; }
-.area-guests { font-size: 0.7em; color: var(--muted); }
 .area-driver { display: flex; flex-direction: column; align-items: center; font-weight: 600; max-width: 150px; }
 .area-driver bdi { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .area-phone { font-weight: 500; font-variant-numeric: tabular-nums; }

@@ -174,9 +174,14 @@ export interface TableOrderInfo {
 export interface FloorConfig {
   timer_warn_min: number
   timer_alert_min: number
-  /** Number of people proposed when a takeaway / delivery order is created (Paramètres > Configurations). */
-  takeaway_default_guests: number
-  delivery_default_guests: number
+  /**
+   * Numbers offered when a takeaway / delivery order is created (Paramètres > Configurations), separate ranges so
+   * the two modes are never mixed up (e.g. À emporter 1 to 40, Livraison 41 to 60).
+   */
+  takeaway_number_min: number
+  takeaway_number_max: number
+  delivery_number_min: number
+  delivery_number_max: number
   /** Bipeur: a pager number can be given to takeaway customers (shown under the icon and on the tickets). */
   pager_enabled: boolean
   /** Background pictures of the À emporter and Livraison views (set with setAreaBackground, not updateFloorConfig). */
@@ -243,8 +248,8 @@ export interface DeliveryCustomer {
   address: string
   /** Undefined keeps the current zone; null removes it. */
   zone?: DeliveryZone | null
-  /** Number of people (asked when the delivery is created); undefined keeps the current one. */
-  guests?: number
+  /** Numéro de livraison chosen when the delivery is created (ignored afterwards). */
+  number?: number
 }
 
 /** Area delivered to (quartier, ville), with its fee in DA and an estimated delivery time. Menu Édition. */

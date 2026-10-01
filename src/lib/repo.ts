@@ -77,15 +77,18 @@ export interface Repo {
   /** Opens an order on the table (marking it occupied), or returns the one already open. */
   openOrder(tableId: string): Promise<Order>
   /** Opens a takeaway order: no table, and the next takeaway number. */
-  openTakeaway(guests?: number): Promise<Order>
+  /** `number`: the customer's number chosen in the grid (refused with « Numéro déjà utilisé » when in use). */
+  openTakeaway(number?: number): Promise<Order>
   /** Opens a delivery order for this customer: no table, the next delivery number, status « En préparation ». */
   openDelivery(customer: DeliveryCustomer): Promise<Order>
   /** Changes a delivery's customer or status. */
   updateDelivery(orderId: string, patch: DeliveryPatch): Promise<Order>
   /** Open takeaway or delivery orders, oldest first, with their lines and payments. */
   listOpenOrders(type: 'takeaway' | 'delivery'): Promise<OpenOrder[]>
-  /** À emporter already paid but not handed to the customer yet (last 24 h), oldest first: they stay on the board. */
+  /** À emporter already paid but not handed to the customer yet, oldest first: they stay in the view (number in use). */
   listPickupWaiting(): Promise<OpenOrder[]>
+  /** Livraisons already paid but not delivered yet, oldest first: they stay in the view (number in use). */
+  listDeliveryWaiting(): Promise<OpenOrder[]>
   /** À emporter: En préparation, Prête or Remise au client (open or already paid). */
   setPickupStatus(orderId: string, status: PickupStatus): Promise<void>
   /** Customer's name on a takeaway order (shown on its card and kitchen tickets); empty text removes it. */
@@ -302,6 +305,7 @@ function checkoutError(code: string): Error {
   if (code.includes('amount_invalid')) return new Error(t.errAmountInvalid)
   if (code.includes('below_paid')) return new Error(t.errBelowPaid)
   if (code.includes('table_occupied') || code.includes('orders_one_open_per_table')) return new Error(t.errTableOccupied)
+  if (code.includes('orders_takeaway_number_in_use') || code.includes('orders_delivery_number_in_use')) return new Error(t.errNumberInUse)
   if (code.includes('table_not_found')) return new Error(t.errTableNotFound)
   if (code.includes('cancel_paid')) return new Error(t.errCancelPaid)
   if (code.includes('table_link_required')) return new Error(t.errTableLinkRequired)
@@ -363,7 +367,8 @@ export function sharedChannel(sb: SupabaseClient, topic: string, tables: string[
 }
 
 export const defaultFloorConfig = (): FloorConfig => ({
-  timer_warn_min: 15, timer_alert_min: 30, takeaway_default_guests: 1, delivery_default_guests: 1, pager_enabled: false,
+  timer_warn_min: 15, timer_alert_min: 30, pager_enabled: false,
+  takeaway_number_min: 1, takeaway_number_max: 40, delivery_number_min: 41, delivery_number_max: 60,
   takeaway_background_url: null, delivery_background_url: null,
 })
 
@@ -375,14 +380,14 @@ export function checkFloorConfig(c: FloorConfig): EditableConfig {
   const warn = Math.round(c.timer_warn_min)
   const alert = Math.round(c.timer_alert_min)
   if (!(warn >= 1 && warn <= 600 && alert >= 2 && alert <= 600 && alert > warn)) throw new Error(tr().errTimerThresholds)
-  const guests = (n: number | undefined) => {
-    const v = Math.round(Number(n ?? 1))
-    if (!(v >= 1 && v <= 99)) throw new Error(tr().errGuests)
-    return v
-  }
+  const [tMin, tMax, dMin, dMax] = [c.takeaway_number_min, c.takeaway_number_max, c.delivery_number_min, c.delivery_number_max].map((n) => Math.round(Number(n)))
+  const range = (min: number, max: number) => min >= 1 && max <= 9999 && max >= min && max - min < 500
+  if (!range(tMin, tMax) || !range(dMin, dMax)) throw new Error(tr().errNumberRange)
+  // Overlapping ranges would let « 41 » mean a takeaway and a delivery at the same time.
+  if (tMin <= dMax && dMin <= tMax) throw new Error(tr().errNumberRangesOverlap)
   return {
-    timer_warn_min: warn, timer_alert_min: alert, takeaway_default_guests: guests(c.takeaway_default_guests),
-    delivery_default_guests: guests(c.delivery_default_guests), pager_enabled: !!c.pager_enabled,
+    timer_warn_min: warn, timer_alert_min: alert, pager_enabled: !!c.pager_enabled,
+    takeaway_number_min: tMin, takeaway_number_max: tMax, delivery_number_min: dMin, delivery_number_max: dMax,
   }
 }
 
@@ -410,6 +415,19 @@ function areaError(message: string): Error {
 /** A pager number: up to 10 characters, empty text removes it. */
 export const cleanPager = (p: string | null) => p?.trim().slice(0, 10) || null
 
+/** A chosen takeaway / delivery number: whole, 1 to 9999. */
+function checkOrderNumber(n: number) {
+  if (!(Number.isInteger(n) && n >= 1 && n <= 9999)) throw new Error(tr().errNumberInvalid)
+}
+
+/** A takeaway / delivery order whose number is in use: open, or paid but not handed / delivered yet. */
+export function inUse(o: Pick<Order, 'status' | 'order_type' | 'pickup_status' | 'delivery_status'>): boolean {
+  if (o.status === 'open') return true
+  if (o.status !== 'paid') return false
+  return o.order_type === 'takeaway' ? o.pickup_status === 'preparing' || o.pickup_status === 'ready'
+    : o.order_type === 'delivery' ? o.delivery_status !== 'delivered' : false
+}
+
 function checkGuests(guests: number | null) {
   if (guests !== null && !(Number.isInteger(guests) && guests >= 1 && guests <= 99)) throw new Error(tr().errGuests)
 }
@@ -426,6 +444,12 @@ function supabaseRepo(sb: SupabaseClient): Repo {
   const floorChannel = sharedChannel(sb, 'floor', ['halls', 'tables'])
   const ordersChannel = sharedChannel(sb, 'orders', ['orders', 'order_items', 'payments'])
   const configChannel = sharedChannel(sb, 'app_config', ['app_config'])
+  /** Orders with their lines (paid orders listed in the À emporter / Livraison views). */
+  const withLines = async (orders: Order[]): Promise<OpenOrder[]> => {
+    if (!orders.length) return []
+    const lines = (check(await sb.from('order_items').select('*').in('order_id', orders.map((o) => o.id))) as OrderLine[]).map(normalizeLine)
+    return orders.map((order) => ({ order, lines: lines.filter((l) => l.order_id === order.id), payments: [] }))
+  }
   const insertRow = async (table: MenuTable, row: object) => check(await sb.from(table).insert(row).select().single()) as unknown
   const updateRow = async (table: MenuTable, id: string, patch: object) => {
     check(await sb.from(table).update(patch).eq('id', id))
@@ -511,8 +535,10 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       const d = defaultFloorConfig()
       return {
         timer_warn_min: Number(res.data.timer_warn_min), timer_alert_min: Number(res.data.timer_alert_min),
-        takeaway_default_guests: Number(res.data.takeaway_default_guests ?? d.takeaway_default_guests),
-        delivery_default_guests: Number(res.data.delivery_default_guests ?? d.delivery_default_guests),
+        takeaway_number_min: Number(res.data.takeaway_number_min ?? d.takeaway_number_min),
+        takeaway_number_max: Number(res.data.takeaway_number_max ?? d.takeaway_number_max),
+        delivery_number_min: Number(res.data.delivery_number_min ?? d.delivery_number_min),
+        delivery_number_max: Number(res.data.delivery_number_max ?? d.delivery_number_max),
         pager_enabled: !!res.data.pager_enabled,
         takeaway_background_url: res.data.takeaway_background_url ?? null,
         delivery_background_url: res.data.delivery_background_url ?? null,
@@ -523,7 +549,7 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       const res = await sb.from('app_config').update({ ...c, updated_at: new Date().toISOString() }).eq('id', 1).select('id')
       if (res.error) {
         throw /pager_enabled/.test(res.error.message) ? new Error(tr().errMigrationArea)
-          : /default_guests/.test(res.error.message) ? new Error(tr().errMigrationGuests) : floorError(res.error.message)
+          : /number_(min|max)/.test(res.error.message) ? new Error(tr().errMigrationNumbers) : floorError(res.error.message)
       }
       if (!res.data?.length) throw new Error(tr().errNoPermission)
     },
@@ -641,14 +667,16 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       ])
       return { order, lines: (check(lines) as OrderLine[]).map(normalizeLine), payments }
     },
-    async openTakeaway(guests) {
-      if (guests !== undefined) checkGuests(guests)
-      const res = await sb.from('orders').insert({ table_id: null, order_type: 'takeaway', ...(guests && { guests }) }).select(ORDER_COLS).single()
+    async openTakeaway(number) {
+      if (number !== undefined) checkOrderNumber(number)
+      const res = await sb.from('orders').insert({ table_id: null, order_type: 'takeaway', ...(number && { takeaway_no: number }) }).select(ORDER_COLS).single()
       if (res.error) throw checkoutError(res.error.message)
       return normalizeOrder(res.data as Order)
     },
     async openDelivery(customer) {
-      const res = await sb.from('orders').insert({ table_id: null, order_type: 'delivery', ...deliveryRow(customer) }).select(ORDER_COLS).single()
+      if (customer.number !== undefined) checkOrderNumber(customer.number)
+      const row = { table_id: null, order_type: 'delivery', ...deliveryRow(customer), ...(customer.number && { delivery_no: customer.number }) }
+      const res = await sb.from('orders').insert(row).select(ORDER_COLS).single()
       if (res.error) throw checkoutError(res.error.message)
       return normalizeOrder(res.data as Order)
     },
@@ -683,15 +711,17 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       return check(await sb.from('tables').select('*').order('created_at')) as DiningTable[]
     },
     async listPickupWaiting() {
-      const since = new Date(Date.now() - 24 * 3600_000).toISOString()
       const res = await sb.from('orders').select(ORDER_COLS).eq('status', 'paid').eq('order_type', 'takeaway')
-        .in('pickup_status', ['preparing', 'ready']).gte('closed_at', since).order('created_at')
+        .in('pickup_status', ['preparing', 'ready']).order('created_at')
       // Before the takeaway-board migration there is no pickup status: nothing waits.
       if (res.error) return []
-      const orders = (res.data as Order[]).map(normalizeOrder)
-      if (!orders.length) return []
-      const lines = (check(await sb.from('order_items').select('*').in('order_id', orders.map((o) => o.id))) as OrderLine[]).map(normalizeLine)
-      return orders.map((order) => ({ order, lines: lines.filter((l) => l.order_id === order.id), payments: [] }))
+      return withLines((res.data as Order[]).map(normalizeOrder))
+    },
+    async listDeliveryWaiting() {
+      const res = await sb.from('orders').select(ORDER_COLS).eq('status', 'paid').eq('order_type', 'delivery')
+        .in('delivery_status', ['preparing', 'on_the_way']).order('created_at')
+      if (res.error) return []
+      return withLines((res.data as Order[]).map(normalizeOrder))
     },
     async setPickupStatus(orderId, status) {
       const res = await sb.from('orders').update({ pickup_status: status }).eq('id', orderId).eq('order_type', 'takeaway')
@@ -903,7 +933,7 @@ function normalizeOrder(o: Order): Order {
 }
 
 type DeliveryRow = Partial<Pick<Order, 'customer_name' | 'customer_phone' | 'customer_address' | 'delivery_status'
-  | 'delivery_zone_id' | 'delivery_zone_name' | 'delivery_fee' | 'guests'>>
+  | 'delivery_zone_id' | 'delivery_zone_name' | 'delivery_fee'>>
 
 /**
  * Delivery fields to write: only those given, trimmed, empty text saved as null. The zone's name and fee are copied onto
@@ -919,7 +949,6 @@ function deliveryRow(patch: DeliveryPatch): DeliveryRow {
     ...(patch.phone !== undefined && { customer_phone: text(patch.phone) }),
     ...(patch.address !== undefined && { customer_address: text(patch.address) }),
     ...(patch.status !== undefined && { delivery_status: patch.status }),
-    ...(patch.guests !== undefined && { guests: patch.guests }),
   }
 }
 
@@ -1443,21 +1472,26 @@ function localRepo(): Repo {
       const order = db.orders.find((o) => o.id === orderId && o.status === 'open')
       return order ? openOrderOf(db, order) : null
     },
-    async openTakeaway(guests) {
-      if (guests !== undefined) checkGuests(guests)
+    async openTakeaway(number) {
+      if (number !== undefined) checkOrderNumber(number)
       const db = loadOrders()
-      const takeaway_no = (db.lastTakeaway ?? 0) + 1
-      const order: Order = { ...newOrder(null), order_type: 'takeaway', takeaway_no, pickup_status: 'preparing', guests: guests ?? null }
-      db.lastTakeaway = takeaway_no
+      // Like the orders_takeaway_number_in_use index: one order in progress per number.
+      if (number && db.orders.some((o) => o.order_type === 'takeaway' && o.takeaway_no === number && inUse(o))) throw checkoutError('orders_takeaway_number_in_use')
+      const takeaway_no = number ?? (db.lastTakeaway ?? 0) + 1
+      const order: Order = { ...newOrder(null), order_type: 'takeaway', takeaway_no, pickup_status: 'preparing' }
+      if (!number) db.lastTakeaway = takeaway_no
       db.orders.push(order)
       commitOrders(db)
       return order
     },
     async openDelivery(customer) {
+      if (customer.number !== undefined) checkOrderNumber(customer.number)
       const db = loadOrders()
-      const delivery_no = (db.lastDelivery ?? 0) + 1
+      const number = customer.number
+      if (number && db.orders.some((o) => o.order_type === 'delivery' && o.delivery_no === number && inUse(o))) throw checkoutError('orders_delivery_number_in_use')
+      const delivery_no = number ?? (db.lastDelivery ?? 0) + 1
       const order: Order = { ...newOrder(null), order_type: 'delivery', delivery_no, delivery_status: 'preparing', ...deliveryRow(customer) }
-      db.lastDelivery = delivery_no
+      if (!number) db.lastDelivery = delivery_no
       db.orders.push(order)
       commitOrders(db)
       return order
@@ -1482,12 +1516,13 @@ function localRepo(): Repo {
     },
     async listPickupWaiting() {
       const db = loadOrders()
-      const since = new Date(Date.now() - 24 * 3600_000).toISOString()
-      return db.orders
-        .filter((o) => o.status === 'paid' && o.order_type === 'takeaway' && (o.pickup_status === 'preparing' || o.pickup_status === 'ready')
-          && (o as { closed_at?: string }).closed_at! >= since)
-        .sort((a, b) => a.created_at.localeCompare(b.created_at))
-        .map((o) => openOrderOf(db, o))
+      return db.orders.filter((o) => o.status === 'paid' && inUse(o) && o.order_type === 'takeaway')
+        .sort((a, b) => a.created_at.localeCompare(b.created_at)).map((o) => openOrderOf(db, o))
+    },
+    async listDeliveryWaiting() {
+      const db = loadOrders()
+      return db.orders.filter((o) => o.status === 'paid' && inUse(o) && o.order_type === 'delivery')
+        .sort((a, b) => a.created_at.localeCompare(b.created_at)).map((o) => openOrderOf(db, o))
     },
     async setPickupStatus(orderId, status) {
       const db = loadOrders()

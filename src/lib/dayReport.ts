@@ -5,8 +5,12 @@ import type { CashSummary, DayReport, Menu, OrderLine, OrderType, SalesData, Sal
 
 const cents = (n: number) => Math.round(n * 100) / 100
 
-/** People served by an order: its number of people (couverts), or 1 when it was not given. */
-export const guestsOf = (o: { guests?: number | null }) => {
+/**
+ * People served by a table order: its couverts, or 1 when they were not given. Takeaway and delivery orders have no
+ * number of people: 0.
+ */
+export const guestsOf = (o: { guests?: number | null; order_type?: string | null }) => {
+  if (o.order_type && o.order_type !== 'dine_in') return 0
   const n = Math.round(Number(o.guests ?? 0))
   return n >= 1 ? n : 1
 }
@@ -63,8 +67,10 @@ export function computeDayReport(
   const cats = new Map<string, SalesRow>()
   const employees = new Map<string, SalesRow>()
   const drivers = new Map<string, SalesRow>()
-  const byType: DayReport['byType'] = { dine_in: { orders: 0, amount: 0, guests: 0 }, takeaway: { orders: 0, amount: 0, guests: 0 }, delivery: { orders: 0, amount: 0, guests: 0 } }
+  const byType: DayReport['byType'] = { dine_in: { orders: 0, amount: 0, guests: 0 }, takeaway: { orders: 0, amount: 0 }, delivery: { orders: 0, amount: 0 } }
   let guests = 0
+  /** Sales of the tables: the ticket moyen par personne counts only them (the others have no number of people). */
+  let dineNet = 0
   let gross = 0, discounts = 0, offered = 0, delivery = 0, net = 0
 
   for (const o of data.orders) {
@@ -79,8 +85,9 @@ export function computeDayReport(
     byType[type].orders += 1
     // An order without its number of people counts as one person.
     const people = guestsOf(o)
-    byType[type].guests = (byType[type].guests ?? 0) + people
+    if (type === 'dine_in') byType[type].guests = (byType[type].guests ?? 0) + people
     guests += people
+    if (type === 'dine_in') dineNet += total
     byType[type].amount = da(byType[type].amount + total)
     const who = o.created_by_name?.trim() || t.dayUnknownEmployee
     add(employees, who, { name: who }, 0, total, 1)
@@ -126,7 +133,7 @@ export function computeDayReport(
   return {
     from, to,
     gross: da(gross), discounts: da(discounts), offered: da(offered), delivery: da(delivery), net: da(net),
-    orders, avgTicket: orders ? da(net / orders) : 0, guests, avgPerGuest: guests ? da(net / guests) : 0, openOrders: data.openOrders,
+    orders, avgTicket: orders ? da(net / orders) : 0, guests, avgPerGuest: guests ? da(dineNet / guests) : 0, openOrders: data.openOrders,
     payments, byType,
     items: wholeDinars([...items.values()]).sort(byAmount),
     categories: wholeDinars([...cats.values()]).sort(byAmount),
