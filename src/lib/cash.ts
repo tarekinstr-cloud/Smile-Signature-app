@@ -236,14 +236,26 @@ function localCash(): CashService {
   window.addEventListener('storage', (e) => {
     if (e.key === KEY) listeners.forEach((l) => l())
   })
-  const reset = (reason: NumberReset['reason'], user: string): NumberReset => {
+  /**
+   * Numbers back to 1. At the opening (`since` = the day's period_start), the numbers already given since the previous
+   * closing go on, like open_cash_day(): a sale paid while the drawer was closed belongs to the day and keeps its number.
+   */
+  const reset = (reason: NumberReset['reason'], user: string, since?: string): NumberReset => {
     const o = readOrders()
     const row: NumberReset = {
       id: newId(), reason, last_ticket_no: o.lastTicket ?? null, last_takeaway_no: o.lastTakeaway ?? null, last_delivery_no: o.lastDelivery ?? null,
       user_name: user, created_at: new Date().toISOString(),
     }
+    const max = (f: (x: NonNullable<LocalOrders['orders']>[number]) => number | null | undefined) =>
+      since ? (o.orders ?? []).reduce((m, x) => Math.max(m, Number(f(x) ?? 0) || 0), 0) : 0
+    const after = (iso: string | null | undefined) => !!iso && !!since && iso >= since
     try {
-      localStorage.setItem(ORDERS_KEY, JSON.stringify({ ...o, lastTicket: 0, lastTakeaway: 0, lastDelivery: 0 }))
+      localStorage.setItem(ORDERS_KEY, JSON.stringify({
+        ...o,
+        lastTicket: max((x) => (after(x.closed_at) ? (x as { ticket_no?: number | null }).ticket_no : 0)),
+        lastTakeaway: max((x) => (after(x.created_at) ? x.takeaway_no : 0)),
+        lastDelivery: max((x) => (after(x.created_at) ? x.delivery_no : 0)),
+      }))
     } catch {
       // Storage blocked: the numbers go on.
     }
@@ -277,7 +289,7 @@ function localCash(): CashService {
         difference: null, report: null, note: '',
       }
       db.days.push(day)
-      db.resets.push(reset('day_open', user))
+      db.resets.push(reset('day_open', user, day.period_start))
       write(db)
       return day
     },

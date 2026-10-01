@@ -3,7 +3,7 @@ import { cash } from '../../lib/cash'
 import { repo } from '../../lib/repo'
 import { cashSummary, categoryOfItems, computeDayReport, reportCsvRows } from '../../lib/dayReport'
 import { download, stamp, toCsv } from '../../lib/admin'
-import { money } from '../../lib/format'
+import { csvDa, money } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
 import { usePermissions } from '../../lib/permissions'
 import type { CashDay, DayReport, SalesData } from '../../lib/types'
@@ -253,9 +253,9 @@ function ClosedDays() {
 
   const exportCsv = () => download(`journees-${stamp()}.csv`, toCsv(days.map((d) => ({
     [t.dayNoCol]: d.day_no, [t.dayOpenedAt]: d.opened_at, [t.dayClosedAt]: d.closed_at, [t.dayOpenedByCol]: d.opened_by_name,
-    [t.dayClosedByCol]: d.closed_by_name, [t.dayNet]: d.report?.net ?? '', [t.paidOrders]: d.report?.orders ?? '',
-    [t.cashOpening]: d.opening_float, [t.cashSales]: d.cash_sales, [t.cashInTotal]: d.cash_in, [t.cashOutTotal]: d.cash_out,
-    [t.cashExpected]: d.expected_cash, [t.cashCounted]: d.counted_cash, [t.cashGap]: d.difference, [t.resNote]: d.note,
+    [t.dayClosedByCol]: d.closed_by_name, [t.dayNet]: csvDa(d.report?.net), [t.paidOrders]: d.report?.orders ?? '',
+    [t.cashOpening]: csvDa(d.opening_float), [t.cashSales]: csvDa(d.cash_sales), [t.cashInTotal]: csvDa(d.cash_in), [t.cashOutTotal]: csvDa(d.cash_out),
+    [t.cashExpected]: csvDa(d.expected_cash), [t.cashCounted]: csvDa(d.counted_cash), [t.cashGap]: csvDa(d.difference), [t.resNote]: d.note,
   }))), 'text/csv;charset=utf-8')
 
   if (open) {

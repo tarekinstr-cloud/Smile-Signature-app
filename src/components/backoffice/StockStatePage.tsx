@@ -6,7 +6,7 @@ import { usePermissions } from '../../lib/permissions'
 import { todayIso } from '../../lib/payroll'
 import type { ConsumptionRow, StockInventory, StockInventoryLine, StockLocation, StockReportRow, StockStateRow } from '../../lib/types'
 import { useI18n } from '../../lib/i18n'
-import { money } from '../../lib/format'
+import { csvDa, da, money } from '../../lib/format'
 import { useDialog } from '../Dialog'
 import { qtyText } from './StockPage'
 import { errorText, locale, useLoad } from './useLoad'
@@ -15,7 +15,6 @@ type Tab = 'overview' | 'moves' | 'consumption' | 'inventories' | 'count'
 type LevelFilter = 'all' | 'low' | 'out' | 'negative'
 type Period = 'today' | 'week' | 'month' | 'custom'
 
-const round2 = (n: number) => Math.round(n * 100) / 100
 const round3 = (n: number) => Math.round(n * 1000) / 1000
 /** Parses "2,5" or "2.5" (spaces ignored); null when empty or not a number. */
 const parseNum = (v: string) => {
@@ -154,7 +153,8 @@ function Overview({ items, level, setLevel }: { items: StockStateRow[] | null; l
   }
   const shown = bySearch.filter((s) => level === 'all' || (level === 'negative' ? isNegative(s) : stockLevel(s) === level))
 
-  const sum = (f: (s: StockStateRow) => number | null) => round2(shown.reduce((a, s) => a + (f(s) ?? 0), 0))
+  // Whole dinars per row, so the tiles are the sum of the values shown.
+  const sum = (f: (s: StockStateRow) => number | null) => shown.reduce((a, s) => a + da(f(s) ?? 0), 0)
   const depotValue = sum((s) => stockValue(s.quantity, s.last_price))
   const kitchenValue = sum((s) => stockValue(s.kitchen_quantity, s.last_price))
   const unpriced = shown.filter((s) => s.last_price == null && totalQty(s) > 0).length
@@ -169,10 +169,10 @@ function Overview({ items, level, setLevel }: { items: StockStateRow[] | null; l
         [t.colKitchen]: csvNum(s.kitchen_quantity),
         [t.stateColTotal]: csvNum(totalQty(s)),
         [t.stockMinLabel]: csvNum(s.min_quantity),
-        [t.stateColPrice]: csvNum(s.last_price),
-        [t.stateValueDepot]: csvNum(stockValue(s.quantity, s.last_price)),
-        [t.stateValueKitchen]: csvNum(stockValue(s.kitchen_quantity, s.last_price)),
-        [t.stateColValue]: csvNum(stockValue(totalQty(s), s.last_price)),
+        [t.stateColPrice]: csvDa(s.last_price),
+        [t.stateValueDepot]: csvDa(stockValue(s.quantity, s.last_price)),
+        [t.stateValueKitchen]: csvDa(stockValue(s.kitchen_quantity, s.last_price)),
+        [t.stateColValue]: csvDa(stockValue(totalQty(s), s.last_price)),
         [t.stateSupplier]: s.last_supplier_name ?? '',
         [t.stateColAlert]: [lv === 'ok' ? '' : t.stateLevelFilter[lv], isNegative(s) ? t.stateLevelFilter.negative : ''].filter(Boolean).join(', '),
       }
@@ -263,7 +263,7 @@ function Overview({ items, level, setLevel }: { items: StockStateRow[] | null; l
             </div>
             <div className="stat-tile main">
               <span className="muted small">{t.stateValueTotal}</span>
-              <strong>{money(round2(depotValue + kitchenValue))}</strong>
+              <strong>{money(depotValue + kitchenValue)}</strong>
             </div>
           </section>
           <p className="muted small">
@@ -462,8 +462,8 @@ function Consumption({ version }: { version: number }) {
   const loss = (r: ConsumptionRow) => stockValue(r.inventory_gap, r.last_price)
   /** The unexplained share: inventory gaps / theoretical consumption, with the sign of the gap (charges are declared, so left out). */
   const gapPct = (r: ConsumptionRow) => (r.theoretical > 0 ? Math.round((r.inventory_gap / r.theoretical) * 1000) / 10 : null)
-  const totalLoss = round2(shown.reduce((a, r) => a + (loss(r) ?? 0), 0))
-  const theoreticalValue = round2(shown.reduce((a, r) => a + (stockValue(r.theoretical, r.last_price) ?? 0), 0))
+  const totalLoss = shown.reduce((a, r) => a + da(loss(r) ?? 0), 0)
+  const theoreticalValue = shown.reduce((a, r) => a + da(stockValue(r.theoretical, r.last_price) ?? 0), 0)
   const lastDay = isoDay(new Date(endKey - 1))
 
   function exportCsv() {
@@ -475,7 +475,7 @@ function Consumption({ version }: { version: number }) {
       [t.consColGap]: csvNum(r.inventory_gap),
       [t.consColActual]: csvNum(r.actual),
       [t.consColGapPct]: csvNum(gapPct(r)),
-      [t.consColLoss]: csvNum(loss(r)),
+      [t.consColLoss]: csvDa(loss(r)),
     }))), 'text/csv;charset=utf-8')
   }
 
@@ -583,7 +583,7 @@ function InventoryForm({ items, onReload, onDone, onAbandon }: {
     return [{ item: s, location: l, raw, counted, gap, value: gap == null ? null : stockValue(gap, s.last_price) }]
   }))
   const invalid = lines.filter((l) => l.counted == null || l.counted < 0)
-  const gapValue = round2(lines.reduce((a, l) => a + (l.value ?? 0), 0))
+  const gapValue = lines.reduce((a, l) => a + da(l.value ?? 0), 0)
   const perLocation = (l: StockLocation) => lines.filter((x) => x.location === l).length
 
   const q = query.trim().toLowerCase()
