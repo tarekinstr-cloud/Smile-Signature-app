@@ -1,7 +1,7 @@
 import type { Order, OrderLine, PaidOrder, Payment, ReceiptSettings } from '../lib/types'
-import { money } from '../lib/format'
+import { amount } from '../lib/format'
 import { computeBill, discountOf } from '../lib/billing'
-import { useI18n } from '../lib/i18n'
+import { trIn, useI18n } from '../lib/i18n'
 import { deliveryContact } from '../lib/place'
 
 /** receipt: after the last payment. bill: the running bill of an open order (Addition). invoice: Facture. */
@@ -22,14 +22,18 @@ interface Props {
 
 const textLines = (text: string) => text.split('\n').map((line, i) => <div key={i} dir="auto">{line || '\u00a0'}</div>)
 
-const minus = (n: number) => <bdi dir="ltr">−{money(n)}</bdi>
 
 /**
  * The printed ticket: logo and name, items with their discounts and offers, total, payments (with change given back)
- * and closing message. Sized for 80 mm receipt paper.
+ * and closing message. Sized for 80 or 58 mm paper and printed in the language set in Paramètres > Configurations > Ticket.
  */
 export default function Receipt({ settings, order, lines, payments, place, hallName, kind = 'receipt' }: Props) {
-  const { t } = useI18n()
+  const { t: appT } = useI18n()
+  const t = settings.ticket_lang ? trIn(settings.ticket_lang) : appT
+  const money = (n: number) => `${amount(n)} ${t.currency}`
+  const minus = (n: number) => <bdi dir="ltr">−{money(n)}</bdi>
+  const ids = [['NIF', settings.nif], ['RC', settings.rc], ['NIS', settings.nis], ['AI', settings.ai]].filter(([, v]) => v?.trim())
+  const waiter = settings.show_waiter !== false ? order.created_by_name?.trim() : null
   const date = order.closed_at ? new Date(order.closed_at) : new Date()
   const bill = computeBill(order, lines, payments)
   const adjusted = bill.offered > 0 || bill.lineDiscounts > 0 || bill.orderDiscount > 0
@@ -40,22 +44,34 @@ export default function Receipt({ settings, order, lines, payments, place, hallN
   const title = kind === 'invoice' ? t.invoiceNo(number(order.invoice_no)) : kind === 'bill' ? t.bill : t.ticketNo(number(order.ticket_no))
 
   return (
-    <div className="receipt">
+    <div className={`receipt${settings.paper_width === 58 ? ' w58' : ''}`} dir={t.dir}>
+      {/* 58 mm paper: the printer's page is narrower too. */}
+      {settings.paper_width === 58 && <style>{'@media print { @page { size: 58mm auto; } .print-area .receipt { width: 48mm; } }'}</style>}
       <img className="receipt-logo" src={settings.logo || '/icon.svg'} alt="" width={64} height={64} />
       <div className="receipt-name" dir="auto">{settings.name}</div>
+      {(settings.address?.trim() || settings.phone?.trim()) && (
+        <div className="receipt-header">
+          {settings.address?.trim() && textLines(settings.address)}
+          {settings.phone?.trim() && <div><bdi dir="ltr">{t.receiptTel} {settings.phone}</bdi></div>}
+        </div>
+      )}
       {/* Each line picks its own direction, so French text stays readable on an Arabic ticket and vice versa. */}
       {settings.header && <div className="receipt-header">{textLines(settings.header)}</div>}
+      {ids.length > 0 && (
+        <div className="receipt-ids">{ids.map(([k, v]) => <span key={k}><bdi dir="ltr">{k} : {v}</bdi></span>)}</div>
+      )}
       <div className="receipt-sep" />
       <div className="receipt-meta">
         <span>{title}</span>
         <span>{date.toLocaleDateString(t.locale)} {date.toLocaleTimeString(t.locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}</span>
       </div>
-      {place && (
+      {place && settings.show_table !== false && (
         <div className="receipt-meta">
           <span>{place}</span>
           {hallName && <bdi>{hallName}</bdi>}
         </div>
       )}
+      {waiter && <div className="receipt-meta"><span>{t.receiptWaiter} : <bdi>{waiter}</bdi></span></div>}
       {((!!order.guests && order.order_type === 'dine_in') || !!order.pager_no) && (
         <div className="receipt-meta">
           <span>{order.guests && order.order_type === 'dine_in' ? t.peopleCount(order.guests) : ''}</span>

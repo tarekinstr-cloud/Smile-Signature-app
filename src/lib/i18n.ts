@@ -1395,7 +1395,7 @@ const fr = {
   errBackgroundTooBig: 'Image trop lourde pour le mode démo (stockage du navigateur plein).',
   errMigrationFloor: 'Plan de salle visuel : exécutez la migration supabase/migrations/20261002000000_floor_visual.sql dans Supabase (SQL Editor).',
   cfgTitle: 'Configurations',
-  cfgSub: 'Chronomètre des tables',
+  cfgSub: 'Restaurant, ticket, service, sauvegarde',
   cfgTimerTitle: 'Chronomètre sous les tables',
   cfgTimerHint: 'Minutes depuis l\'ouverture de la commande (ou depuis le dernier envoi en cuisine après « Servi »), calculées avec l\'heure du serveur.',
   cfgWarn: 'Orange à partir de (min)',
@@ -1489,6 +1489,24 @@ const fr = {
   addressOptionalPh: 'Facultatif',
   addressNone: 'Adresse non précisée',
   deliveryPaidHint: 'Livraison déjà payée : touchez « Livrée » une fois remise au client (elle quitte la vue).',
+  // Paramètres > Configurations (onglets)
+  cfgTabRestaurant: 'Restaurant',
+  cfgTabTicket: 'Ticket',
+  cfgTabService: 'Service',
+  cfgTabBackup: 'Sauvegarde',
+  cfgRestaurantName: 'Nom du restaurant',
+  cfgAddress: 'Adresse',
+  cfgPhone: 'Téléphone',
+  cfgIdsHint: 'NIF, RC, NIS et AI s\'impriment sous l\'en-tête des tickets et des factures (laisser vide pour ne pas les afficher).',
+  cfgPaperWidth: 'Largeur du papier',
+  cfgTicketLang: 'Langue du ticket',
+  cfgLangDevice: 'Langue de l\'appareil',
+  cfgShowWaiter: 'Afficher le nom du serveur',
+  cfgShowTable: 'Afficher le N° de table (ou À emporter / Livraison)',
+  receiptTel: 'Tél.',
+  receiptWaiter: 'Serveur',
+  printersManage: 'Gestion des imprimantes',
+  errMigrationSettings: 'Configurations : exécutez la migration supabase/migrations/20261007000000_settings_restaurant_ticket.sql dans Supabase (SQL Editor).',
 }
 
 type Dict = typeof fr
@@ -2867,7 +2885,7 @@ const ar: Dict = {
   errBackgroundTooBig: 'الصورة كبيرة جداً للوضع التجريبي (تخزين المتصفح ممتلئ).',
   errMigrationFloor: 'مخطط الصالة: نفّذ الملف supabase/migrations/20261002000000_floor_visual.sql في Supabase (SQL Editor).',
   cfgTitle: 'الإعدادات المتقدمة',
-  cfgSub: 'عدّاد الطاولات',
+  cfgSub: 'المطعم، التذكرة، الخدمة، النسخ الاحتياطي',
   cfgTimerTitle: 'العدّاد تحت الطاولات',
   cfgTimerHint: 'الدقائق منذ فتح الطلب (أو منذ آخر إرسال للمطبخ بعد « قُدّم »)، محسوبة بتوقيت الخادم.',
   cfgWarn: 'برتقالي ابتداءً من (د)',
@@ -2961,6 +2979,24 @@ const ar: Dict = {
   addressOptionalPh: 'اختياري',
   addressNone: 'العنوان غير محدد',
   deliveryPaidHint: 'التوصيل مدفوع: اضغط « سُلّمت » بعد تسليمه للزبون (يختفي من العرض).',
+  // Paramètres > Configurations (onglets)
+  cfgTabRestaurant: 'المطعم',
+  cfgTabTicket: 'التذكرة',
+  cfgTabService: 'الخدمة',
+  cfgTabBackup: 'النسخ الاحتياطي',
+  cfgRestaurantName: 'اسم المطعم',
+  cfgAddress: 'العنوان',
+  cfgPhone: 'الهاتف',
+  cfgIdsHint: 'NIF و RC و NIS و AI تُطبع تحت رأس التذاكر والفواتير (اتركها فارغة لعدم إظهارها).',
+  cfgPaperWidth: 'عرض الورق',
+  cfgTicketLang: 'لغة التذكرة',
+  cfgLangDevice: 'لغة الجهاز',
+  cfgShowWaiter: 'إظهار اسم النادل',
+  cfgShowTable: 'إظهار رقم الطاولة (أو للأخذ / توصيل)',
+  receiptTel: 'الهاتف',
+  receiptWaiter: 'النادل',
+  printersManage: 'إدارة الطابعات',
+  errMigrationSettings: 'الإعدادات: نفّذ الملف supabase/migrations/20261007000000_settings_restaurant_ticket.sql في Supabase (SQL Editor).',
 }
 
 const dicts: Record<Lang, Dict> = { fr, ar }
@@ -3004,6 +3040,8 @@ const subscribe = (l: () => void) => {
 
 /** Strings for the current language, for code outside React (errors thrown by the data layer, formatting). */
 export const tr = () => dicts[lang]
+/** Strings in a given language (a ticket printed in the language set in Paramètres > Configurations > Ticket). */
+export const trIn = (l: Lang) => dicts[l]
 
 /** Current language and its strings; re-renders the component when the language changes. French is the default. */
 export function useI18n() {

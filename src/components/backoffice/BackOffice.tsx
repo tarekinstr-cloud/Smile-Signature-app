@@ -9,7 +9,7 @@ import StaffPage from './StaffPage'
 import SettingsPage from './SettingsPage'
 import UsersPage from './UsersPage'
 import BackupPage from './BackupPage'
-import TicketPage from './TicketPage'
+import ConfigurationsPage from './ConfigurationsPage'
 import PermissionsPage from './PermissionsPage'
 import { NewReservationPage, ReservationsList } from './ReservationsPage'
 import MenuCsvPage from './MenuCsvPage'
@@ -26,7 +26,7 @@ import ExpensesPage from './ExpensesPage'
 import ProfitPage from './ProfitPage'
 import { CancelledInvoicesPage, CancelledOrdersPage, PriceLogPage } from './ControlPages'
 import type { SupplierInvoice } from '../../lib/types'
-import { ConfigPage, WallpaperPage } from './FloorSettingsPages'
+import { WallpaperPage } from './FloorSettingsPages'
 
 interface Props {
   page: BackOfficePage
@@ -152,7 +152,7 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'users' && <UsersPage />}
       {page === 'permissions' && <PermissionsPage />}
       {page === 'backup' && <BackupPage />}
-      {page === 'ticket' && <TicketPage />}
+      {page === 'ticket' && <ConfigurationsPage initialTab="ticket" />}
       {page === 'reservationNew' && <NewReservationPage onSaved={(r) => { setCreated(r.id); onPage('reservations') }} />}
       {page === 'reservations' && <ReservationsList onOpenOrder={onOpenOrder} highlight={created} />}
       {page === 'menuCsv' && <MenuCsvPage />}
@@ -175,7 +175,7 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'cancelledInvoices' && <CancelledInvoicesPage />}
       {page === 'priceLog' && <PriceLogPage />}
       {page === 'wallpaper' && <WallpaperPage />}
-      {page === 'config' && <ConfigPage />}
+      {page === 'config' && <ConfigurationsPage />}
     </div>
   )
 }
