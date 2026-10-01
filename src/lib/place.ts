@@ -6,8 +6,8 @@ type Strings = ReturnType<typeof tr>
 /**
  * Kitchen tickets keep the place as text (table_label). A takeaway order is stored as "EMP-<n>" and a delivery as
  * "LIV-<n>" so the ticket can still say "À emporter n° 12" / "Livraison n° 3" in the language it is printed in.
- * A delivery label also carries the customer on the following lines (name · phone, then the address), so the
- * ticket keeps them as they were when it was sent.
+ * A delivery label also carries the customer on the following lines (name · phone, then the address), and a takeaway
+ * label the customer's name, so the ticket keeps them as they were when it was sent.
  */
 const TAKEAWAY = 'EMP-'
 const DELIVERY = 'LIV-'
@@ -21,7 +21,8 @@ export function deliveryContact(order: Partial<Pick<Order, 'customer_name' | 'cu
 
 /** What goes in a kitchen ticket's table_label for this order. */
 export function ticketPlace(order: PlaceOrder, table: Pick<DiningTable, 'label'> | null): string | null {
-  if (order.order_type === 'takeaway') return TAKEAWAY + (order.takeaway_no ?? '')
+  // The customer's name (optional) goes under the number, so the kitchen can call it out too.
+  if (order.order_type === 'takeaway') return [TAKEAWAY + (order.takeaway_no ?? ''), order.customer_name?.trim()].filter(Boolean).join('\n')
   if (order.order_type === 'delivery') {
     return [DELIVERY + (order.delivery_no ?? ''), deliveryContact(order), order.customer_address].filter(Boolean).join('\n')
   }

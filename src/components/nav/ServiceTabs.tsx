@@ -22,7 +22,8 @@ interface Props {
  */
 export default function ServiceTabs(p: Props) {
   const { t } = useI18n()
-  const badge = (n: number) => n > 0 && <span className="svc-badge" aria-label={t.openCount(n)}>{n}</span>
+  // « À emporter (5) »: the number of running orders, readable from across the room.
+  const badge = (n: number) => n > 0 && <span className="svc-count" aria-label={t.openCount(n)}> ({n})</span>
   return (
     <nav className="service-tabs" aria-label={t.navService}>
       <button className="svc-tab svc-account" onClick={p.onAccount} title={t.account}>

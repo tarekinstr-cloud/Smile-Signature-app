@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { DeliveryStatus, PaymentMethod, ReservationStatus } from './types'
+import type { DeliveryStatus, PaymentMethod, PickupStatus, ReservationStatus } from './types'
 
 export type Lang = 'fr' | 'ar'
 
@@ -1413,6 +1413,23 @@ const fr = {
   servedBtn: 'Servi',
   servedHint: 'Arrête le chrono de la table jusqu\'au prochain envoi en cuisine (Suite).',
   servedNotice: 'Table servie : le chrono repart au prochain envoi en cuisine.',
+  // À emporter / Livraison en cartes
+  takeawayShort: (n: string) => `E ${n}`,
+  deliveryShort: (n: string) => `L ${n}`,
+  boardNoName: 'Sans nom',
+  boardPaid: 'Payée',
+  boardPartPaid: 'Acompte',
+  pickupStatus: 'Statut à emporter',
+  pickupStepShort: { preparing: 'En cours', ready: 'Prête', handed: 'Remise' } as Record<PickupStatus, string>,
+  deliveryStepShort: { preparing: 'En cours', on_the_way: 'En route', delivered: 'Livrée' } as Record<DeliveryStatus, string>,
+  pickupStatuses: { preparing: 'En préparation', ready: 'Prête', handed: 'Remise' } as Record<PickupStatus, string>,
+  boardTakeawayHint: '« Prête » fait clignoter la carte pour appeler le client. Une commande remise et payée quitte la grille.',
+  newTakeawayTitle: 'Nouvelle commande à emporter',
+  customerNameOptional: 'Nom du client (facultatif)',
+  customerNamePh: 'ex. Karim',
+  takeawayStart: 'Commencer',
+  takeawayStartNoName: 'Commencer sans nom',
+  errMigrationTakeaway: 'À emporter en cartes : exécutez la migration supabase/migrations/20261003000000_takeaway_board.sql dans Supabase (SQL Editor).',
 }
 
 type Dict = typeof fr
@@ -2809,6 +2826,23 @@ const ar: Dict = {
   servedBtn: 'قُدّم',
   servedHint: 'يوقف عدّاد الطاولة حتى الإرسال القادم للمطبخ (تتمة).',
   servedNotice: 'تم التقديم: العدّاد يبدأ من جديد عند الإرسال القادم للمطبخ.',
+  // À emporter / Livraison en cartes
+  takeawayShort: (n) => `أ ${n}`,
+  deliveryShort: (n) => `ت ${n}`,
+  boardNoName: 'بدون اسم',
+  boardPaid: 'مدفوعة',
+  boardPartPaid: 'دفعة جزئية',
+  pickupStatus: 'حالة الطلب للأخذ',
+  pickupStepShort: { preparing: 'قيد التحضير', ready: 'جاهزة', handed: 'سُلّمت' },
+  deliveryStepShort: { preparing: 'قيد التحضير', on_the_way: 'في الطريق', delivered: 'سُلّمت' },
+  pickupStatuses: { preparing: 'قيد التحضير', ready: 'جاهزة', handed: 'سُلّمت' },
+  boardTakeawayHint: '« جاهزة » تجعل البطاقة تومض لمناداة الزبون. الطلب المُسلَّم والمدفوع يختفي من الشبكة.',
+  newTakeawayTitle: 'طلب جديد للأخذ',
+  customerNameOptional: 'اسم الزبون (اختياري)',
+  customerNamePh: 'مثال: كريم',
+  takeawayStart: 'ابدأ',
+  takeawayStartNoName: 'ابدأ بدون اسم',
+  errMigrationTakeaway: 'الطلبات للأخذ: نفّذ الملف supabase/migrations/20261003000000_takeaway_board.sql في Supabase (SQL Editor).',
 }
 
 const dicts: Record<Lang, Dict> = { fr, ar }

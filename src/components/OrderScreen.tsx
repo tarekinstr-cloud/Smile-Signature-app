@@ -29,6 +29,8 @@ interface Props {
   orderId?: string
   /** Opens the checkout as soon as the order is loaded (checkout started from the floor plan). */
   startCheckout?: boolean
+  /** New takeaway: the customer's name typed before the order screen (saved when the order is created). */
+  customerName?: string
   onBack(): void
   /** Nouvelle CMD → À emporter: the floor screen opens a fresh takeaway order. */
   onNewTakeaway(): void
@@ -82,7 +84,7 @@ interface PayMode {
 
 type Modal = 'move' | 'invoice' | 'bill' | 'print' | 'new' | 'discount' | 'delivery'
 
-export default function OrderScreen({ table, hall: startHall, orderId: startOrderId, startCheckout, onBack, onNewTakeaway, onNewDelivery }: Props) {
+export default function OrderScreen({ table, hall: startHall, orderId: startOrderId, startCheckout, customerName, onBack, onNewTakeaway, onNewDelivery }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null)
   const [categoryId, setCategoryId] = useState<string | null>(null)
   /** Where the order is: a table (with its hall), or null for takeaway. Follows Changement de Table. */
@@ -212,7 +214,7 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
     if (order) return order
     // Two quick taps must not open two orders.
     const target = place?.table.id
-    opening.current ??= (target ? repo.openOrder(target) : repo.openTakeaway()).finally(() => {
+    opening.current ??= (target ? repo.openOrder(target) : repo.openTakeaway(customerName)).finally(() => {
       opening.current = null
     })
     const o = await opening.current
@@ -304,6 +306,17 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
       await reloadOrder()
     })
     setBusy(false)
+  }
+
+  /** À emporter: the customer's name on the card and the next kitchen tickets. */
+  async function renameCustomer() {
+    if (!order) return
+    const name = await dialog.askText(t.customerNameOptional, t.save)
+    if (name === null) return
+    await run(async () => {
+      await repo.setCustomerName(order.id, name)
+      await reloadOrder()
+    })
   }
 
   /** Couverts: guests at the table, shown as taken chairs on the floor plan. */
@@ -514,9 +527,11 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
           <span>
             {place ? <><bdi>{place.hall.name}</bdi> · {t.seatsCount(place.table.seats)}</>
               : isDelivery ? <bdi>{[deliveryContact(order), order.customer_address, order.delivery_zone_name].filter(Boolean).join(' · ')}</bdi>
+              : (order?.customer_name ?? customerName) ? <bdi>{order?.customer_name ?? customerName}</bdi>
               : t.takeaway}
           </span>
         </div>
+        {order?.order_type === 'takeaway' && <button className="ghost" onClick={renameCustomer}>✎ {t.customer}</button>}
         {isDelivery && (
           <>
             <button className="ghost" onClick={() => setModal('delivery')}>✎ {t.customer}</button>
