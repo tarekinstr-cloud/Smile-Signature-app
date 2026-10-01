@@ -102,6 +102,8 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
   const [modal, setModal] = useState<Modal | null>(null)
   /** Annuler la CMD in progress: the reason dialog. */
   const [cancelling, setCancelling] = useState(false)
+  /** Couverts: the guests picker is open. */
+  const [guestsOpen, setGuestsOpen] = useState(false)
   // Line that supplement buttons, Remise and Offrir apply to: the one last added, or the one tapped in the order.
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const opening = useRef<Promise<Order> | null>(null)
@@ -300,6 +302,27 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
         setSelectedId(copy.id)
       }
       await reloadOrder()
+    })
+    setBusy(false)
+  }
+
+  /** Couverts: guests at the table, shown as taken chairs on the floor plan. */
+  async function setGuests(guests: number | null) {
+    if (!order) return
+    setGuestsOpen(false)
+    setOrder({ ...order, guests })
+    await run(() => repo.setGuests(order.id, guests))
+    await reloadOrder()
+  }
+
+  /** « Servi »: the floor timer stops until the next send to the kitchen (Suite then Valider). */
+  async function markServed() {
+    if (!order) return
+    setBusy(true)
+    await run(async () => {
+      await repo.markServed(order.id)
+      await reloadOrder()
+      setNotice(t.servedNotice)
     })
     setBusy(false)
   }
@@ -506,6 +529,16 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
           </>
         )}
         <div className="spacer" />
+        {order && place && (
+          <button className="ghost order-guests" onClick={() => setGuestsOpen(true)} title={t.guestsTitle}>
+            👤 {order.guests ? t.guestsCount(order.guests) : t.guestsTitle}
+          </button>
+        )}
+        {order && place && lines.some((l) => l.sent_at) && (
+          order.served_at
+            ? <span className="pill free order-served" title={t.servedHint}>✓ {t.floorServed}</span>
+            : <button className="order-served" onClick={markServed} disabled={busy} title={t.servedHint}>✓ {t.servedBtn}</button>
+        )}
         {order && <span className="pill occupied">{t.openOrder}</span>}
         <LangToggle />
       </header>
@@ -741,6 +774,24 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
             setCancelling(false)
             onBack()
           }} />
+      )}
+      {guestsOpen && order && place && (
+        <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setGuestsOpen(false)}>
+          <div className="dialog table-actions" role="dialog" aria-modal="true" aria-labelledby="guests-title"
+            onKeyDown={(e) => e.key === 'Escape' && setGuestsOpen(false)}>
+            <div className="panel-head">
+              <h2 id="guests-title">{t.guestsTitle}</h2>
+              <button className="ghost" onClick={() => setGuestsOpen(false)} aria-label={t.close}>✕</button>
+            </div>
+            <p className="muted small">{t.guestsHint(place.table.seats)}</p>
+            <div className="keypad">
+              {Array.from({ length: Math.min(99, Math.max(place.table.seats, order.guests ?? 0, 1) + 2) }, (_, i) => i + 1).map((n) => (
+                <button key={n} type="button" className={order.guests === n ? 'key-fn' : undefined} aria-pressed={order.guests === n} onClick={() => setGuests(n)}>{n}</button>
+              ))}
+            </div>
+            {order.guests != null && <button onClick={() => setGuests(null)}>{t.guestsClear}</button>}
+          </div>
+        </div>
       )}
       {dialog.element}
     </div>

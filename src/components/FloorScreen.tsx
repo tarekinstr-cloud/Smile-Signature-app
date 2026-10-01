@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { repo, type OpenOrder } from '../lib/repo'
-import type { DiningTable, Hall, TablePatch } from '../lib/types'
+import { defaultFloorConfig, repo, type OpenOrder } from '../lib/repo'
+import type { DiningTable, FloorConfig, Hall, TableOrderInfo, TablePatch } from '../lib/types'
 import FloorPlan from './FloorPlan'
 import TablePanel from './TablePanel'
 import HallPanel from './HallPanel'
@@ -60,6 +60,9 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   /** Mark tapped on the floor plan: the booking's details. */
   const [resInfo, setResInfo] = useState<{ reservation: Reservation; table: DiningTable } | null>(null)
   const [restaurant, setRestaurant] = useState('Smile Signature')
+  /** Open order of each occupied table of the hall shown: waiter, guests, timer. */
+  const [tableOrders, setTableOrders] = useState<Map<string, TableOrderInfo>>(new Map())
+  const [floorConfig, setFloorConfig] = useState<FloorConfig>(defaultFloorConfig)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const dialog = useDialog()
@@ -128,6 +131,22 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   }, [reloadUpcoming, backOffice, hallId])
   // Recomputed with the list, which is read again every minute, so a booking whose time passes moves on to the next.
   const reservedTables = useMemo(() => bookingsByTable(upcoming), [upcoming])
+
+  // Waiter, guests and timer of each table: read again on every change of orders (shared realtime channel) or tables.
+  const reloadTableOrders = useCallback(() => {
+    if (!hallId) return setTableOrders(new Map())
+    repo.listTableOrders(hallId).then((list) => setTableOrders(new Map(list.map((o) => [o.table_id, o]))), () => setTableOrders(new Map()))
+  }, [hallId])
+  useEffect(() => {
+    reloadTableOrders()
+    const offs = [repo.subscribeOrders(reloadTableOrders), repo.subscribe(reloadTableOrders)]
+    return () => offs.forEach((off) => off())
+  }, [reloadTableOrders, orderTableId, takeaway])
+  useEffect(() => {
+    const read = () => repo.getFloorConfig().then(setFloorConfig, () => {})
+    read()
+    return repo.subscribeConfig(read)
+  }, [backOffice])
 
   const reloadTakeaways = useCallback(() => {
     repo.listOpenOrders('takeaway').then(setTakeaways, () => setTakeaways([]))
@@ -276,6 +295,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       : page === 'cancelledOrders' ? can('cancelled_orders')
       : page === 'cancelledInvoices' ? can('cancelled_invoices')
       : page === 'priceLog' ? can('price_log')
+      : page === 'wallpaper' || page === 'config' ? can('settings')
       : can(page as Permission)
   const shown = (items: (AdminMenuItem | false)[]) => items.filter((i): i is AdminMenuItem => !!i)
   // Menus and entries the account has no permission for are left out, not just greyed.
@@ -366,8 +386,10 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       id: 'stats', label: t.navStats, current: statsPages.some(onBo), items: statsItems,
     }] : []),
     ...(can('settings') ? [{
-      id: 'settings', label: t.settings, current: onBo('settings'), items: [
+      id: 'settings', label: t.settings, current: onBo('settings') || onBo('wallpaper') || onBo('config'), items: [
         { id: 'general', label: t.settingsGeneral, checked: onBo('settings'), onSelect: () => setBackOffice('settings') },
+        { id: 'config', label: t.cfgTitle, checked: onBo('config'), onSelect: () => openBo('config') },
+        { id: 'wallpaper', label: t.bgTitle, checked: onBo('wallpaper'), onSelect: () => openBo('wallpaper') },
         { id: 'printers', label: t.printers, onSelect: () => { toFloor(); setPrinterSettings(true) } },
       ],
     }] : []),
@@ -476,6 +498,8 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
                 onMove={(id, x, y) => updateTable(id, { x, y })}
                 reservations={reservedTables}
                 onReservation={(reservation, table) => setResInfo({ reservation, table })}
+                orders={tableOrders}
+                timer={floorConfig}
               />
             </section>
             {mode === 'edit' && (
@@ -495,6 +519,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
                     hall={hall}
                     onChange={(patch) => run(() => repo.updateHall(hall.id, patch).then(reload))}
                     onDelete={() => deleteHall(hall)}
+                    onBackground={reload}
                   />
                 )}
               </aside>

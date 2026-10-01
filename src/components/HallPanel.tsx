@@ -1,18 +1,24 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Hall, HallPatch } from '../lib/types'
 import { useI18n } from '../lib/i18n'
+import HallBackgroundPicker from './HallBackgroundPicker'
 
 interface Props {
   hall: Hall
   onChange(patch: HallPatch): void
   onDelete(): void
+  /** The background picture was changed: read the hall again. */
+  onBackground?(): void
 }
 
-export default function HallPanel({ hall, onChange, onDelete }: Props) {
+export default function HallPanel({ hall, onChange, onDelete, onBackground }: Props) {
   const { t } = useI18n()
   const [name, setName] = useState(hall.name)
   const [width, setWidth] = useState(String(hall.width))
   const [height, setHeight] = useState(String(hall.height))
+  // Changed elsewhere (another device, or the height fitted to a new background picture).
+  useEffect(() => setWidth(String(hall.width)), [hall.width])
+  useEffect(() => setHeight(String(hall.height)), [hall.height])
 
   function commit() {
     const patch: HallPatch = {}
@@ -43,6 +49,10 @@ export default function HallPanel({ hall, onChange, onDelete }: Props) {
           {t.height}
           <input type="number" step={50} value={height} onChange={(e) => setHeight(e.target.value)} onBlur={commit} />
         </label>
+      </div>
+      <div className="field">
+        <span>{t.bgTitle}</span>
+        <HallBackgroundPicker hall={hall} onChanged={onBackground} />
       </div>
       <button className="danger" onClick={onDelete}>{t.deleteHall}</button>
     </div>
