@@ -1,8 +1,17 @@
 import { computeBill } from './billing'
 import { sizeGroup } from './recipes'
+import { da } from './format'
 import type { Menu, OrderLine, ProfitCosts, SalesData } from './types'
 
-const cents = (n: number) => Math.round(n * 100) / 100
+const roundAll = (m: Record<string, number>) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, da(Number(v))]))
+
+/** Costs of the period in whole dinars (salaries prorated to the day, stock at its exact cost). */
+export function roundCosts(c: ProfitCosts): ProfitCosts {
+  return {
+    ...c, charges: da(c.charges), charges_by_reason: roundAll(c.charges_by_reason ?? {}), inventory_loss: da(c.inventory_loss),
+    salaries: da(c.salaries), expenses: da(c.expenses), expenses_by_category: roundAll(c.expenses_by_category ?? {}),
+  }
+}
 
 /** One item (and size) on the page Bénéfice. */
 export interface ProfitRow {
@@ -82,18 +91,21 @@ export function computeProfit(data: SalesData, menu: Menu | null, costs: ProfitC
       rows.set(key, r)
     }
   }
+  // Whole dinars (no centimes): each row is rounded, and the coût matière is the sum of the rounded rows, so the
+  // table adds up to the statement.
   const list = [...rows.values()].map((r) => {
-    const sales = cents(r.sales)
-    const cost = cents(r.cost)
+    const sales = da(r.sales)
+    const cost = da(r.cost)
     // Every portion without a known cost: no meaningful margin rate.
-    return { ...r, sales, cost, margin: cents(sales - cost), marginPct: r.unknown >= r.quantity ? null : pct(sales - cost, sales) }
+    return { ...r, sales, cost, margin: sales - cost, marginPct: r.unknown >= r.quantity ? null : pct(sales - cost, sales) }
   })
-  net = cents(net)
-  material = cents(material)
-  const grossMargin = cents(net - material)
-  const netProfit = cents(grossMargin - costs.charges - costs.inventory_loss - costs.salaries - costs.expenses)
+  net = da(net)
+  material = list.reduce((s, r) => s + r.cost, 0)
+  const grossMargin = net - material
+  const c = roundCosts(costs)
+  const netProfit = grossMargin - c.charges - c.inventory_loss - c.salaries - c.expenses
   return {
-    net, material, grossMargin, grossMarginPct: pct(grossMargin, net), costs, netProfit, netProfitPct: pct(netProfit, net),
+    net, material, grossMargin, grossMarginPct: pct(grossMargin, net), costs: c, netProfit, netProfitPct: pct(netProfit, net),
     rows: list, unknown, orders: data.orders.length,
   }
 }

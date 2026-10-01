@@ -3,7 +3,7 @@ import { cash } from '../../lib/cash'
 import { expenses } from '../../lib/expenses'
 import { purchases, remaining } from '../../lib/purchases'
 import { download, stamp, toCsv } from '../../lib/admin'
-import { money } from '../../lib/format'
+import { csvDa, money } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
 import { usePermissions } from '../../lib/permissions'
 import type { CashDay, CashMovement, CashMovementKind, ExpenseCategory, NumberReset, SupplierInvoice } from '../../lib/types'
@@ -132,7 +132,7 @@ export function CashMovesPage({ kind, onOpenFloat }: { kind: CashMovementKind; o
   }
 
   const exportCsv = () => download(`${kind === 'in' ? 'fonds-entree' : 'fonds-sortie'}-${stamp()}.csv`, toCsv(rows.map((m) => ({
-    [t.colDate]: new Date(m.created_at).toLocaleString(locale(lang)), [t.colAmount]: m.amount, [t.cashReason]: m.reason,
+    [t.colDate]: new Date(m.created_at).toLocaleString(locale(lang)), [t.colAmount]: csvDa(m.amount), [t.cashReason]: m.reason,
     [t.cashInvoiceCol]: m.supplier_name ?? '', [t.colEmployee]: m.user_name,
   }))), 'text/csv;charset=utf-8')
 

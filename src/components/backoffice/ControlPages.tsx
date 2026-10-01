@@ -3,7 +3,7 @@ import { cash } from '../../lib/cash'
 import { priceLog } from '../../lib/control'
 import { repo } from '../../lib/repo'
 import { download, stamp, toCsv } from '../../lib/admin'
-import { money } from '../../lib/format'
+import { csvDa, money } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
 import { usePermissions } from '../../lib/permissions'
 import { placeText } from '../../lib/place'
@@ -69,7 +69,7 @@ export function CancelledOrdersPage() {
     [t.cancelledAtCol]: o.cancelled_at, [t.orderNoCol]: orderNo(o) ?? '', [t.placeCol]: place(o), [t.openedAtCol]: o.created_at, [t.dayEmployee]: o.created_by_name ?? '',
     [t.cancelledByCol]: o.cancelled_by_name ?? '', [t.cancelReasonLabel]: o.cancel_reason ? t.cancelReasons[o.cancel_reason] ?? o.cancel_reason : '',
     [t.cancelNoteCol]: o.cancel_note ?? '', [t.itemsCol]: o.lines.map((l) => `${l.quantity} × ${l.name}`).join(' | '),
-    [t.sentKitchenCol]: `${o.sent}/${o.lines.length}`, [t.colAmount]: o.cancelled_total ?? '',
+    [t.sentKitchenCol]: `${o.sent}/${o.lines.length}`, [t.colAmount]: csvDa(o.cancelled_total),
   }))), csvType)
 
   return (
@@ -209,7 +209,7 @@ function CancelledInvoices() {
 
   const exportCsv = () => download(`factures-annulees-${stamp()}.csv`, toCsv(rows.map((o) => ({
     [t.cancelledAtCol]: o.cancelled_at, [t.cancelKindCol]: kind(o), [t.orderNoCol]: orderNo(o) ?? '',
-    [t.placeCol]: place(o), [t.dayEmployee]: o.created_by_name ?? '', [t.colAmount]: o.cancelled_total ?? '', [t.cashBackCol]: o.voided ? o.void_cash ?? 0 : '',
+    [t.placeCol]: place(o), [t.dayEmployee]: o.created_by_name ?? '', [t.colAmount]: csvDa(o.cancelled_total), [t.cashBackCol]: o.voided ? csvDa(o.void_cash ?? 0) : '',
     [t.cancelReasonLabel]: o.cancel_reason ? t.cancelReasons[o.cancel_reason] ?? o.cancel_reason : '', [t.cancelNoteCol]: o.cancel_note ?? '',
     [t.cancelledByCol]: o.cancelled_by_name ?? '', [t.itemsCol]: o.lines.map((l) => `${l.quantity} × ${l.name}`).join(' | '),
   }))), csvType)
@@ -390,7 +390,7 @@ export function PriceLogPage() {
 
   const exportCsv = () => download(`modifications-prix-${stamp()}.csv`, toCsv(rows.map((c) => ({
     [t.colDate]: c.created_at, [t.priceKindCol]: t.priceKinds[c.kind], [t.profitItemCol]: c.item_name, [t.priceWhatCol]: c.kind === 'item' ? '' : `${c.group_name} : ${c.option_name}`,
-    [t.priceOldCol]: c.old_price, [t.priceNewCol]: c.new_price, [t.priceDiffCol]: diff(c), '%': pct(c) ?? '', [t.dayEmployee]: c.user_name,
+    [t.priceOldCol]: csvDa(c.old_price), [t.priceNewCol]: csvDa(c.new_price), [t.priceDiffCol]: csvDa(diff(c)), '%': pct(c) ?? '', [t.dayEmployee]: c.user_name,
   }))), csvType)
 
   return (

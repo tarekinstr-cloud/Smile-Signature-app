@@ -3,7 +3,7 @@ import { cash } from '../../lib/cash'
 import { expenses } from '../../lib/expenses'
 import { repo } from '../../lib/repo'
 import { download, toCsv } from '../../lib/admin'
-import { money } from '../../lib/format'
+import { da, money } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
 import type { CashDay, Expense, SalesData } from '../../lib/types'
 import { isoDay } from './PeriodFilter'
@@ -79,7 +79,7 @@ export function weekDays(first: Date, n: number, sales: SalesData, days: CashDay
     const r = d.closed_at ? rows.get(isoDay(new Date(d.opened_at))) : undefined
     if (r) r.gap = (r.gap ?? 0) + (d.difference ?? 0)
   }
-  const c = (n: number) => Math.round(n * 100) / 100
+  const c = da
   return [...rows.values()].map((r) => ({
     ...r, net: c(r.net), cash: c(r.cash), card: c(r.card), expenses: c(r.expenses), gap: r.gap === null ? null : c(r.gap),
     avg: r.orders ? c(r.net / r.orders) : 0,
@@ -131,11 +131,11 @@ export default function WeeklyPage() {
   const short = (d: Date) => d.toLocaleDateString(loc, { day: '2-digit', month: '2-digit', year: 'numeric' })
 
   const total = (rows: WeekDay[]) => {
-    const s = (f: (r: WeekDay) => number) => Math.round(rows.reduce((a, r) => a + f(r), 0) * 100) / 100
+    const s = (f: (r: WeekDay) => number) => da(rows.reduce((a, r) => a + f(r), 0))
     const orders = s((r) => r.orders)
     const gaps = rows.filter((r) => r.gap !== null)
     return {
-      net: s((r) => r.net), orders, avg: orders ? Math.round((s((r) => r.net) / orders) * 100) / 100 : 0, cash: s((r) => r.cash),
+      net: s((r) => r.net), orders, avg: orders ? da(s((r) => r.net) / orders) : 0, cash: s((r) => r.cash),
       card: s((r) => r.card), expenses: s((r) => r.expenses), gap: gaps.length ? s((r) => r.gap ?? 0) : null,
     }
   }

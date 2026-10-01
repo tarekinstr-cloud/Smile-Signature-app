@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { expenses, localIsoDay } from '../../lib/expenses'
 import { download, stamp, toCsv } from '../../lib/admin'
-import { money } from '../../lib/format'
+import { csvDa, money } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
 import { usePermissions } from '../../lib/permissions'
 import type { Expense, ExpenseCategory, ExpenseMode } from '../../lib/types'
@@ -60,7 +60,7 @@ function ExpenseList() {
   const day = (s: string) => new Date(`${s}T12:00:00`).toLocaleDateString(locale(lang), { day: '2-digit', month: '2-digit', year: 'numeric' })
 
   const exportCsv = () => download(`depenses-${stamp()}.csv`, toCsv(rows.map((e) => ({
-    [t.colDate]: e.date, [t.dayCategory]: e.category_name, [t.colAmount]: e.amount, [t.expenseMode]: t.expenseModes[e.mode],
+    [t.colDate]: e.date, [t.dayCategory]: e.category_name, [t.colAmount]: csvDa(e.amount), [t.expenseMode]: t.expenseModes[e.mode],
     [t.resNote]: e.note, [t.expenseBy]: e.user_name,
   }))), 'text/csv;charset=utf-8')
 

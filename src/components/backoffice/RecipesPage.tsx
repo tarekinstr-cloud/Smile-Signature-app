@@ -4,7 +4,7 @@ import { itemVariants, margin, missingRecipe, recipes, variantCost } from '../..
 import type { Menu, MenuItem, RecipeLine, RecipeStockItem } from '../../lib/types'
 import { download, stamp, toCsv } from '../../lib/admin'
 import { useI18n } from '../../lib/i18n'
-import { money } from '../../lib/format'
+import { csvDa, money } from '../../lib/format'
 import RecipeEditor from '../RecipeEditor'
 import { errorText, locale, useLoad } from './useLoad'
 
@@ -73,9 +73,9 @@ export default function RecipesPage() {
       [t.category]: r.category?.name ?? '',
       [t.recipeArticle]: r.item.name,
       [t.recipeVariant]: p.v.kind === 'size' ? p.v.label : '',
-      [t.recipeSalePrice]: csvNum(p.v.price),
-      [t.recipeCost]: p.lines ? csvNum(p.cost) : '',
-      [t.recipeMargin]: p.lines ? csvNum(p.amount) : '',
+      [t.recipeSalePrice]: csvDa(p.v.price),
+      [t.recipeCost]: p.lines ? csvDa(p.cost) : '',
+      [t.recipeMargin]: p.lines ? csvDa(p.amount) : '',
       [t.recipeMarginPct]: p.lines ? csvNum(p.percent) : '',
       [t.recipeStatus]: p.lines ? '' : t.recipeNone,
     })))), 'text/csv;charset=utf-8')
