@@ -181,7 +181,7 @@ export function CashMovesPage({ kind, onOpenFloat }: { kind: CashMovementKind; o
                   <td className="num"><strong>{money(m.amount)}</strong></td>
                   <td>
                     <bdi>{m.reason}</bdi>
-                    {m.supplier_name && <div className="muted small">{t.cashPaidInvoice(m.supplier_name)}</div>}
+                    {m.supplier_name && <div className="muted small">{m.kind === 'in' ? t.cashRefundInvoice(m.supplier_name) : t.cashPaidInvoice(m.supplier_name)}</div>}
                   </td>
                   <td>{m.user_name || '—'}</td>
                   <td className="end">

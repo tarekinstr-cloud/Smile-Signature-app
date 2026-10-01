@@ -83,7 +83,7 @@ export function computeReport(
   const e = to.toISOString()
   const rows = new Map<string, StockReportRow>(items.map((s) => [s.id, {
     id: s.id, name: s.name, unit: s.unit, initial_depot: s.quantity, initial_kitchen: s.kitchen_quantity,
-    purchases: 0, transfers: 0, returns: 0, charges: 0, consumption: 0, adjustments: 0, final_depot: s.quantity, final_kitchen: s.kitchen_quantity,
+    purchases: 0, transfers: 0, returns: 0, charges: 0, consumption: 0, adjustments: 0, supplier_out: 0, final_depot: s.quantity, final_kitchen: s.kitchen_quantity,
   }]))
   for (const m of movements) {
     const r = m.stock_item_id ? rows.get(m.stock_item_id) : undefined
@@ -100,13 +100,14 @@ export function computeReport(
     else if (m.type === 'return') r.returns += m.quantity
     else if (m.type === 'charge') r.charges += m.quantity
     else if (m.type === 'consumption') r.consumption += m.quantity
+    else if (m.type === 'purchase_cancel' || m.type === 'supplier_return') r.supplier_out += m.quantity
     else r.adjustments += delta(m, 'depot') + delta(m, 'kitchen')
   }
   return [...rows.values()]
     .map((r) => ({
       ...r, initial_depot: round3(r.initial_depot), initial_kitchen: round3(r.initial_kitchen), purchases: round3(r.purchases),
       transfers: round3(r.transfers), returns: round3(r.returns), charges: round3(r.charges), consumption: round3(r.consumption),
-      adjustments: round3(r.adjustments),
+      adjustments: round3(r.adjustments), supplier_out: round3(r.supplier_out),
       final_depot: round3(r.final_depot), final_kitchen: round3(r.final_kitchen),
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -170,7 +171,7 @@ function supabaseState(sb: SupabaseClient): StockStateService {
       return rows.map((r) => ({
         ...r, unit: r.unit ?? '', initial_depot: num(r.initial_depot), initial_kitchen: num(r.initial_kitchen), purchases: num(r.purchases),
         transfers: num(r.transfers), returns: num(r.returns), charges: num(r.charges), consumption: num(r.consumption), adjustments: num(r.adjustments),
-        final_depot: num(r.final_depot), final_kitchen: num(r.final_kitchen),
+        final_depot: num(r.final_depot), final_kitchen: num(r.final_kitchen), supplier_out: num(r.supplier_out),
       }))
     },
     async recordInventory(counts, note) {
@@ -194,7 +195,7 @@ function localState(): StockStateService {
   /** Last purchase movement of each item (unit price and invoice), from the demo movements. */
   const lastPurchases = (moves: StockMovement[]) => {
     const last = new Map<string, StockMovement>()
-    for (const m of moves) if (m.type === 'purchase' && m.stock_item_id && m.unit_cost != null) last.set(m.stock_item_id, m)
+    for (const m of moves) if (m.type === 'purchase' && !m.voided && m.stock_item_id && m.unit_cost != null) last.set(m.stock_item_id, m)
     return last
   }
   return {
@@ -208,7 +209,7 @@ function localState(): StockStateService {
           const sup = lp?.invoice_id ? supplierOf.get(lp.invoice_id) : undefined
           const all = new Map<string, { id: string; name: string }>()
           for (const m of db.movements) {
-            const x = m.type === 'purchase' && m.stock_item_id === s.id && m.invoice_id ? supplierOf.get(m.invoice_id) : undefined
+            const x = m.type === 'purchase' && !m.voided && m.stock_item_id === s.id && m.invoice_id ? supplierOf.get(m.invoice_id) : undefined
             if (x?.id) all.set(x.id, x)
           }
           return {

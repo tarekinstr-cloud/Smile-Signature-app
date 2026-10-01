@@ -198,7 +198,7 @@ let demoCan: (p: string) => boolean = () => true
 export function setDemoPermissionCheck(fn: (p: string) => boolean) {
   demoCan = fn
 }
-const localCan = (p: string) => demoCan(p)
+export const localCan = (p: string) => demoCan(p)
 
 /** Cancelled orders with their lines; empty orders left behind are not cancellations worth listing. */
 function cancelledWithLines(orders: Order[], lines: OrderLine[]): CancelledOrder[] {

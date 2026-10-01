@@ -126,7 +126,7 @@ function localMoves(): StockMovesService {
   }
   /** Last purchase price of an item, from the demo purchase movements. */
   const lastPrice = (moves: StockMovement[], itemId: string) =>
-    [...moves].reverse().find((m) => m.type === 'purchase' && m.stock_item_id === itemId)?.unit_cost ?? null
+    [...moves].reverse().find((m) => m.type === 'purchase' && !m.voided && m.stock_item_id === itemId)?.unit_cost ?? null
 
   return {
     async transfer(direction, lines, note) {

@@ -341,7 +341,7 @@ function Moves({ version }: { version: number }) {
   }, [startKey, endKey, version])
 
   const q = query.trim().toLowerCase()
-  const moved = (r: StockReportRow) => r.purchases || r.transfers || r.returns || r.charges || r.consumption || r.adjustments
+  const moved = (r: StockReportRow) => r.purchases || r.transfers || r.returns || r.charges || r.consumption || r.adjustments || r.supplier_out
   const shown = (rows ?? []).filter((r) => (!q || r.name.toLowerCase().includes(q)) && (!onlyMoved || moved(r)))
   const lastDay = isoDay(new Date(endKey - 1))
 
@@ -353,6 +353,7 @@ function Moves({ version }: { version: number }) {
       [`${t.repColInitial} ${t.stockLocation.kitchen}`]: csvNum(r.initial_kitchen),
       [t.repColInitial]: csvNum(r.initial_depot + r.initial_kitchen),
       [t.repColIn]: csvNum(r.purchases),
+      [t.repColSupplierOut]: csvNum(r.supplier_out),
       [`${t.repColTransfers} ${t.repToKitchen}`]: csvNum(r.transfers),
       [`${t.repColTransfers} ${t.repToDepot}`]: csvNum(r.returns),
       [t.repColOut]: csvNum(r.charges),
@@ -395,6 +396,7 @@ function Moves({ version }: { version: number }) {
               <th>{t.stateColArticle}</th>
               <th className="num">{t.repColInitial}</th>
               <th className="num">{t.repColIn}</th>
+              <th className="num">{t.repColSupplierOut}</th>
               <th className="num">{t.repColTransfers}</th>
               <th className="num">{t.repColOut}</th>
               <th className="num">{t.repColSales}</th>
@@ -410,6 +412,7 @@ function Moves({ version }: { version: number }) {
                   <bdi>{qtyText({ quantity: round3(r.initial_depot + r.initial_kitchen), unit: r.unit })}</bdi>
                 </td>
                 <td className="num" data-label={t.repColIn}>{r.purchases ? <bdi className="pos">+{qtyText({ quantity: r.purchases, unit: r.unit })}</bdi> : '—'}</td>
+                <td className="num" data-label={t.repColSupplierOut}>{r.supplier_out ? <bdi className="neg">−{qtyText({ quantity: r.supplier_out, unit: r.unit })}</bdi> : '—'}</td>
                 <td className="num report-transfers" data-label={t.repColTransfers}>
                   {r.transfers || r.returns ? (
                     <>

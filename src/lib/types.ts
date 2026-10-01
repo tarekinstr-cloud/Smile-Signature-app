@@ -373,7 +373,7 @@ export type StockLocation = 'depot' | 'kitchen'
 /** Transfer (Dépôt → Cuisine) or return (Cuisine → Dépôt). */
 export type TransferDirection = 'to_kitchen' | 'to_depot'
 /** consumption: taken from the Cuisine by a paid order, through the fiches techniques. */
-export type StockMovementType = 'purchase' | 'transfer' | 'return' | 'charge' | 'adjustment' | 'consumption'
+export type StockMovementType = 'purchase' | 'transfer' | 'return' | 'charge' | 'adjustment' | 'consumption' | 'purchase_cancel' | 'supplier_return'
 /** Motif of a kitchen charge: Consommation, Perte / Périmé, Casse, Repas personnel, Autre. */
 export type ChargeReason = 'consumption' | 'loss' | 'breakage' | 'staff_meal' | 'other'
 export const CHARGE_REASONS: ChargeReason[] = ['consumption', 'loss', 'breakage', 'staff_meal', 'other']
@@ -399,6 +399,8 @@ export interface StockMovement {
   unit_cost: number | null
   /** Purchase: the supplier invoice it came from. */
   invoice_id?: string | null
+  /** Demo mode only: a purchase whose invoice was cancelled no longer gives the last purchase price. */
+  voided?: boolean
   /** Adjustment: the inventaire physique it came from. */
   inventory_id?: string | null
   /** Consumption: the paid order it came from. */
@@ -455,6 +457,8 @@ export interface StockReportRow {
   adjustments: number
   final_depot: number
   final_kitchen: number
+  /** Annulations d'achat and retours fournisseur (stock going back out). 0 before migration 20261001000000. */
+  supplier_out: number
 }
 
 /** One count of an inventaire physique: what was counted for an item at one place. */
@@ -516,6 +520,44 @@ export interface SupplierInvoice {
   paid_amount: number
   payment_status: SupplierPaymentStatus
   created_at: string
+  /** N° 1, 2, 3… (migration 20261001000000_supplier_invoice_cancel.sql; absent before it). */
+  number?: number
+  /** Annulée: kept, never deleted. */
+  status?: SupplierInvoiceStatus
+  cancel_reason?: string | null
+  cancelled_at?: string | null
+  cancelled_by_name?: string | null
+  /** Cash given back to the drawer by the cancellation (Fond d'entrée automatique). */
+  cancel_cash_refund?: number
+  /** Corrected invoice: this one replaces the cancelled one. */
+  replaces_invoice_id?: string | null
+  replaced_by_invoice_id?: string | null
+  /** Retours fournisseur (avoirs): deducted from what is left to pay. */
+  returned_amount?: number
+}
+
+export type SupplierInvoiceStatus = 'active' | 'cancelled'
+
+/** Retour fournisseur (avoir): part of an invoice's items sent back; its amount is deducted from what is left to pay. */
+export interface SupplierReturn {
+  id: string
+  invoice_id: string
+  date: string
+  reason: string
+  amount: number
+  user_name: string
+  created_at: string
+  items: SupplierReturnItem[]
+}
+
+export interface SupplierReturnItem {
+  id: string
+  invoice_item_id: string | null
+  item_name: string
+  /** In the invoice line's unit. */
+  quantity: number
+  unit: string
+  unit_price: number
 }
 
 /** One line of a supplier invoice: its quantity was added to the stock item. */
@@ -530,6 +572,8 @@ export interface SupplierInvoiceItem {
   unit_price: number
   /** Stock units per invoice unit: 6 when bought by the fardeau of 6 bouteilles, 1 otherwise. */
   factor: number
+  /** Already sent back to the supplier (retours), in the line's unit. */
+  returned_quantity?: number
 }
 
 /** A payment (full or partial) of a supplier invoice. */
