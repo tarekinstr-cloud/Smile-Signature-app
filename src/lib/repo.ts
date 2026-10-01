@@ -4,7 +4,7 @@ import type {
   NewCategory, NewItemOption, NewMenuItem, NewOptionGroup, NewOrderLine, NewTable, OptionGroup, OptionGroupPatch, Order,
   OrderLine, OrderLinePatch, PaidOrder, Payment, PaymentMethod, ReceiptSettings, TablePatch, AdjustmentsPatch,
   CategoryPrinters, KitchenTicket, NewPrinter, Printer, PrinterPatch, InvoiceCustomer, TableMove, DeliveryCustomer, DeliveryStatus,
-  Cancellation, CancelledOrder, PriceChange,
+  Cancellation, CancelledOrder, PriceChange, TableOrderInfo, FloorConfig,
 } from './types'
 import { demoMenu } from './demoMenu'
 import { buildKitchenTickets, type SendResult } from './kitchen'
@@ -25,6 +25,24 @@ export interface Repo {
   deleteTable(id: string): Promise<void>
   /** Calls onChange whenever halls or tables change elsewhere. Returns an unsubscribe function. */
   subscribe(onChange: () => void): () => void
+  /**
+   * Fond de salle: saves the (already compressed) image as the hall's background, or removes it (null). The previous
+   * file is deleted. Needs the Édition or Paramètres permission.
+   */
+  setHallBackground(hallId: string, image: Blob | null): Promise<void>
+  /** Open orders of a hall's tables: waiter, guests and timer, for the floor plan. */
+  listTableOrders(hallId: string): Promise<TableOrderInfo[]>
+  /** Couverts of an open order (null: not given). */
+  setGuests(orderId: string, guests: number | null): Promise<void>
+  /** « Servi »: stops the order's waiting timer (server time) until the next send to the kitchen. */
+  markServed(orderId: string): Promise<void>
+  /** Paramètres > Configurations: thresholds of the floor timer. */
+  getFloorConfig(): Promise<FloorConfig>
+  updateFloorConfig(config: FloorConfig): Promise<void>
+  /** Calls onChange when the configuration changes on another device. */
+  subscribeConfig(onChange: () => void): () => void
+  /** Current time of the server (ms since 1970), to correct this device's clock. The device's own clock in demo mode. */
+  serverNow(): Promise<number>
 
   /** Active categories and items, with each item's option groups. `includeHidden` also returns hidden ones (admin screen). */
   getMenu(opts?: { includeHidden?: boolean }): Promise<Menu>
@@ -327,6 +345,35 @@ export function sharedChannel(sb: SupabaseClient, topic: string, tables: string[
   }
 }
 
+export const defaultFloorConfig = (): FloorConfig => ({ timer_warn_min: 15, timer_alert_min: 30 })
+
+/** Thresholds checked like the app_config table: whole minutes, 1 to 600, orange before red. */
+export function checkFloorConfig(c: FloorConfig): FloorConfig {
+  const warn = Math.round(c.timer_warn_min)
+  const alert = Math.round(c.timer_alert_min)
+  if (!(warn >= 1 && warn <= 600 && alert >= 2 && alert <= 600 && alert > warn)) throw new Error(tr().errTimerThresholds)
+  return { timer_warn_min: warn, timer_alert_min: alert }
+}
+
+const tableOrderInfo = (o: Order): TableOrderInfo => ({
+  order_id: o.id, table_id: o.table_id ?? '', created_at: o.created_at, created_by_name: o.created_by_name ?? null,
+  guests: o.guests == null ? null : Number(o.guests), served_at: o.served_at ?? null, timer_at: o.timer_at ?? null,
+})
+
+/** Readable message when the floor-visual migration (20261002000000_floor_visual.sql) has not been run. */
+function floorError(message: string): Error {
+  if (/bucket not found|set_hall_background|mark_order_served|app_config|guests|served_at|background_/i.test(message)
+    && /not found|does not exist|schema cache|Could not find/i.test(message)) return new Error(tr().errMigrationFloor)
+  if (/permission_denied|row-level security|Unauthorized|403/i.test(message)) return new Error(tr().errNoPermission)
+  return new Error(message)
+}
+
+function checkGuests(guests: number | null) {
+  if (guests !== null && !(Number.isInteger(guests) && guests >= 1 && guests <= 99)) throw new Error(tr().errGuests)
+}
+
+const BACKGROUND_BUCKET = 'floor-backgrounds'
+
 function supabaseRepo(sb: SupabaseClient): Repo {
   /** A table (or a hall's tables) with an open order cannot be deleted: the order would lose its table. */
   const refuseOpenOrders = async (tableIds: string[]) => {
@@ -336,6 +383,7 @@ function supabaseRepo(sb: SupabaseClient): Repo {
   }
   const floorChannel = sharedChannel(sb, 'floor', ['halls', 'tables'])
   const ordersChannel = sharedChannel(sb, 'orders', ['orders', 'order_items', 'payments'])
+  const configChannel = sharedChannel(sb, 'app_config', ['app_config'])
   const insertRow = async (table: MenuTable, row: object) => check(await sb.from(table).insert(row).select().single()) as unknown
   const updateRow = async (table: MenuTable, id: string, patch: object) => {
     check(await sb.from(table).update(patch).eq('id', id))
@@ -378,6 +426,60 @@ function supabaseRepo(sb: SupabaseClient): Repo {
     },
     subscribe(onChange) {
       return floorChannel(onChange)
+    },
+    async setHallBackground(hallId, image) {
+      let url: string | null = null
+      let path: string | null = null
+      if (image) {
+        path = `${hallId}/${newId()}.jpg`
+        const up = await sb.storage.from(BACKGROUND_BUCKET).upload(path, image, { contentType: image.type || 'image/jpeg', cacheControl: '31536000', upsert: false })
+        if (up.error) throw floorError(up.error.message)
+        url = sb.storage.from(BACKGROUND_BUCKET).getPublicUrl(path).data.publicUrl
+      }
+      const res = await sb.rpc('set_hall_background', { p_hall_id: hallId, p_url: url, p_path: path })
+      if (res.error) {
+        if (path) await sb.storage.from(BACKGROUND_BUCKET).remove([path])
+        throw floorError(res.error.message)
+      }
+      const old = res.data as string | null
+      // The old file is no longer used; failing to delete it only leaves a file behind.
+      if (old && old !== path) await sb.storage.from(BACKGROUND_BUCKET).remove([old])
+    },
+    async listTableOrders(hallId) {
+      const tables = check(await sb.from('tables').select('id').eq('hall_id', hallId)) as { id: string }[]
+      if (!tables.length) return []
+      const res = await sb.from('orders').select('*').eq('status', 'open').in('table_id', tables.map((t) => t.id))
+      if (res.error) throw floorError(res.error.message)
+      return (res.data as Order[]).map(tableOrderInfo)
+    },
+    async setGuests(orderId, guests) {
+      checkGuests(guests)
+      const res = await sb.from('orders').update({ guests }).eq('id', orderId).eq('status', 'open')
+      if (res.error) throw floorError(res.error.message)
+    },
+    async markServed(orderId) {
+      const res = await sb.rpc('mark_order_served', { p_order_id: orderId })
+      if (res.error) throw res.error.message.includes('order_not_open') ? checkoutError('order_not_open') : floorError(res.error.message)
+    },
+    async getFloorConfig() {
+      const res = await sb.from('app_config').select('timer_warn_min, timer_alert_min').eq('id', 1).maybeSingle()
+      // Before the migration: the default thresholds.
+      if (res.error || !res.data) return defaultFloorConfig()
+      return { timer_warn_min: Number(res.data.timer_warn_min), timer_alert_min: Number(res.data.timer_alert_min) }
+    },
+    async updateFloorConfig(config) {
+      const c = checkFloorConfig(config)
+      const res = await sb.from('app_config').update({ ...c, updated_at: new Date().toISOString() }).eq('id', 1).select('id')
+      if (res.error) throw floorError(res.error.message)
+      if (!res.data?.length) throw new Error(tr().errNoPermission)
+    },
+    subscribeConfig(onChange) {
+      return configChannel(onChange)
+    },
+    async serverNow() {
+      const res = await sb.rpc('server_now')
+      if (res.error) throw floorError(res.error.message)
+      return new Date(res.data as string).getTime()
     },
 
     async getMenu(opts) {
@@ -674,6 +776,10 @@ function normalizeOrder(o: Order): Order {
     delivery_zone_id: o.delivery_zone_id ?? null,
     delivery_zone_name: o.delivery_zone_name ?? null,
     delivery_fee: Number(o.delivery_fee ?? 0),
+    // Rows saved before the floor-visual migration have no guests and no timer fields.
+    guests: o.guests == null ? null : Number(o.guests),
+    served_at: o.served_at ?? null,
+    timer_at: o.timer_at ?? null,
   }
 }
 
@@ -747,6 +853,17 @@ const newOrder = (tableId: string | null): Order => ({
 })
 
 const KEY = 'smile.floor.v1'
+const CONFIG_KEY = 'smile.config.v1'
+const configListeners = new Set<() => void>()
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error ?? new Error('read'))
+    reader.readAsDataURL(blob)
+  })
+}
 
 interface LocalDb {
   halls: Hall[]
@@ -963,6 +1080,61 @@ function localRepo(): Repo {
       return () => {
         listeners.delete(onChange)
       }
+    },
+    async setHallBackground(hallId, image) {
+      if (!localCan('edit') && !localCan('settings')) throw new Error(tr().errNoPermission)
+      const url = image ? await blobToDataUrl(image) : null
+      const db = load()
+      db.halls = db.halls.map((h) => (h.id === hallId ? { ...h, background_url: url, background_path: null } : h))
+      save(db)
+      // The demo keeps the image in this browser's storage, which is small: say so instead of losing it silently.
+      if (url && load().halls.find((h) => h.id === hallId)?.background_url !== url) throw new Error(tr().errBackgroundTooBig)
+      listeners.forEach((l) => l())
+    },
+    async listTableOrders(hallId) {
+      const ids = new Set(load().tables.filter((t) => t.hall_id === hallId).map((t) => t.id))
+      return loadOrders().orders.filter((o) => o.status === 'open' && o.table_id && ids.has(o.table_id)).map((o) => tableOrderInfo(normalizeOrder(o)))
+    },
+    async setGuests(orderId, guests) {
+      checkGuests(guests)
+      const db = loadOrders()
+      const order = db.orders.find((o) => o.id === orderId && o.status === 'open')
+      if (!order) throw checkoutError('order_not_open')
+      order.guests = guests
+      commitOrders(db)
+    },
+    async markServed(orderId) {
+      const db = loadOrders()
+      const order = db.orders.find((o) => o.id === orderId && o.status === 'open')
+      if (!order) throw checkoutError('order_not_open')
+      order.served_at = new Date().toISOString()
+      commitOrders(db)
+    },
+    async getFloorConfig() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) ?? 'null') as FloorConfig | null
+        return saved ? checkFloorConfig(saved) : defaultFloorConfig()
+      } catch {
+        return defaultFloorConfig()
+      }
+    },
+    async updateFloorConfig(config) {
+      const c = checkFloorConfig(config)
+      try {
+        localStorage.setItem(CONFIG_KEY, JSON.stringify(c))
+      } catch {
+        // Not persisted (private mode): kept for this visit only.
+      }
+      configListeners.forEach((l) => l())
+    },
+    subscribeConfig(onChange) {
+      configListeners.add(onChange)
+      return () => {
+        configListeners.delete(onChange)
+      }
+    },
+    async serverNow() {
+      return Date.now()
     },
 
     async getMenu(opts) {
@@ -1347,6 +1519,8 @@ function localRepo(): Repo {
         return row
       })
       if (!sent.length) return { tickets: [], unrouted: [] }
+      // Like the order_items_restart_timer trigger: a send after « Servi » starts the timer again.
+      if (order.served_at) Object.assign(order, { served_at: null, timer_at: at })
       const itemCategory = Object.fromEntries(db.items.map((i) => [i.id, i.category_id]))
       const built = buildKitchenTickets(sent, itemCategory, db.categoryPrinters, db.printers, { orderId, tableLabel, waiter, at })
       const tickets = built.tickets.map((t) => ({ ...t, id: newId() }))

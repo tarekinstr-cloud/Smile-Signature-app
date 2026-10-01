@@ -26,6 +26,7 @@ import ExpensesPage from './ExpensesPage'
 import ProfitPage from './ProfitPage'
 import { CancelledInvoicesPage, CancelledOrdersPage, PriceLogPage } from './ControlPages'
 import type { SupplierInvoice } from '../../lib/types'
+import { ConfigPage, WallpaperPage } from './FloorSettingsPages'
 
 interface Props {
   page: BackOfficePage
@@ -92,6 +93,8 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     cancelledOrders: [t.cancelledOrdersTitle, t.cancelledOrdersSub],
     cancelledInvoices: [t.cancelledInvoicesTitle, t.cancelledInvoicesSub],
     priceLog: [t.priceLogTitle, t.priceLogSub],
+    wallpaper: [t.bgTitle, t.bgSub],
+    config: [t.cfgTitle, t.cfgSub],
   }
   return (
     <div className="app back-office">
@@ -171,6 +174,8 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'cancelledOrders' && <CancelledOrdersPage />}
       {page === 'cancelledInvoices' && <CancelledInvoicesPage />}
       {page === 'priceLog' && <PriceLogPage />}
+      {page === 'wallpaper' && <WallpaperPage />}
+      {page === 'config' && <ConfigPage />}
     </div>
   )
 }

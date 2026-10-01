@@ -7,6 +7,10 @@ export interface Hall {
   width: number
   height: number
   sort_order: number
+  /** Image de fond de la salle (Supabase Storage, ou image compressée en mode démo); null: fond quadrillé. */
+  background_url?: string | null
+  /** Chemin du fichier dans le bucket floor-backgrounds (pour le supprimer quand il est remplacé). */
+  background_path?: string | null
 }
 
 export interface DiningTable {
@@ -137,6 +141,29 @@ export interface Order extends Adjustments {
   voided?: boolean
   voided_day_id?: string | null
   void_cash?: number
+  /** Couverts: number of guests at the table (colours as many chairs on the floor plan); null: not given. */
+  guests?: number | null
+  /** « Servi »: the waiting timer stops until the next send to the kitchen. */
+  served_at?: string | null
+  /** Start of the waiting timer after a « Servi » then a new send; null: since the order was opened. */
+  timer_at?: string | null
+}
+
+/** Open order of a table, as the floor plan shows it: waiter, guests and waiting timer. */
+export interface TableOrderInfo {
+  order_id: string
+  table_id: string
+  created_at: string
+  created_by_name: string | null
+  guests: number | null
+  served_at: string | null
+  timer_at: string | null
+}
+
+/** Paramètres > Configurations: thresholds of the floor timer, in minutes (green below warn, orange, red from alert). */
+export interface FloorConfig {
+  timer_warn_min: number
+  timer_alert_min: number
 }
 
 /** Why an order is cancelled: a code of the list (texts in i18n cancelReasons) and, for 'other', a free text. */
