@@ -29,8 +29,8 @@ interface Props {
   orderId?: string
   /** Opens the checkout as soon as the order is loaded (checkout started from the floor plan). */
   startCheckout?: boolean
-  /** New takeaway: the customer's name typed before the order screen (saved when the order is created). */
-  customerName?: string
+  /** New takeaway: the number of people chosen before the order screen (saved when the order is created). */
+  startGuests?: number
   onBack(): void
   /** Nouvelle CMD → À emporter: the floor screen opens a fresh takeaway order. */
   onNewTakeaway(): void
@@ -84,7 +84,7 @@ interface PayMode {
 
 type Modal = 'move' | 'invoice' | 'bill' | 'print' | 'new' | 'discount' | 'delivery'
 
-export default function OrderScreen({ table, hall: startHall, orderId: startOrderId, startCheckout, customerName, onBack, onNewTakeaway, onNewDelivery }: Props) {
+export default function OrderScreen({ table, hall: startHall, orderId: startOrderId, startCheckout, startGuests, onBack, onNewTakeaway, onNewDelivery }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null)
   const [categoryId, setCategoryId] = useState<string | null>(null)
   /** Where the order is: a table (with its hall), or null for takeaway. Follows Changement de Table. */
@@ -106,6 +106,8 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
   const [cancelling, setCancelling] = useState(false)
   /** Couverts: the guests picker is open. */
   const [guestsOpen, setGuestsOpen] = useState(false)
+  /** Number of people of a new takeaway, saved when its first item creates the order. */
+  const [pendingGuests, setPendingGuests] = useState(startGuests)
   // Line that supplement buttons, Remise and Offrir apply to: the one last added, or the one tapped in the order.
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const opening = useRef<Promise<Order> | null>(null)
@@ -214,7 +216,7 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
     if (order) return order
     // Two quick taps must not open two orders.
     const target = place?.table.id
-    opening.current ??= (target ? repo.openOrder(target) : repo.openTakeaway(customerName)).finally(() => {
+    opening.current ??= (target ? repo.openOrder(target) : repo.openTakeaway(pendingGuests)).finally(() => {
       opening.current = null
     })
     const o = await opening.current
@@ -308,21 +310,11 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
     setBusy(false)
   }
 
-  /** À emporter: the customer's name on the card and the next kitchen tickets. */
-  async function renameCustomer() {
-    if (!order) return
-    const name = await dialog.askText(t.customerNameOptional, t.save)
-    if (name === null) return
-    await run(async () => {
-      await repo.setCustomerName(order.id, name)
-      await reloadOrder()
-    })
-  }
-
   /** Couverts: guests at the table, shown as taken chairs on the floor plan. */
   async function setGuests(guests: number | null) {
-    if (!order) return
     setGuestsOpen(false)
+    // A new takeaway not created yet (no item): kept until the first item creates it.
+    if (!order) return guests && setPendingGuests(guests)
     setOrder({ ...order, guests })
     await run(() => repo.setGuests(order.id, guests))
     await reloadOrder()
@@ -527,11 +519,10 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
           <span>
             {place ? <><bdi>{place.hall.name}</bdi> · {t.seatsCount(place.table.seats)}</>
               : isDelivery ? <bdi>{[deliveryContact(order), order.customer_address, order.delivery_zone_name].filter(Boolean).join(' · ')}</bdi>
-              : (order?.customer_name ?? customerName) ? <bdi>{order?.customer_name ?? customerName}</bdi>
+              : order?.customer_name ? <bdi>{order.customer_name}</bdi>
               : t.takeaway}
           </span>
         </div>
-        {order?.order_type === 'takeaway' && <button className="ghost" onClick={renameCustomer}>✎ {t.customer}</button>}
         {isDelivery && (
           <>
             <button className="ghost" onClick={() => setModal('delivery')}>✎ {t.customer}</button>
@@ -544,9 +535,9 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
           </>
         )}
         <div className="spacer" />
-        {order && place && (
+        {(order || pendingGuests) && (
           <button className="ghost order-guests" onClick={() => setGuestsOpen(true)} title={t.guestsTitle}>
-            👤 {order.guests ? t.guestsCount(order.guests) : t.guestsTitle}
+            👤 {(order ? order.guests : pendingGuests) ? (place ? t.guestsCount : t.peopleCount)((order ? order.guests : pendingGuests)!) : t.guestsTitle}
           </button>
         )}
         {order && place && lines.some((l) => l.sent_at) && (
@@ -790,21 +781,22 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
             onBack()
           }} />
       )}
-      {guestsOpen && order && place && (
+      {guestsOpen && (order || pendingGuests) && (
         <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setGuestsOpen(false)}>
           <div className="dialog table-actions" role="dialog" aria-modal="true" aria-labelledby="guests-title"
             onKeyDown={(e) => e.key === 'Escape' && setGuestsOpen(false)}>
             <div className="panel-head">
-              <h2 id="guests-title">{t.guestsTitle}</h2>
+              <h2 id="guests-title">{place ? t.guestsTitle : t.peopleTitle}</h2>
               <button className="ghost" onClick={() => setGuestsOpen(false)} aria-label={t.close}>✕</button>
             </div>
-            <p className="muted small">{t.guestsHint(place.table.seats)}</p>
+            <p className="muted small">{place ? t.guestsHint(place.table.seats) : t.guestsHintNoTable}</p>
             <div className="keypad">
-              {Array.from({ length: Math.min(99, Math.max(place.table.seats, order.guests ?? 0, 1) + 2) }, (_, i) => i + 1).map((n) => (
-                <button key={n} type="button" className={order.guests === n ? 'key-fn' : undefined} aria-pressed={order.guests === n} onClick={() => setGuests(n)}>{n}</button>
-              ))}
+              {Array.from({ length: Math.min(99, Math.max(place?.table.seats ?? 10, order?.guests ?? 0, 1) + (place ? 2 : 0)) }, (_, i) => i + 1).map((n) => {
+                const current = order ? order.guests : pendingGuests
+                return <button key={n} type="button" className={current === n ? 'key-fn' : undefined} aria-pressed={current === n} onClick={() => setGuests(n)}>{n}</button>
+              })}
             </div>
-            {order.guests != null && <button onClick={() => setGuests(null)}>{t.guestsClear}</button>}
+            {place && order?.guests != null && <button onClick={() => setGuests(null)}>{t.guestsClear}</button>}
           </div>
         </div>
       )}

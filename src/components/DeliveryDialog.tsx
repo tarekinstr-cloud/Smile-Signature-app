@@ -3,6 +3,7 @@ import type { DeliveryCustomer, DeliveryZone } from '../lib/types'
 import { useI18n } from '../lib/i18n'
 import { money } from '../lib/format'
 import { deliveryZones, zoneLabel } from '../lib/deliveryZones'
+import GuestsPicker from './GuestsPicker'
 
 /** Zone already on the order: its id (null once the zone was deleted), the name and fee copied when it was chosen. */
 export interface CurrentZone {
@@ -22,6 +23,8 @@ interface Props {
   zone?: CurrentZone | null
   /** Label of the save button. */
   submitLabel: string
+  /** New delivery: the number of people is asked too, starting from this value (Paramètres > Configurations). */
+  defaultGuests?: number
   onCancel(): void
   /** Saves the customer; a thrown error is shown in the dialog. */
   onSubmit(customer: DeliveryCustomer): Promise<void>
@@ -31,13 +34,14 @@ interface Props {
  * Customer of a delivery: name (optional), phone and address (needed to deliver), and the delivery zone (optional) whose
  * fee is added to the order.
  */
-export default function DeliveryDialog({ place, initial, zone, submitLabel, onCancel, onSubmit }: Props) {
+export default function DeliveryDialog({ place, initial, zone, submitLabel, defaultGuests, onCancel, onSubmit }: Props) {
   const { t } = useI18n()
   const [name, setName] = useState(initial?.name ?? '')
   const [phone, setPhone] = useState(initial?.phone ?? '')
   const [address, setAddress] = useState(initial?.address ?? '')
   const initialZone = zone?.id ?? (zone && (zone.name || zone.fee > 0) ? KEPT : '')
   const [zoneId, setZoneId] = useState(initialZone)
+  const [guests, setGuests] = useState(defaultGuests ?? 1)
   const [zones, setZones] = useState<DeliveryZone[]>([])
   const [zonesError, setZonesError] = useState<string | null>(null)
 
@@ -61,7 +65,7 @@ export default function DeliveryDialog({ place, initial, zone, submitLabel, onCa
       // The zone is only written when it changed, so a database without the zones migration still takes deliveries.
       const changed = zoneId !== initialZone
       if (changed && zoneId && !picked) throw new Error(t.errZoneGone)
-      await onSubmit({ name, phone, address, ...(changed && { zone: picked }) })
+      await onSubmit({ name, phone, address, ...(changed && { zone: picked }), ...(defaultGuests !== undefined && { guests }) })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setBusy(false)
@@ -99,6 +103,12 @@ export default function DeliveryDialog({ place, initial, zone, submitLabel, onCa
           </select>
         </label>
         {picked && <p className="muted small">{t.deliveryFeeAdded(money(picked.fee))}</p>}
+        {defaultGuests !== undefined && (
+          <div className="field">
+            <span>{t.peopleTitle}</span>
+            <GuestsPicker value={guests} onChange={setGuests} />
+          </div>
+        )}
         {zonesError && <p className="muted small">{zonesError}</p>}
         {error && <p className="error small">{error}</p>}
         <div className="dialog-actions">

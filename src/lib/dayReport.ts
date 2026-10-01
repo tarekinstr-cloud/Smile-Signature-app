@@ -5,6 +5,12 @@ import type { CashSummary, DayReport, Menu, OrderLine, OrderType, SalesData, Sal
 
 const cents = (n: number) => Math.round(n * 100) / 100
 
+/** People served by an order: its number of people (couverts), or 1 when it was not given. */
+export const guestsOf = (o: { guests?: number | null }) => {
+  const n = Math.round(Number(o.guests ?? 0))
+  return n >= 1 ? n : 1
+}
+
 /** Category name of each menu item (hidden ones included), for "ventes par catégorie". */
 export function categoryOfItems(menu: Menu | null): Map<string, string> {
   const cats = new Map((menu?.categories ?? []).map((c) => [c.id, c.name]))
@@ -56,7 +62,8 @@ export function computeDayReport(
   const items = new Map<string, SalesRow>()
   const cats = new Map<string, SalesRow>()
   const employees = new Map<string, SalesRow>()
-  const byType: DayReport['byType'] = { dine_in: { orders: 0, amount: 0 }, takeaway: { orders: 0, amount: 0 }, delivery: { orders: 0, amount: 0 } }
+  const byType: DayReport['byType'] = { dine_in: { orders: 0, amount: 0, guests: 0 }, takeaway: { orders: 0, amount: 0, guests: 0 }, delivery: { orders: 0, amount: 0, guests: 0 } }
+  let guests = 0
   let gross = 0, discounts = 0, offered = 0, delivery = 0, net = 0
 
   for (const o of data.orders) {
@@ -69,6 +76,10 @@ export function computeDayReport(
     net += total
     const type: OrderType = o.order_type ?? 'dine_in'
     byType[type].orders += 1
+    // An order without its number of people counts as one person.
+    const people = guestsOf(o)
+    byType[type].guests = (byType[type].guests ?? 0) + people
+    guests += people
     byType[type].amount = da(byType[type].amount + total)
     const who = o.created_by_name?.trim() || t.dayUnknownEmployee
     add(employees, who, { name: who }, 0, total, 1)
@@ -110,7 +121,7 @@ export function computeDayReport(
   return {
     from, to,
     gross: da(gross), discounts: da(discounts), offered: da(offered), delivery: da(delivery), net: da(net),
-    orders, avgTicket: orders ? da(net / orders) : 0, openOrders: data.openOrders,
+    orders, avgTicket: orders ? da(net / orders) : 0, guests, avgPerGuest: guests ? da(net / guests) : 0, openOrders: data.openOrders,
     payments, byType,
     items: wholeDinars([...items.values()]).sort(byAmount),
     categories: wholeDinars([...cats.values()]).sort(byAmount),
@@ -134,10 +145,17 @@ export function reportCsvRows(r: DayReport): Record<string, unknown>[] {
   line(t.daySummary, t.dayNet, '', r.net)
   line(t.daySummary, t.paidOrders, r.orders, '')
   line(t.daySummary, t.avgTicket, '', r.avgTicket)
+  if (r.guests != null) {
+    line(t.daySummary, t.dayGuests, r.guests, '')
+    line(t.daySummary, t.avgPerGuest, '', r.avgPerGuest ?? '')
+  }
   if (r.closedSales) line(t.daySummary, t.dayClosedSales, r.closedSales.orders, r.closedSales.amount)
   if (r.voids) line(t.daySummary, t.dayVoids, r.voids.orders, -r.voids.cash)
   for (const [m, v] of Object.entries(r.payments)) line(t.dayPayments, (t.payMethod as Record<string, string>)[m] ?? m, '', v)
-  for (const type of ['dine_in', 'takeaway', 'delivery'] as const) line(t.dayByType, t.dayTypes[type], r.byType[type].orders, r.byType[type].amount)
+  for (const type of ['dine_in', 'takeaway', 'delivery'] as const) {
+    line(t.dayByType, t.dayTypes[type], r.byType[type].orders, r.byType[type].amount)
+    if (r.byType[type].guests != null) line(t.dayByType, `${t.dayTypes[type]} · ${t.dayGuests}`, r.byType[type].guests!, '')
+  }
   if (r.cash) {
     line(t.dayCash, t.cashOpening, '', r.cash.opening)
     line(t.dayCash, t.cashSales, '', r.cash.sales)

@@ -1430,6 +1430,20 @@ const fr = {
   takeawayStart: 'Commencer',
   takeawayStartNoName: 'Commencer sans nom',
   errMigrationTakeaway: 'À emporter en cartes : exécutez la migration supabase/migrations/20261003000000_takeaway_board.sql dans Supabase (SQL Editor).',
+  // Nombre de personnes (À emporter, Livraison, statistiques)
+  guestsMore: 'Plus de 5 personnes',
+  peopleTitle: 'Nombre de personnes',
+  guestsHintNoTable: 'Nombre de personnes : imprimé sur le ticket cuisine (couverts, serviettes, pain, sauces) et sur le ticket client.',
+  guestsAskTakeaway: 'Nombre de personnes (pour préparer couverts, serviettes, pain, sauces).',
+  takeawayStartGuests: (n: number) => `Commencer · ${n} 👤`,
+  peopleCount: (n: number) => `${n} personne${n > 1 ? 's' : ''}`,
+  dayGuests: 'Personnes servies',
+  avgPerGuest: 'Ticket moyen / personne',
+  cfgGuestsTitle: 'Nombre de personnes par défaut',
+  cfgGuestsHint: 'Proposé à la création d\'une commande à emporter ou d\'une livraison, modifiable ensuite depuis la commande. Dans les statistiques, une commande sans nombre de personnes compte pour 1.',
+  cfgTakeawayGuests: 'À emporter',
+  cfgDeliveryGuests: 'Livraison',
+  errMigrationGuests: 'Nombre de personnes par défaut : exécutez la migration supabase/migrations/20261004000000_guests_everywhere.sql dans Supabase (SQL Editor).',
 }
 
 type Dict = typeof fr
@@ -2843,6 +2857,20 @@ const ar: Dict = {
   takeawayStart: 'ابدأ',
   takeawayStartNoName: 'ابدأ بدون اسم',
   errMigrationTakeaway: 'الطلبات للأخذ: نفّذ الملف supabase/migrations/20261003000000_takeaway_board.sql في Supabase (SQL Editor).',
+  // Nombre de personnes (À emporter, Livraison, statistiques)
+  guestsMore: 'أكثر من 5 أشخاص',
+  peopleTitle: 'عدد الأشخاص',
+  guestsHintNoTable: 'عدد الأشخاص: يُطبع على تذكرة المطبخ (أدوات، مناديل، خبز، صلصات) وعلى تذكرة الزبون.',
+  guestsAskTakeaway: 'عدد الأشخاص (لتحضير الأدوات والمناديل والخبز والصلصات).',
+  takeawayStartGuests: (n) => `ابدأ · ${n} 👤`,
+  peopleCount: (n) => `${n} أشخاص`,
+  dayGuests: 'الأشخاص المخدومون',
+  avgPerGuest: 'متوسط التذكرة / شخص',
+  cfgGuestsTitle: 'عدد الأشخاص الافتراضي',
+  cfgGuestsHint: 'يُقترح عند إنشاء طلب للأخذ أو توصيل، ويمكن تعديله من الطلب. في الإحصائيات، الطلب بدون عدد أشخاص يُحسب شخصاً واحداً.',
+  cfgTakeawayGuests: 'للأخذ',
+  cfgDeliveryGuests: 'توصيل',
+  errMigrationGuests: 'عدد الأشخاص الافتراضي: نفّذ الملف supabase/migrations/20261004000000_guests_everywhere.sql في Supabase (SQL Editor).',
 }
 
 const dicts: Record<Lang, Dict> = { fr, ar }

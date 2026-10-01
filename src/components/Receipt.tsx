@@ -56,6 +56,7 @@ export default function Receipt({ settings, order, lines, payments, place, hallN
           {hallName && <bdi>{hallName}</bdi>}
         </div>
       )}
+      {!!order.guests && <div className="receipt-meta"><span>{t.peopleCount(order.guests)}</span></div>}
       {kind === 'bill' && <div className="receipt-sub receipt-note">{t.billNote}</div>}
       {order.order_type === 'delivery' ? (
         <div className="receipt-customer receipt-delivery">

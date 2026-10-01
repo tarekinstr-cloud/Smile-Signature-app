@@ -3,6 +3,7 @@ import type { DiningTable, FloorConfig, Hall, Reservation, TableOrderInfo } from
 import { useI18n } from '../lib/i18n'
 import { minutesSince, useServerNow } from '../lib/serverClock'
 import TableGraphic, { chairDepth } from './TableGraphic'
+import { defaultFloorConfig } from '../lib/repo'
 
 const GRID = 10
 const MOVE_THRESHOLD = 4 // screen px before a press becomes a drag
@@ -34,7 +35,7 @@ export function waitMinutes(o: TableOrderInfo, now: number): number | null {
   return minutesSince(o.timer_at ?? o.created_at, now)
 }
 
-export const timerLevel = (minutes: number, c: FloorConfig) => (minutes >= c.timer_alert_min ? 'alert' : minutes >= c.timer_warn_min ? 'warn' : 'ok')
+export const timerLevel = (minutes: number, c: Pick<FloorConfig, 'timer_warn_min' | 'timer_alert_min'>) => (minutes >= c.timer_alert_min ? 'alert' : minutes >= c.timer_warn_min ? 'warn' : 'ok')
 
 interface Drag {
   id: string
@@ -195,7 +196,7 @@ export default function FloorPlan({ hall, tables, editable, selectedId, onSelect
                 {info && (
                   minutes === null
                     ? <span className="table-timer served">✓ {tx.floorServed}</span>
-                    : <span className={`table-timer ${timerLevel(minutes, timer ?? { timer_warn_min: 15, timer_alert_min: 30 })}`}>⏱ {tx.floorMinutes(minutes)}</span>
+                    : <span className={`table-timer ${timerLevel(minutes, timer ?? defaultFloorConfig())}`}>⏱ {tx.floorMinutes(minutes)}</span>
                 )}
               </span>
             </button>

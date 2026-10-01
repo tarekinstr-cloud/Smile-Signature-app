@@ -41,8 +41,8 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
    * Takeaway or delivery order on screen: an open one (its id), or a new takeaway (null id, with a key so each is
    * a fresh screen). A delivery is created with its customer before the screen opens, so it always has an id.
    */
-  const [takeaway, setTakeaway] = useState<{ orderId: string | null; key: number; customerName?: string } | null>(null)
-  /** Nouvelle commande à emporter: the customer's name, before the order screen. */
+  const [takeaway, setTakeaway] = useState<{ orderId: string | null; key: number; guests?: number } | null>(null)
+  /** Nouvelle commande à emporter: the number of people, before the order screen. */
   const [startingTakeaway, setStartingTakeaway] = useState(false)
   const [takeaways, setTakeaways] = useState<OpenOrder[]>([])
   const [deliveries, setDeliveries] = useState<OpenOrder[]>([])
@@ -161,15 +161,15 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     return repo.subscribeOrders(reloadTakeaways)
   }, [reloadTakeaways])
 
-  function openTakeaway(orderId: string | null, customerName?: string) {
+  function openTakeaway(orderId: string | null, guests?: number) {
     setOpenList(null)
     setNewDelivery(false)
     setStartingTakeaway(false)
     setOrderTableId(null)
-    setTakeaway({ orderId, key: Date.now(), customerName })
+    setTakeaway({ orderId, key: Date.now(), guests })
   }
 
-  /** Nouvelle commande à emporter: asks the customer's name (optional) first. */
+  /** Nouvelle commande à emporter: asks the number of people first. */
   function askTakeaway() {
     setOpenList(null)
     setTakeaway(null)
@@ -455,7 +455,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   if (takeaway) {
     return (
       <OrderScreen key={`takeaway-${takeaway.orderId ?? takeaway.key}`} table={null} hall={null} orderId={takeaway.orderId ?? undefined}
-        customerName={takeaway.customerName} onBack={leaveOrder} onNewTakeaway={askTakeaway} onNewDelivery={startDelivery} />
+        startGuests={takeaway.guests} onBack={leaveOrder} onNewTakeaway={askTakeaway} onNewDelivery={startDelivery} />
     )
   }
   const orderTable = tables.find((t) => t.id === orderTableId)
@@ -562,9 +562,9 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
           onPickup={(order, status) => run(async () => { await repo.setPickupStatus(order.id, status); reloadTakeaways() })}
           onDelivery={(order, status) => run(async () => { await repo.updateDelivery(order.id, { status }); reloadTakeaways() })} />
       )}
-      {startingTakeaway && <TakeawayStartDialog onCancel={() => setStartingTakeaway(false)} onStart={(name) => openTakeaway(null, name)} />}
+      {startingTakeaway && <TakeawayStartDialog defaultGuests={floorConfig.takeaway_default_guests} onCancel={() => setStartingTakeaway(false)} onStart={(guests) => openTakeaway(null, guests)} />}
       {newDelivery && (
-        <DeliveryDialog submitLabel={t.deliveryStart} onCancel={() => setNewDelivery(false)}
+        <DeliveryDialog submitLabel={t.deliveryStart} defaultGuests={floorConfig.delivery_default_guests} onCancel={() => setNewDelivery(false)}
           onSubmit={async (customer) => {
             const order = await repo.openDelivery(customer)
             openTakeaway(order.id)
