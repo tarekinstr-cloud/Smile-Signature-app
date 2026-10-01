@@ -7,6 +7,7 @@ import { da, money } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
 import type { CashDay, Expense, SalesData } from '../../lib/types'
 import { isoDay } from './PeriodFilter'
+import { guestsOf } from '../../lib/dayReport'
 import { gapClass, gapText } from './DayReportView'
 import { locale, useLoad } from './useLoad'
 
@@ -34,6 +35,9 @@ export interface WeekDay {
   net: number
   orders: number
   avg: number
+  /** Personnes servies (1 for an order without its number of people) and the ticket moyen par personne. */
+  guests: number
+  avgGuest: number
   cash: number
   card: number
   expenses: number
@@ -59,13 +63,14 @@ export function weekDays(first: Date, n: number, sales: SalesData, days: CashDay
   const rows = new Map<string, WeekDay>()
   for (let i = 0; i < n; i++) {
     const day = isoDay(addDays(first, i))
-    rows.set(day, { day, net: 0, orders: 0, avg: 0, cash: 0, card: 0, expenses: 0, gap: null })
+    rows.set(day, { day, net: 0, orders: 0, avg: 0, guests: 0, avgGuest: 0, cash: 0, card: 0, expenses: 0, gap: null })
   }
   for (const o of sales.orders) {
     const r = rows.get(keyOf(o.closed_at ?? o.created_at))
     if (!r) continue
     r.net += o.total ?? 0
     r.orders += 1
+    r.guests += guestsOf(o)
   }
   for (const p of sales.payments) {
     const r = rows.get(keyOf(p.created_at))
@@ -82,7 +87,7 @@ export function weekDays(first: Date, n: number, sales: SalesData, days: CashDay
   const c = da
   return [...rows.values()].map((r) => ({
     ...r, net: c(r.net), cash: c(r.cash), card: c(r.card), expenses: c(r.expenses), gap: r.gap === null ? null : c(r.gap),
-    avg: r.orders ? c(r.net / r.orders) : 0,
+    avg: r.orders ? c(r.net / r.orders) : 0, avgGuest: r.guests ? c(r.net / r.guests) : 0,
   }))
 }
 
@@ -136,6 +141,7 @@ export default function WeeklyPage() {
     const gaps = rows.filter((r) => r.gap !== null)
     return {
       net: s((r) => r.net), orders, avg: orders ? da(s((r) => r.net) / orders) : 0, cash: s((r) => r.cash),
+      guests: s((r) => r.guests), avgGuest: s((r) => r.guests) ? da(s((r) => r.net) / s((r) => r.guests)) : 0,
       card: s((r) => r.card), expenses: s((r) => r.expenses), gap: gaps.length ? s((r) => r.gap ?? 0) : null,
     }
   }
@@ -146,7 +152,7 @@ export default function WeeklyPage() {
   const exportCsv = () => {
     if (!data || !cur) return
     const row = (label: string, r: Omit<WeekDay, 'day'>, prevNet: number | null) => ({
-      [t.colDate]: label, [t.dayNet]: r.net, [t.dayOrdersCol]: r.orders, [t.weekAvg]: r.avg, [t.weekCash]: r.cash, [t.weekCard]: r.card,
+      [t.colDate]: label, [t.dayNet]: r.net, [t.dayOrdersCol]: r.orders, [t.weekAvg]: r.avg, [t.dayGuests]: r.guests, [t.avgPerGuest]: r.avgGuest, [t.weekCash]: r.cash, [t.weekCard]: r.card,
       [t.weekExpenses]: r.expenses, [t.cashGap]: r.gap ?? '', [t.weekPrevNet]: prevNet ?? '',
     })
     const rows = data.current.map((r, i) => row(r.day, r, data.previous[i].net))
@@ -187,6 +193,7 @@ export default function WeeklyPage() {
             </div>
             <div className="stat-tile"><span>{t.dayOrdersCol}</span><strong>{cur.orders}</strong><small className="muted">{t.weekPrevShort(String(prev.orders))}</small></div>
             <div className="stat-tile"><span>{t.weekAvg}</span><strong>{money(cur.avg)}</strong><small className="muted">{t.weekPrevShort(money(prev.avg))}</small></div>
+            <div className="stat-tile"><span>{t.dayGuests}</span><strong>{cur.guests}</strong><small className="muted">{t.avgPerGuest} : {money(cur.avgGuest)} · {t.weekPrevShort(money(prev.avgGuest))}</small></div>
             <div className="stat-tile"><span>{t.weekExpenses}</span><strong>{money(cur.expenses)}</strong><small className="muted">{t.weekPrevShort(money(prev.expenses))}</small></div>
           </div>
           <section className="panel">
@@ -202,6 +209,8 @@ export default function WeeklyPage() {
                     <th className="num">{t.dayNet}</th>
                     <th className="num">{t.dayOrdersCol}</th>
                     <th className="num">{t.weekAvg}</th>
+                    <th className="num">{t.dayGuests}</th>
+                    <th className="num">{t.avgPerGuest}</th>
                     <th className="num">{t.weekCash}</th>
                     <th className="num">{t.weekCard}</th>
                     <th className="num">{t.weekExpenses}</th>
@@ -215,6 +224,8 @@ export default function WeeklyPage() {
                       <td className="num">{money(r.net)}</td>
                       <td className="num">{r.orders}</td>
                       <td className="num">{money(r.avg)}</td>
+                      <td className="num">{r.guests}</td>
+                      <td className="num">{money(r.avgGuest)}</td>
                       <td className="num">{money(r.cash)}</td>
                       <td className="num">{money(r.card)}</td>
                       <td className="num">{money(r.expenses)}</td>
@@ -228,6 +239,8 @@ export default function WeeklyPage() {
                     <td className="num">{money(cur.net)}</td>
                     <td className="num">{cur.orders}</td>
                     <td className="num">{money(cur.avg)}</td>
+                    <td className="num">{cur.guests}</td>
+                    <td className="num">{money(cur.avgGuest)}</td>
                     <td className="num">{money(cur.cash)}</td>
                     <td className="num">{money(cur.card)}</td>
                     <td className="num">{money(cur.expenses)}</td>
@@ -238,6 +251,8 @@ export default function WeeklyPage() {
                     <td className="num">{money(prev.net)}</td>
                     <td className="num">{prev.orders}</td>
                     <td className="num">{money(prev.avg)}</td>
+                    <td className="num">{prev.guests}</td>
+                    <td className="num">{money(prev.avgGuest)}</td>
                     <td className="num">{money(prev.cash)}</td>
                     <td className="num">{money(prev.card)}</td>
                     <td className="num">{money(prev.expenses)}</td>

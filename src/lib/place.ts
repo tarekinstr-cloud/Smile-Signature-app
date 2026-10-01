@@ -12,7 +12,11 @@ type Strings = ReturnType<typeof tr>
 const TAKEAWAY = 'EMP-'
 const DELIVERY = 'LIV-'
 
-type PlaceOrder = Pick<Order, 'order_type' | 'takeaway_no'> & Partial<Pick<Order, 'delivery_no' | 'customer_name' | 'customer_phone' | 'customer_address'>>
+type PlaceOrder = Pick<Order, 'order_type' | 'takeaway_no'> & Partial<Pick<Order, 'delivery_no' | 'customer_name' | 'customer_phone' | 'customer_address' | 'guests'>>
+
+/** Number of people on a kitchen ticket line, translated when the ticket is shown (« 3 personnes »). */
+const GUESTS = 'PERS-'
+const guestsLine = (order: PlaceOrder) => (order.guests ? GUESTS + order.guests : null)
 
 /** "Nom · 0550 12 34 56" of a delivery's customer, or null when neither is known. */
 export function deliveryContact(order: Partial<Pick<Order, 'customer_name' | 'customer_phone'>>): string | null {
@@ -22,16 +26,18 @@ export function deliveryContact(order: Partial<Pick<Order, 'customer_name' | 'cu
 /** What goes in a kitchen ticket's table_label for this order. */
 export function ticketPlace(order: PlaceOrder, table: Pick<DiningTable, 'label'> | null): string | null {
   // The customer's name (optional) goes under the number, so the kitchen can call it out too.
-  if (order.order_type === 'takeaway') return [TAKEAWAY + (order.takeaway_no ?? ''), order.customer_name?.trim()].filter(Boolean).join('\n')
+  // The number of people goes on its own line, to prepare cutlery, napkins, bread and sauces.
+  if (order.order_type === 'takeaway') return [TAKEAWAY + (order.takeaway_no ?? ''), guestsLine(order), order.customer_name?.trim()].filter(Boolean).join('\n')
   if (order.order_type === 'delivery') {
-    return [DELIVERY + (order.delivery_no ?? ''), deliveryContact(order), order.customer_address].filter(Boolean).join('\n')
+    return [DELIVERY + (order.delivery_no ?? ''), guestsLine(order), deliveryContact(order), order.customer_address].filter(Boolean).join('\n')
   }
-  return table?.label ?? null
+  return table ? [table.label, guestsLine(order)].filter(Boolean).join('\n') : null
 }
 
 /** Splits a stored ticket label into the place ("Table 4", "Livraison n° 3") and the delivery details under it. */
 export function ticketLabelParts(t: Strings, label: string): { place: string; details: string[]; delivery: boolean } {
-  const [first, ...details] = label.split('\n')
+  const [first, ...rest] = label.split('\n')
+  const details = rest.map((line) => (line.startsWith(GUESTS) ? t.peopleCount(Number(line.slice(GUESTS.length))) : line))
   if (first.startsWith(DELIVERY)) return { place: t.deliveryNo(first.slice(DELIVERY.length)), details, delivery: true }
   if (first.startsWith(TAKEAWAY)) return { place: t.takeawayNo(first.slice(TAKEAWAY.length)), details, delivery: false }
   return { place: t.table(first), details, delivery: false }

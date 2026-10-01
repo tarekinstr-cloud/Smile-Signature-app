@@ -29,6 +29,13 @@ export function DayReportView({ report, day }: { report: DayReport; day: CashDay
           <span className="muted small">{t.avgTicket}</span>
           <strong>{report.orders ? money(report.avgTicket) : '—'}</strong>
         </div>
+        {report.guests != null && (
+          <div className="stat-tile">
+            <span className="muted small">{t.dayGuests}</span>
+            <strong>{report.guests}</strong>
+            <small className="muted">{t.avgPerGuest} : {report.guests ? money(report.avgPerGuest ?? 0) : '—'}</small>
+          </div>
+        )}
         {!closed && (
           <div className="stat-tile">
             <span className="muted small">{t.openOrdersNow}</span>
@@ -76,7 +83,7 @@ export function DayReportView({ report, day }: { report: DayReport; day: CashDay
             <tbody>
               {(['dine_in', 'takeaway', 'delivery'] as const).map((k) => (
                 <tr key={k}>
-                  <td>{t.dayTypes[k]} <span className="muted small">({report.byType[k].orders})</span></td>
+                  <td>{t.dayTypes[k]} <span className="muted small">({report.byType[k].orders}{report.byType[k].guests != null && ` · ${report.byType[k].guests} 👤`})</span></td>
                   <td className="num">{money(report.byType[k].amount)}</td>
                 </tr>
               ))}

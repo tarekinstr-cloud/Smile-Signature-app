@@ -66,7 +66,7 @@ export interface Repo {
   /** Opens an order on the table (marking it occupied), or returns the one already open. */
   openOrder(tableId: string): Promise<Order>
   /** Opens a takeaway order: no table, and the next takeaway number. */
-  openTakeaway(customerName?: string): Promise<Order>
+  openTakeaway(guests?: number): Promise<Order>
   /** Opens a delivery order for this customer: no table, the next delivery number, status « En préparation ». */
   openDelivery(customer: DeliveryCustomer): Promise<Order>
   /** Changes a delivery's customer or status. */
@@ -351,14 +351,19 @@ export function sharedChannel(sb: SupabaseClient, topic: string, tables: string[
   }
 }
 
-export const defaultFloorConfig = (): FloorConfig => ({ timer_warn_min: 15, timer_alert_min: 30 })
+export const defaultFloorConfig = (): FloorConfig => ({ timer_warn_min: 15, timer_alert_min: 30, takeaway_default_guests: 1, delivery_default_guests: 1 })
 
 /** Thresholds checked like the app_config table: whole minutes, 1 to 600, orange before red. */
 export function checkFloorConfig(c: FloorConfig): FloorConfig {
   const warn = Math.round(c.timer_warn_min)
   const alert = Math.round(c.timer_alert_min)
   if (!(warn >= 1 && warn <= 600 && alert >= 2 && alert <= 600 && alert > warn)) throw new Error(tr().errTimerThresholds)
-  return { timer_warn_min: warn, timer_alert_min: alert }
+  const guests = (n: number | undefined) => {
+    const v = Math.round(Number(n ?? 1))
+    if (!(v >= 1 && v <= 99)) throw new Error(tr().errGuests)
+    return v
+  }
+  return { timer_warn_min: warn, timer_alert_min: alert, takeaway_default_guests: guests(c.takeaway_default_guests), delivery_default_guests: guests(c.delivery_default_guests) }
 }
 
 const tableOrderInfo = (o: Order): TableOrderInfo => ({
@@ -468,15 +473,21 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       if (res.error) throw res.error.message.includes('order_not_open') ? checkoutError('order_not_open') : floorError(res.error.message)
     },
     async getFloorConfig() {
-      const res = await sb.from('app_config').select('timer_warn_min, timer_alert_min').eq('id', 1).maybeSingle()
-      // Before the migration: the default thresholds.
+      // All columns: the default guests come with a later migration than the thresholds.
+      const res = await sb.from('app_config').select('*').eq('id', 1).maybeSingle()
+      // Before the migration: the default values.
       if (res.error || !res.data) return defaultFloorConfig()
-      return { timer_warn_min: Number(res.data.timer_warn_min), timer_alert_min: Number(res.data.timer_alert_min) }
+      const d = defaultFloorConfig()
+      return {
+        timer_warn_min: Number(res.data.timer_warn_min), timer_alert_min: Number(res.data.timer_alert_min),
+        takeaway_default_guests: Number(res.data.takeaway_default_guests ?? d.takeaway_default_guests),
+        delivery_default_guests: Number(res.data.delivery_default_guests ?? d.delivery_default_guests),
+      }
     },
     async updateFloorConfig(config) {
       const c = checkFloorConfig(config)
       const res = await sb.from('app_config').update({ ...c, updated_at: new Date().toISOString() }).eq('id', 1).select('id')
-      if (res.error) throw floorError(res.error.message)
+      if (res.error) throw /default_guests/.test(res.error.message) ? new Error(tr().errMigrationGuests) : floorError(res.error.message)
       if (!res.data?.length) throw new Error(tr().errNoPermission)
     },
     subscribeConfig(onChange) {
@@ -553,9 +564,9 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       ])
       return { order, lines: (check(lines) as OrderLine[]).map(normalizeLine), payments }
     },
-    async openTakeaway(customerName) {
-      const name = customerName?.trim().slice(0, 60) || null
-      const res = await sb.from('orders').insert({ table_id: null, order_type: 'takeaway', ...(name && { customer_name: name }) }).select(ORDER_COLS).single()
+    async openTakeaway(guests) {
+      if (guests !== undefined) checkGuests(guests)
+      const res = await sb.from('orders').insert({ table_id: null, order_type: 'takeaway', ...(guests && { guests }) }).select(ORDER_COLS).single()
       if (res.error) throw checkoutError(res.error.message)
       return normalizeOrder(res.data as Order)
     },
@@ -811,7 +822,7 @@ function normalizeOrder(o: Order): Order {
 }
 
 type DeliveryRow = Partial<Pick<Order, 'customer_name' | 'customer_phone' | 'customer_address' | 'delivery_status'
-  | 'delivery_zone_id' | 'delivery_zone_name' | 'delivery_fee'>>
+  | 'delivery_zone_id' | 'delivery_zone_name' | 'delivery_fee' | 'guests'>>
 
 /**
  * Delivery fields to write: only those given, trimmed, empty text saved as null. The zone's name and fee are copied onto
@@ -827,6 +838,7 @@ function deliveryRow(patch: DeliveryPatch): DeliveryRow {
     ...(patch.phone !== undefined && { customer_phone: text(patch.phone) }),
     ...(patch.address !== undefined && { customer_address: text(patch.address) }),
     ...(patch.status !== undefined && { delivery_status: patch.status }),
+    ...(patch.guests !== undefined && { guests: patch.guests }),
   }
 }
 
@@ -1282,12 +1294,11 @@ function localRepo(): Repo {
       const order = db.orders.find((o) => o.id === orderId && o.status === 'open')
       return order ? openOrderOf(db, order) : null
     },
-    async openTakeaway(customerName) {
+    async openTakeaway(guests) {
+      if (guests !== undefined) checkGuests(guests)
       const db = loadOrders()
       const takeaway_no = (db.lastTakeaway ?? 0) + 1
-      const order: Order = {
-        ...newOrder(null), order_type: 'takeaway', takeaway_no, pickup_status: 'preparing', customer_name: customerName?.trim().slice(0, 60) || null,
-      }
+      const order: Order = { ...newOrder(null), order_type: 'takeaway', takeaway_no, pickup_status: 'preparing', guests: guests ?? null }
       db.lastTakeaway = takeaway_no
       db.orders.push(order)
       commitOrders(db)

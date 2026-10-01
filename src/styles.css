@@ -977,3 +977,12 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .takeaway-start.kb-open { align-items: flex-start; flex-direction: column; justify-content: flex-start; }
 .takeaway-start.kb-open .dialog { align-self: center; margin-top: 16px; }
 .takeaway-start .touch-kb { margin-top: auto; align-self: center; }
+
+/* Nombre de personnes */
+.guests-picker { display: flex; flex-direction: column; gap: 8px; }
+.guests-quick { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.guests-quick button { min-height: 52px; font-size: 20px; font-weight: 700; padding: 0; }
+.guests-quick button.on { background: var(--accent); border-color: var(--accent); color: #1c1917; }
+.guests-more input { max-width: 120px; font-size: 20px; text-align: center; }
+.guests-picker .touch-kb { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); width: min(1100px, 100vw); z-index: 1000; }
+.board-guests { font-size: 0.6em; font-weight: 700; color: var(--muted); }

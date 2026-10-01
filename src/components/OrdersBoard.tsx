@@ -63,9 +63,12 @@ export default function OrdersBoard({ type, orders, timer, onNew, onOpen, onPick
                 <article key={order.id} className={`board-card ${delivery ? 'delivery' : 'takeaway'} status-${status}${paid ? ' paid' : ''}`}>
                   <button type="button" className="board-open" onClick={() => !paid && onOpen(order)} disabled={paid}
                     aria-label={`${delivery ? t.deliveryNo(String(no ?? '')) : t.takeawayNo(String(no ?? ''))}${who ? ` · ${who}` : ''}`}>
-                    <span className="board-no">{delivery ? t.deliveryShort(String(no ?? '?')) : t.takeawayShort(String(no ?? '?'))}</span>
+                    <span className="board-no">
+                      {delivery ? t.deliveryShort(String(no ?? '?')) : t.takeawayShort(String(no ?? '?'))}
+                      {order.guests ? <span className="board-guests"> · {order.guests} 👤</span> : null}
+                    </span>
                     <span className={`table-timer ${timerLevel(minutes, timer)}`}>⏱ {t.floorMinutes(minutes)}</span>
-                    {who ? <bdi className="board-who">{who}</bdi> : <span className="board-who muted">{t.boardNoName}</span>}
+                    {who ? <bdi className="board-who">{who}</bdi> : delivery ? <span className="board-who muted">{t.boardNoName}</span> : null}
                     <span className="board-meta">
                       <span>{t.itemCount(items)}</span>
                       <strong>{paid ? money(bill.total) : money(bill.remaining)}</strong>

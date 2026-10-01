@@ -168,6 +168,9 @@ export interface TableOrderInfo {
 export interface FloorConfig {
   timer_warn_min: number
   timer_alert_min: number
+  /** Number of people proposed when a takeaway / delivery order is created (Paramètres > Configurations). */
+  takeaway_default_guests: number
+  delivery_default_guests: number
 }
 
 /** Why an order is cancelled: a code of the list (texts in i18n cancelReasons) and, for 'other', a free text. */
@@ -213,6 +216,8 @@ export interface DeliveryCustomer {
   address: string
   /** Undefined keeps the current zone; null removes it. */
   zone?: DeliveryZone | null
+  /** Number of people (asked when the delivery is created); undefined keeps the current one. */
+  guests?: number
 }
 
 /** Area delivered to (quartier, ville), with its fee in DA and an estimated delivery time. Menu Édition. */
@@ -891,11 +896,18 @@ export interface DayReport {
   net: number
   orders: number
   avgTicket: number
+  /**
+   * Personnes servies (sur place + à emporter + livraison): the orders' number of people, 1 for an order without it.
+   * Absent in reports made before it was counted.
+   */
+  guests?: number
+  /** Ticket moyen par personne: net / guests. */
+  avgPerGuest?: number
   /** Orders not paid yet when the report was made. */
   openOrders: number
   /** Paid during the period, by method (partial payments of orders still open included). */
   payments: Record<string, number>
-  byType: Record<OrderType, { orders: number; amount: number }>
+  byType: Record<OrderType, { orders: number; amount: number; guests?: number }>
   items: SalesRow[]
   categories: SalesRow[]
   employees: SalesRow[]
