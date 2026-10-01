@@ -151,6 +151,12 @@ export interface Order extends Adjustments {
   timer_at?: string | null
   /** À emporter only (null otherwise): where the order is between the kitchen and the customer. */
   pickup_status?: PickupStatus | null
+  /** N° of the pager given to a takeaway customer (Bipeur, optional). */
+  pager_no?: string | null
+  /** Delivery driver: account, and name and phone copied when assigned. */
+  driver_id?: string | null
+  driver_name?: string | null
+  driver_phone?: string | null
 }
 
 /** Open order of a table, as the floor plan shows it: waiter, guests and waiting timer. */
@@ -171,6 +177,27 @@ export interface FloorConfig {
   /** Number of people proposed when a takeaway / delivery order is created (Paramètres > Configurations). */
   takeaway_default_guests: number
   delivery_default_guests: number
+  /** Bipeur: a pager number can be given to takeaway customers (shown under the icon and on the tickets). */
+  pager_enabled: boolean
+  /** Background pictures of the À emporter and Livraison views (set with setAreaBackground, not updateFloorConfig). */
+  takeaway_background_url?: string | null
+  delivery_background_url?: string | null
+}
+
+/** The À emporter or Livraison view (shown like a hall). */
+export type OrderArea = 'takeaway' | 'delivery'
+
+/** A delivery driver (Gestion des employés > Livreur), to assign to a delivery. */
+export interface Driver {
+  user_id: string
+  name: string
+  phone: string | null
+}
+
+/** An active account in Gestion des employés, with its Livreur box and phone. */
+export interface StaffDriver extends Driver {
+  username: string
+  is_driver: boolean
 }
 
 /** Why an order is cancelled: a code of the list (texts in i18n cancelReasons) and, for 'other', a free text. */
@@ -917,6 +944,8 @@ export interface DayReport {
    * this was recorded have none.
    */
   closedSales?: ClosedSales | null
+  /** Livraisons par livreur: deliveries (orders) and their amount; absent in reports made before drivers existed. */
+  drivers?: SalesRow[]
   /** Tickets paid then cancelled (Factures annulées) during the period: count, their total, cash given back. */
   voids?: { orders: number; amount: number; cash: number } | null
 }

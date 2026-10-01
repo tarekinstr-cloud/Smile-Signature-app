@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { repo } from '../lib/repo'
 import type {
-  AdjustmentsPatch, ChosenOption, DeliveryStatus, Discount, DiningTable, Hall, ItemOption, Menu, MenuItem, OptionGroup, Order, OrderLine, PaidOrder, Payment,
+  AdjustmentsPatch, ChosenOption, DeliveryStatus, Discount, DiningTable, Driver, Hall, ItemOption, Menu, MenuItem, OptionGroup, Order, OrderLine, PaidOrder, Payment, PickupStatus,
 } from '../lib/types'
 import { money } from '../lib/format'
 import PaymentScreen, { minus } from './PaymentScreen'
@@ -39,6 +39,7 @@ interface Props {
 }
 
 const DELIVERY_STATUSES: DeliveryStatus[] = ['preparing', 'on_the_way', 'delivered']
+const PICKUP_STATUSES: PickupStatus[] = ['preparing', 'ready', 'handed']
 
 const sameOptions = (a: ChosenOption[], b: ChosenOption[]) =>
   a.length === b.length && a.every((o, i) => o.group === b[i].group && o.name === b[i].name)
@@ -108,6 +109,19 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
   const [guestsOpen, setGuestsOpen] = useState(false)
   /** Number of people of a new takeaway, saved when its first item creates the order. */
   const [pendingGuests, setPendingGuests] = useState(startGuests)
+  /** Bipeur enabled in Paramètres > Configurations. */
+  const [pagerEnabled, setPagerEnabled] = useState(false)
+  /** Livraison: the driver picker is open, with the drivers to choose from. */
+  const [driverOpen, setDriverOpen] = useState(false)
+  const [drivers, setDrivers] = useState<Driver[] | null>(null)
+  useEffect(() => {
+    const read = () => repo.getFloorConfig().then((c) => setPagerEnabled(c.pager_enabled), () => {})
+    read()
+    return repo.subscribeConfig(read)
+  }, [])
+  useEffect(() => {
+    if (driverOpen) repo.listDrivers().then(setDrivers, () => setDrivers([]))
+  }, [driverOpen])
   // Line that supplement buttons, Remise and Offrir apply to: the one last added, or the one tapped in the order.
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const opening = useRef<Promise<Order> | null>(null)
@@ -466,6 +480,37 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
     else onBack()
   }
 
+  /** À emporter: En préparation → Prête (the icon blinks in the view) → Remise au client. */
+  async function setPickupStatus(status: PickupStatus) {
+    if (!order || order.pickup_status === status) return
+    setOrder({ ...order, pickup_status: status })
+    await run(async () => {
+      await repo.setPickupStatus(order.id, status)
+      await reloadOrder()
+    })
+  }
+
+  /** Bipeur: number of the pager given to the customer (empty removes it). */
+  async function editPager() {
+    if (!order) return
+    const value = await dialog.askText(t.pagerAsk, t.save)
+    if (value === null) return
+    await run(async () => {
+      await repo.setPager(order.id, value)
+      await reloadOrder()
+    })
+  }
+
+  /** Livraison: the driver taking it (their name and phone go on the order). */
+  async function setDriver(driverId: string | null) {
+    if (!order) return
+    setDriverOpen(false)
+    await run(async () => {
+      await repo.setOrderDriver(order.id, driverId)
+      await reloadOrder()
+    })
+  }
+
   async function setDeliveryStatus(status: DeliveryStatus) {
     if (!order || order.delivery_status === status) return
     setOrder({ ...order, delivery_status: status })
@@ -523,9 +568,21 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
               : t.takeaway}
           </span>
         </div>
+        {order?.order_type === 'takeaway' && (
+          <>
+            <div className="segmented delivery-status-bar" role="group" aria-label={t.pickupStatus}>
+              {PICKUP_STATUSES.map((s) => (
+                <button key={s} className={order.pickup_status === s ? 'on' : ''} aria-pressed={order.pickup_status === s}
+                  onClick={() => setPickupStatus(s)}>{t.pickupStatuses[s]}</button>
+              ))}
+            </div>
+            {pagerEnabled && <button className="ghost" onClick={editPager}>📟 {order.pager_no ? t.pagerShort(order.pager_no) : t.pagerTitle}</button>}
+          </>
+        )}
         {isDelivery && (
           <>
             <button className="ghost" onClick={() => setModal('delivery')}>✎ {t.customer}</button>
+            <button className="ghost" onClick={() => setDriverOpen(true)}>🛵 {order.driver_name ? <bdi>{order.driver_name}</bdi> : t.chooseDriver}</button>
             <div className="segmented delivery-status-bar" role="group" aria-label={t.deliveryStatus}>
               {DELIVERY_STATUSES.map((s) => (
                 <button key={s} className={order.delivery_status === s ? 'on' : ''} aria-pressed={order.delivery_status === s}
@@ -797,6 +854,22 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
               })}
             </div>
             {place && order?.guests != null && <button onClick={() => setGuests(null)}>{t.guestsClear}</button>}
+          </div>
+        </div>
+      )}
+      {driverOpen && order && (
+        <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setDriverOpen(false)}>
+          <div className="dialog table-actions" role="dialog" aria-modal="true" aria-labelledby="driver-title" onKeyDown={(e) => e.key === 'Escape' && setDriverOpen(false)}>
+            <div className="panel-head">
+              <h2 id="driver-title">{t.chooseDriver}</h2>
+              <button className="ghost" onClick={() => setDriverOpen(false)} aria-label={t.close}>✕</button>
+            </div>
+            {!drivers ? <p className="muted">{t.loading}</p> : drivers.length === 0 ? <p className="muted small">{t.noDrivers}</p> : drivers.map((d) => (
+              <button key={d.user_id} className={`big${order.driver_id === d.user_id ? ' primary' : ''}`} onClick={() => setDriver(d.user_id)}>
+                🛵 <bdi>{d.name}</bdi>{d.phone && <span className="muted small"> · <bdi dir="ltr">{d.phone}</bdi></span>}
+              </button>
+            ))}
+            {order.driver_id && <button onClick={() => setDriver(null)}>{t.removeDriver}</button>}
           </div>
         </div>
       )}

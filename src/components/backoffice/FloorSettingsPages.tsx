@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { repo } from '../../lib/repo'
 import { useI18n } from '../../lib/i18n'
 import HallBackgroundPicker from '../HallBackgroundPicker'
+import BackgroundPicker from '../BackgroundPicker'
 import { errorText, useLoad } from './useLoad'
 import type { FloorConfig } from '../../lib/types'
 
@@ -11,6 +12,10 @@ export function WallpaperPage() {
   const load = useCallback(() => repo.listHalls(), [])
   const { data: halls, error, setError, reload } = useLoad(load)
   useEffect(() => repo.subscribe(reload), [reload])
+  // À emporter and Livraison views: their pictures are in the configuration.
+  const loadConfig = useCallback(() => repo.getFloorConfig(), [])
+  const { data: config, reload: reloadConfig } = useLoad(loadConfig)
+  useEffect(() => repo.subscribeConfig(reloadConfig), [reloadConfig])
   return (
     <main className="content bo-content">
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
@@ -25,6 +30,13 @@ export function WallpaperPage() {
             <section key={h.id} className="panel">
               <h2><bdi>{h.name}</bdi></h2>
               <HallBackgroundPicker hall={h} onChanged={reload} />
+            </section>
+          ))}
+          {(['takeaway', 'delivery'] as const).map((area) => (
+            <section key={area} className="panel">
+              <h2>{area === 'takeaway' ? t.takeawayBtn : t.deliveryBtn}</h2>
+              <BackgroundPicker url={config?.[`${area}_background_url`]} onChanged={reloadConfig}
+                onSave={(img) => repo.setAreaBackground(area, img.blob)} onRemove={() => repo.setAreaBackground(area, null)} />
             </section>
           ))}
         </div>
@@ -42,6 +54,7 @@ export function ConfigPage() {
   const [alert, setAlert] = useState('')
   const [takeawayGuests, setTakeawayGuests] = useState('')
   const [deliveryGuests, setDeliveryGuests] = useState('')
+  const [pager, setPager] = useState(false)
   const [saved, setSaved] = useState(false)
   useEffect(() => {
     if (!data) return
@@ -49,6 +62,7 @@ export function ConfigPage() {
     setAlert(String(data.timer_alert_min))
     setTakeawayGuests(String(data.takeaway_default_guests))
     setDeliveryGuests(String(data.delivery_default_guests))
+    setPager(data.pager_enabled)
   }, [data])
   useEffect(() => repo.subscribeConfig(reload), [reload])
 
@@ -57,7 +71,7 @@ export function ConfigPage() {
     try {
       const c: FloorConfig = {
         timer_warn_min: Number(warn), timer_alert_min: Number(alert),
-        takeaway_default_guests: Number(takeawayGuests), delivery_default_guests: Number(deliveryGuests),
+        takeaway_default_guests: Number(takeawayGuests), delivery_default_guests: Number(deliveryGuests), pager_enabled: pager,
       }
       await repo.updateFloorConfig(c)
       setSaved(true)
@@ -105,6 +119,15 @@ export function ConfigPage() {
           </label>
           <button className="primary" onClick={save} disabled={!data}>{t.save}</button>
         </div>
+      </section>
+      <section className="panel">
+        <h2>{t.cfgPagerTitle}</h2>
+        <label className="check">
+          <input type="checkbox" checked={pager} onChange={(e) => { setPager(e.target.checked); setSaved(false) }} />
+          {t.cfgPagerLabel}
+        </label>
+        <p className="muted small">{t.cfgPagerHint}</p>
+        <div><button className="primary" onClick={save} disabled={!data}>{t.save}</button></div>
       </section>
     </main>
   )

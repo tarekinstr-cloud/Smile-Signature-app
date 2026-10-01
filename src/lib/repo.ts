@@ -4,7 +4,7 @@ import type {
   NewCategory, NewItemOption, NewMenuItem, NewOptionGroup, NewOrderLine, NewTable, OptionGroup, OptionGroupPatch, Order,
   OrderLine, OrderLinePatch, PaidOrder, Payment, PaymentMethod, ReceiptSettings, TablePatch, AdjustmentsPatch,
   CategoryPrinters, KitchenTicket, NewPrinter, Printer, PrinterPatch, InvoiceCustomer, TableMove, DeliveryCustomer, DeliveryStatus,
-  Cancellation, CancelledOrder, PriceChange, TableOrderInfo, FloorConfig, PickupStatus,
+  Cancellation, CancelledOrder, PriceChange, TableOrderInfo, FloorConfig, PickupStatus, OrderArea, Driver, StaffDriver,
 } from './types'
 import { demoMenu } from './demoMenu'
 import { buildKitchenTickets, type SendResult } from './kitchen'
@@ -41,6 +41,17 @@ export interface Repo {
   updateFloorConfig(config: FloorConfig): Promise<void>
   /** Calls onChange when the configuration changes on another device. */
   subscribeConfig(onChange: () => void): () => void
+  /** Background picture of the À emporter or Livraison view (already compressed), or null to remove it. */
+  setAreaBackground(area: OrderArea, image: Blob | null): Promise<void>
+  /** Bipeur of a takeaway order (null: none). */
+  setPager(orderId: string, pager: string | null): Promise<void>
+  /** Active drivers, to choose one on a delivery. */
+  listDrivers(): Promise<Driver[]>
+  /** Gestion des employés: active accounts with their Livreur box and phone (permission « staff »). */
+  listStaffDrivers(): Promise<StaffDriver[]>
+  setStaffDriver(userId: string, isDriver: boolean, phone: string): Promise<void>
+  /** Assigns a driver to a delivery (null: none); the driver's name and phone are copied onto the order. */
+  setOrderDriver(orderId: string, driverId: string | null): Promise<void>
   /** Current time of the server (ms since 1970), to correct this device's clock. The device's own clock in demo mode. */
   serverNow(): Promise<number>
 
@@ -351,10 +362,16 @@ export function sharedChannel(sb: SupabaseClient, topic: string, tables: string[
   }
 }
 
-export const defaultFloorConfig = (): FloorConfig => ({ timer_warn_min: 15, timer_alert_min: 30, takeaway_default_guests: 1, delivery_default_guests: 1 })
+export const defaultFloorConfig = (): FloorConfig => ({
+  timer_warn_min: 15, timer_alert_min: 30, takeaway_default_guests: 1, delivery_default_guests: 1, pager_enabled: false,
+  takeaway_background_url: null, delivery_background_url: null,
+})
+
+/** Fields of Paramètres > Configurations saved by updateFloorConfig (the backgrounds have their own function). */
+type EditableConfig = Omit<FloorConfig, 'takeaway_background_url' | 'delivery_background_url'>
 
 /** Thresholds checked like the app_config table: whole minutes, 1 to 600, orange before red. */
-export function checkFloorConfig(c: FloorConfig): FloorConfig {
+export function checkFloorConfig(c: FloorConfig): EditableConfig {
   const warn = Math.round(c.timer_warn_min)
   const alert = Math.round(c.timer_alert_min)
   if (!(warn >= 1 && warn <= 600 && alert >= 2 && alert <= 600 && alert > warn)) throw new Error(tr().errTimerThresholds)
@@ -363,7 +380,10 @@ export function checkFloorConfig(c: FloorConfig): FloorConfig {
     if (!(v >= 1 && v <= 99)) throw new Error(tr().errGuests)
     return v
   }
-  return { timer_warn_min: warn, timer_alert_min: alert, takeaway_default_guests: guests(c.takeaway_default_guests), delivery_default_guests: guests(c.delivery_default_guests) }
+  return {
+    timer_warn_min: warn, timer_alert_min: alert, takeaway_default_guests: guests(c.takeaway_default_guests),
+    delivery_default_guests: guests(c.delivery_default_guests), pager_enabled: !!c.pager_enabled,
+  }
 }
 
 const tableOrderInfo = (o: Order): TableOrderInfo => ({
@@ -378,6 +398,17 @@ function floorError(message: string): Error {
   if (/permission_denied|row-level security|Unauthorized|403/i.test(message)) return new Error(tr().errNoPermission)
   return new Error(message)
 }
+
+/** Readable message when the À emporter / Livraison view migration (20261005000000) has not been run. */
+function areaError(message: string): Error {
+  if (/set_area_background|list_staff_drivers|set_staff_driver|set_order_driver|pager_no|driver_|is_driver|bucket not found/i.test(message)
+    && /not found|does not exist|schema cache|Could not find/i.test(message)) return new Error(tr().errMigrationArea)
+  if (/permission_denied|row-level security|Unauthorized|403/i.test(message)) return new Error(tr().errNoPermission)
+  return new Error(message)
+}
+
+/** A pager number: up to 10 characters, empty text removes it. */
+export const cleanPager = (p: string | null) => p?.trim().slice(0, 10) || null
 
 function checkGuests(guests: number | null) {
   if (guests !== null && !(Number.isInteger(guests) && guests >= 1 && guests <= 99)) throw new Error(tr().errGuests)
@@ -482,16 +513,62 @@ function supabaseRepo(sb: SupabaseClient): Repo {
         timer_warn_min: Number(res.data.timer_warn_min), timer_alert_min: Number(res.data.timer_alert_min),
         takeaway_default_guests: Number(res.data.takeaway_default_guests ?? d.takeaway_default_guests),
         delivery_default_guests: Number(res.data.delivery_default_guests ?? d.delivery_default_guests),
+        pager_enabled: !!res.data.pager_enabled,
+        takeaway_background_url: res.data.takeaway_background_url ?? null,
+        delivery_background_url: res.data.delivery_background_url ?? null,
       }
     },
     async updateFloorConfig(config) {
       const c = checkFloorConfig(config)
       const res = await sb.from('app_config').update({ ...c, updated_at: new Date().toISOString() }).eq('id', 1).select('id')
-      if (res.error) throw /default_guests/.test(res.error.message) ? new Error(tr().errMigrationGuests) : floorError(res.error.message)
+      if (res.error) {
+        throw /pager_enabled/.test(res.error.message) ? new Error(tr().errMigrationArea)
+          : /default_guests/.test(res.error.message) ? new Error(tr().errMigrationGuests) : floorError(res.error.message)
+      }
       if (!res.data?.length) throw new Error(tr().errNoPermission)
     },
     subscribeConfig(onChange) {
       return configChannel(onChange)
+    },
+    async setAreaBackground(area, image) {
+      let url: string | null = null
+      let path: string | null = null
+      if (image) {
+        path = `area-${area}/${newId()}.jpg`
+        const up = await sb.storage.from(BACKGROUND_BUCKET).upload(path, image, { contentType: image.type || 'image/jpeg', cacheControl: '31536000', upsert: false })
+        if (up.error) throw areaError(up.error.message)
+        url = sb.storage.from(BACKGROUND_BUCKET).getPublicUrl(path).data.publicUrl
+      }
+      const res = await sb.rpc('set_area_background', { p_area: area, p_url: url, p_path: path })
+      if (res.error) {
+        if (path) await sb.storage.from(BACKGROUND_BUCKET).remove([path])
+        throw areaError(res.error.message)
+      }
+      const old = res.data as string | null
+      if (old && old !== path) await sb.storage.from(BACKGROUND_BUCKET).remove([old])
+    },
+    async setPager(orderId, pager) {
+      const res = await sb.from('orders').update({ pager_no: cleanPager(pager) }).eq('id', orderId)
+      if (res.error) throw areaError(res.error.message)
+    },
+    async listDrivers() {
+      const res = await sb.rpc('list_drivers')
+      // Before the migration: no drivers to choose from.
+      if (res.error) return []
+      return res.data as Driver[]
+    },
+    async listStaffDrivers() {
+      const res = await sb.rpc('list_staff_drivers')
+      if (res.error) throw areaError(res.error.message)
+      return res.data as StaffDriver[]
+    },
+    async setStaffDriver(userId, isDriver, phone) {
+      const res = await sb.rpc('set_staff_driver', { p_user_id: userId, p_is_driver: isDriver, p_phone: phone })
+      if (res.error) throw areaError(res.error.message)
+    },
+    async setOrderDriver(orderId, driverId) {
+      const res = await sb.rpc('set_order_driver', { p_order_id: orderId, p_driver: driverId })
+      if (res.error) throw res.error.message.includes('driver_not_found') ? new Error(tr().errDriverGone) : areaError(res.error.message)
     },
     async serverNow() {
       const res = await sb.rpc('server_now')
@@ -818,6 +895,10 @@ function normalizeOrder(o: Order): Order {
     served_at: o.served_at ?? null,
     timer_at: o.timer_at ?? null,
     pickup_status: o.order_type === 'takeaway' ? o.pickup_status ?? 'preparing' : null,
+    pager_no: o.pager_no ?? null,
+    driver_id: o.driver_id ?? null,
+    driver_name: o.driver_name ?? null,
+    driver_phone: o.driver_phone ?? null,
   }
 }
 
@@ -893,6 +974,26 @@ const newOrder = (tableId: string | null): Order => ({
 
 const KEY = 'smile.floor.v1'
 const CONFIG_KEY = 'smile.config.v1'
+const DRIVERS_KEY = 'smile.drivers.v1'
+
+/** Demo accounts (admin.ts, key smile.users.v1), read here directly: admin.ts imports this module. */
+function readLocalAccounts(): { id: string; username: string; display_name: string; active: boolean }[] {
+  try {
+    const list = JSON.parse(localStorage.getItem('smile.users.v1') ?? 'null')
+    return Array.isArray(list) && list.length ? list : [{ id: 'demo-admin', username: 'admin', display_name: 'Administrateur', active: true }]
+  } catch {
+    return []
+  }
+}
+
+/** Demo: the Livreur box and phone of each demo account. */
+function readLocalDrivers(): Record<string, { is_driver: boolean; phone: string | null }> {
+  try {
+    return JSON.parse(localStorage.getItem(DRIVERS_KEY) ?? '{}') ?? {}
+  } catch {
+    return {}
+  }
+}
 const configListeners = new Set<() => void>()
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -1152,13 +1253,14 @@ function localRepo(): Repo {
     async getFloorConfig() {
       try {
         const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) ?? 'null') as FloorConfig | null
-        return saved ? checkFloorConfig(saved) : defaultFloorConfig()
+        return saved ? { ...defaultFloorConfig(), ...saved, ...checkFloorConfig({ ...defaultFloorConfig(), ...saved }) } : defaultFloorConfig()
       } catch {
         return defaultFloorConfig()
       }
     },
     async updateFloorConfig(config) {
-      const c = checkFloorConfig(config)
+      // The backgrounds are kept: they are saved by setAreaBackground.
+      const c = { ...(await this.getFloorConfig()), ...checkFloorConfig(config) }
       try {
         localStorage.setItem(CONFIG_KEY, JSON.stringify(c))
       } catch {
@@ -1171,6 +1273,53 @@ function localRepo(): Repo {
       return () => {
         configListeners.delete(onChange)
       }
+    },
+    async setAreaBackground(area, image) {
+      if (!localCan('edit') && !localCan('settings')) throw new Error(tr().errNoPermission)
+      const url = image ? await blobToDataUrl(image) : null
+      const c = { ...(await this.getFloorConfig()), [`${area}_background_url`]: url }
+      try {
+        localStorage.setItem(CONFIG_KEY, JSON.stringify(c))
+      } catch {
+        throw new Error(tr().errBackgroundTooBig)
+      }
+      configListeners.forEach((l) => l())
+    },
+    async setPager(orderId, pager) {
+      const db = loadOrders()
+      const order = db.orders.find((o) => o.id === orderId)
+      if (!order) throw checkoutError('order_not_found')
+      order.pager_no = cleanPager(pager)
+      commitOrders(db)
+    },
+    async listDrivers() {
+      return (await this.listStaffDrivers().catch(() => [])).filter((d) => d.is_driver).map(({ user_id, name, phone }) => ({ user_id, name, phone }))
+    },
+    async listStaffDrivers() {
+      const extra = readLocalDrivers()
+      return readLocalAccounts().filter((u) => u.active).map((u) => ({
+        user_id: u.id, name: u.display_name.trim() || u.username, username: u.username,
+        is_driver: !!extra[u.id]?.is_driver, phone: extra[u.id]?.phone ?? null,
+      })).sort((a, b) => a.name.localeCompare(b.name))
+    },
+    async setStaffDriver(userId, isDriver, phone) {
+      if (!localCan('staff')) throw new Error(tr().errNoPermission)
+      const extra = readLocalDrivers()
+      extra[userId] = { is_driver: isDriver, phone: phone.trim().slice(0, 30) || null }
+      try {
+        localStorage.setItem(DRIVERS_KEY, JSON.stringify(extra))
+      } catch {
+        // Not persisted (private mode).
+      }
+    },
+    async setOrderDriver(orderId, driverId) {
+      const driver = driverId ? (await this.listDrivers()).find((d) => d.user_id === driverId) : null
+      if (driverId && !driver) throw new Error(tr().errDriverGone)
+      const db = loadOrders()
+      const order = db.orders.find((o) => o.id === orderId && o.order_type === 'delivery')
+      if (!order) throw checkoutError('order_not_found')
+      Object.assign(order, { driver_id: driver?.user_id ?? null, driver_name: driver?.name ?? null, driver_phone: driver?.phone ?? null })
+      commitOrders(db)
     },
     async serverNow() {
       return Date.now()

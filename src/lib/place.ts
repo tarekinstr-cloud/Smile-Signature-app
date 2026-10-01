@@ -12,11 +12,13 @@ type Strings = ReturnType<typeof tr>
 const TAKEAWAY = 'EMP-'
 const DELIVERY = 'LIV-'
 
-type PlaceOrder = Pick<Order, 'order_type' | 'takeaway_no'> & Partial<Pick<Order, 'delivery_no' | 'customer_name' | 'customer_phone' | 'customer_address' | 'guests'>>
+type PlaceOrder = Pick<Order, 'order_type' | 'takeaway_no'> & Partial<Pick<Order, 'delivery_no' | 'customer_name' | 'customer_phone' | 'customer_address' | 'guests' | 'pager_no'>>
 
 /** Number of people on a kitchen ticket line, translated when the ticket is shown (« 3 personnes »). */
 const GUESTS = 'PERS-'
 const guestsLine = (order: PlaceOrder) => (order.guests ? GUESTS + order.guests : null)
+/** Bipeur given to a takeaway customer (« Bipeur 4 »). */
+const PAGER = 'BIP-'
 
 /** "Nom · 0550 12 34 56" of a delivery's customer, or null when neither is known. */
 export function deliveryContact(order: Partial<Pick<Order, 'customer_name' | 'customer_phone'>>): string | null {
@@ -27,7 +29,9 @@ export function deliveryContact(order: Partial<Pick<Order, 'customer_name' | 'cu
 export function ticketPlace(order: PlaceOrder, table: Pick<DiningTable, 'label'> | null): string | null {
   // The customer's name (optional) goes under the number, so the kitchen can call it out too.
   // The number of people goes on its own line, to prepare cutlery, napkins, bread and sauces.
-  if (order.order_type === 'takeaway') return [TAKEAWAY + (order.takeaway_no ?? ''), guestsLine(order), order.customer_name?.trim()].filter(Boolean).join('\n')
+  if (order.order_type === 'takeaway') {
+    return [TAKEAWAY + (order.takeaway_no ?? ''), guestsLine(order), order.pager_no ? PAGER + order.pager_no : null, order.customer_name?.trim()].filter(Boolean).join('\n')
+  }
   if (order.order_type === 'delivery') {
     return [DELIVERY + (order.delivery_no ?? ''), guestsLine(order), deliveryContact(order), order.customer_address].filter(Boolean).join('\n')
   }
@@ -37,7 +41,8 @@ export function ticketPlace(order: PlaceOrder, table: Pick<DiningTable, 'label'>
 /** Splits a stored ticket label into the place ("Table 4", "Livraison n° 3") and the delivery details under it. */
 export function ticketLabelParts(t: Strings, label: string): { place: string; details: string[]; delivery: boolean } {
   const [first, ...rest] = label.split('\n')
-  const details = rest.map((line) => (line.startsWith(GUESTS) ? t.peopleCount(Number(line.slice(GUESTS.length))) : line))
+  const details = rest.map((line) => (line.startsWith(GUESTS) ? t.peopleCount(Number(line.slice(GUESTS.length)))
+    : line.startsWith(PAGER) ? t.pagerShort(line.slice(PAGER.length)) : line))
   if (first.startsWith(DELIVERY)) return { place: t.deliveryNo(first.slice(DELIVERY.length)), details, delivery: true }
   if (first.startsWith(TAKEAWAY)) return { place: t.takeawayNo(first.slice(TAKEAWAY.length)), details, delivery: false }
   return { place: t.table(first), details, delivery: false }

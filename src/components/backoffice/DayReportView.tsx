@@ -111,6 +111,12 @@ export function DayReportView({ report, day }: { report: DayReport; day: CashDay
         <h2>{t.dayByEmployee}</h2>
         <SalesTable rows={report.employees} employees />
       </section>
+      {!!report.drivers?.length && (
+        <section className="panel">
+          <h2>{t.dayByDriver}</h2>
+          <SalesTable rows={report.drivers} employees nameLabel={t.driverCol} countLabel={t.dayDeliveriesCol} />
+        </section>
+      )}
     </>
   )
 }
@@ -143,7 +149,7 @@ function CashBox({ cash, day }: { cash: NonNullable<DayReport['cash']>; day: Cas
 export const gapClass = (n: number) => (Math.abs(n) < 0.005 ? '' : n < 0 ? 'neg' : 'pos')
 export const gapText = (n: number) => (Math.abs(n) < 0.005 ? money(0) : <bdi dir="ltr">{n > 0 ? '+' : '−'}{money(Math.abs(n))}</bdi>)
 
-function SalesTable({ rows, withCategory, employees }: { rows: SalesRow[]; withCategory?: boolean; employees?: boolean }) {
+function SalesTable({ rows, withCategory, employees, nameLabel, countLabel }: { rows: SalesRow[]; withCategory?: boolean; employees?: boolean; nameLabel?: string; countLabel?: string }) {
   const { t } = useI18n()
   if (!rows.length) return <p className="muted small">{t.noSales}</p>
   const max = Math.max(1, ...rows.map((r) => r.amount))
@@ -151,8 +157,8 @@ function SalesTable({ rows, withCategory, employees }: { rows: SalesRow[]; withC
     <table className="bo-table top-items">
       <thead>
         <tr>
-          <th>{employees ? t.dayEmployee : withCategory ? t.colItem : t.dayCategory}</th>
-          <th className="num">{employees ? t.dayOrdersCol : t.colQty}</th>
+          <th>{nameLabel ?? (employees ? t.dayEmployee : withCategory ? t.colItem : t.dayCategory)}</th>
+          <th className="num">{countLabel ?? (employees ? t.dayOrdersCol : t.colQty)}</th>
           <th className="num">{t.colAmount}</th>
         </tr>
       </thead>
@@ -224,6 +230,8 @@ export function ZTicket({ day, report, settings }: { day: CashDay; report: DayRe
       {report.categories.map((c) => row(`${c.quantity} × ${c.name}`, money(c.amount)))}
       <div className="receipt-subtitle">{t.dayByEmployee}</div>
       {report.employees.map((e) => row(`${e.name} (${e.orders ?? 0})`, money(e.amount)))}
+      {!!report.drivers?.length && <div className="receipt-subtitle">{t.dayByDriver}</div>}
+      {report.drivers?.map((d) => row(`${d.name} (${d.orders ?? 0})`, money(d.amount)))}
       {day.note && (
         <>
           <div className="receipt-sep" />

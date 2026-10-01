@@ -56,7 +56,12 @@ export default function Receipt({ settings, order, lines, payments, place, hallN
           {hallName && <bdi>{hallName}</bdi>}
         </div>
       )}
-      {!!order.guests && <div className="receipt-meta"><span>{t.peopleCount(order.guests)}</span></div>}
+      {(!!order.guests || !!order.pager_no) && (
+        <div className="receipt-meta">
+          <span>{order.guests ? t.peopleCount(order.guests) : ''}</span>
+          {order.pager_no && <strong>{t.pagerShort(order.pager_no)}</strong>}
+        </div>
+      )}
       {kind === 'bill' && <div className="receipt-sub receipt-note">{t.billNote}</div>}
       {order.order_type === 'delivery' ? (
         <div className="receipt-customer receipt-delivery">
@@ -64,6 +69,7 @@ export default function Receipt({ settings, order, lines, payments, place, hallN
           {deliveryContact(order) && <div dir="auto">{deliveryContact(order)}</div>}
           {order.customer_address && textLines(order.customer_address)}
           {order.delivery_zone_name && <div>{t.deliveryZone} : <bdi>{order.delivery_zone_name}</bdi></div>}
+          {order.driver_name && <div>{t.driverCol} : <bdi>{order.driver_name}</bdi>{order.driver_phone && <> · <bdi dir="ltr">{order.driver_phone}</bdi></>}</div>}
         </div>
       ) : kind === 'invoice' && (order.customer_name || order.customer_address) && (
         <div className="receipt-customer">
