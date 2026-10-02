@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { repo } from '../lib/repo'
-import type { Category, CategoryPrinters, Printer } from '../lib/types'
+import type { Category, CategoryPrinters, MenuItem, Printer } from '../lib/types'
 import { useDialog } from './Dialog'
 import LangToggle from './LangToggle'
 import { useI18n } from '../lib/i18n'
@@ -17,6 +17,7 @@ interface Draft {
 export default function PrinterSettings({ onBack }: { onBack(): void }) {
   const [printers, setPrinters] = useState<Printer[] | null>(null)
   const [categories, setCategories] = useState<Category[]>([])
+  const [items, setItems] = useState<MenuItem[]>([])
   const [links, setLinks] = useState<CategoryPrinters>({})
   const [editing, setEditing] = useState<Printer | 'new' | null>(null)
   const [draft, setDraft] = useState<Draft>({ name: '', ip: '', port: '9100' })
@@ -31,6 +32,7 @@ export default function PrinterSettings({ onBack }: { onBack(): void }) {
       const [p, menu, l] = await Promise.all([repo.listPrinters(), repo.getMenu({ includeHidden: true }), repo.getCategoryPrinters()])
       setPrinters(p)
       setCategories(menu.categories)
+      setItems(menu.items)
       setLinks(l)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -100,7 +102,10 @@ export default function PrinterSettings({ onBack }: { onBack(): void }) {
   }
 
   const categoriesOf = (p: Printer) => categories.filter((c) => links[c.id]?.includes(p.id)).map((c) => c.name)
-  const unlinked = categories.filter((c) => !links[c.id]?.length)
+  // A category without printer: its items reach no printer, except those given their own (Imprimantes par plats).
+  const known = new Set((printers ?? []).map((p) => p.id))
+  const unlinked = categories.filter((c) => !(links[c.id] ?? []).some((id) => known.has(id))
+    && items.some((i) => i.category_id === c.id && !(i.printer_id && known.has(i.printer_id))))
 
   return (
     <div className="app menu-admin">
@@ -121,6 +126,13 @@ export default function PrinterSettings({ onBack }: { onBack(): void }) {
       ) : (
         <main className="content admin-content printers-content">
           <section className="admin-main">
+            {unlinked.length > 0 && (
+              <div className="banner printer-warning" role="alert">
+                <strong>⚠ {t.unlinkedTitle(unlinked.length)}</strong>{' '}
+                <bdi>{unlinked.map((c) => c.name).join(t.listSep)}</bdi>
+                <span className="block">{t.unlinkedWarning}</span>
+              </div>
+            )}
             <div className="panel">
               <div className="panel-head">
                 <h2>{t.printers}</h2>
@@ -159,11 +171,6 @@ export default function PrinterSettings({ onBack }: { onBack(): void }) {
                   )
                 })}
               </ul>
-              {unlinked.length > 0 && printers.length > 0 && (
-                <p className="muted small">
-                  <span className="tag warn">{t.noPrinterTag}</span> {unlinked.map((c) => c.name).join(t.listSep)}
-                </p>
-              )}
               <p className="muted small">{t.printerIpHint}</p>
             </div>
           </section>

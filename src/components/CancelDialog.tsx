@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useI18n } from '../lib/i18n'
-import { CANCEL_REASONS, type CancelReason, type Cancellation } from '../lib/types'
+import { CANCEL_REASONS, type Cancellation } from '../lib/types'
+import { useReasons } from '../lib/settings'
 
 interface Props {
   title: string
@@ -12,10 +13,19 @@ interface Props {
   onConfirm(why: Cancellation): Promise<void>
 }
 
-/** Annulation with a mandatory reason: one of the list, plus a free text (required for « Autre »). */
+/**
+ * Annulation with a mandatory reason: one of the list (Paramètres > Configurations > Motifs, or the default one), plus a
+ * free text (required for « Autre »).
+ */
 export default function CancelDialog({ title, detail, confirmLabel, onCancel, onConfirm }: Props) {
   const { t } = useI18n()
-  const [reason, setReason] = useState<CancelReason | null>(null)
+  const reasons = useReasons(t)
+  // Default list: the codes (translated in each language); an edited list: the reasons as written.
+  const choices: [string, string][] = [
+    ...(reasons.cancelCodes ? CANCEL_REASONS.filter((r) => r !== 'other').map((r): [string, string] => [r, t.cancelReasons[r]]) : reasons.cancel.map((r): [string, string] => [r.slice(0, 40), r])),
+    ['other', t.cancelReasons.other],
+  ]
+  const [reason, setReason] = useState<string | null>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -45,10 +55,10 @@ export default function CancelDialog({ title, detail, confirmLabel, onCancel, on
         <fieldset className="cancel-reasons">
           <legend>{t.cancelReasonLabel}</legend>
           <div className="chip-row" role="radiogroup" aria-label={t.cancelReasonLabel}>
-            {CANCEL_REASONS.map((r) => (
+            {choices.map(([r, label]) => (
               <button key={r} type="button" role="radio" aria-checked={reason === r} className={`chip${reason === r ? ' on' : ''}`}
                 onClick={() => setReason(r)}>
-                {t.cancelReasons[r]}
+                <bdi>{label}</bdi>
               </button>
             ))}
           </div>
@@ -70,4 +80,39 @@ export default function CancelDialog({ title, detail, confirmLabel, onCancel, on
 export function reasonText(t: { cancelReasons: Record<string, string> }, reason?: string | null, note?: string | null) {
   const label = reason ? t.cancelReasons[reason] ?? reason : ''
   return [label, note?.trim()].filter(Boolean).join(' — ')
+}
+
+/** Chips to choose one reason (Offrir, Remise). */
+export function ReasonChips({ label, reasons, value, onChange }: { label: string; reasons: string[]; value: string | null; onChange(r: string): void }) {
+  return (
+    <fieldset className="cancel-reasons">
+      <legend>{label}</legend>
+      <div className="chip-row" role="radiogroup" aria-label={label}>
+        {reasons.map((r) => (
+          <button key={r} type="button" role="radio" aria-checked={value === r} className={`chip${value === r ? ' on' : ''}`} onClick={() => onChange(r)}>
+            <bdi>{r}</bdi>
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
+/** Offrir with a reason: shown when Paramètres > Motifs has offer reasons. */
+export function OfferReasonDialog({ title, reasons, onCancel, onConfirm }: { title: string; reasons: string[]; onCancel(): void; onConfirm(reason: string): void }) {
+  const { t } = useI18n()
+  const [reason, setReason] = useState<string | null>(null)
+  return (
+    <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <form className="dialog cancel-dialog" role="dialog" aria-modal="true" aria-labelledby="offer-title"
+        onSubmit={(e) => { e.preventDefault(); if (reason) onConfirm(reason) }} onKeyDown={(e) => e.key === 'Escape' && onCancel()}>
+        <h2 id="offer-title">{title}</h2>
+        <ReasonChips label={t.reasonLabel} reasons={reasons} value={reason} onChange={setReason} />
+        <div className="dialog-actions">
+          <button type="button" onClick={onCancel}>{t.back}</button>
+          <button type="submit" className="primary" disabled={!reason}>{t.actOffer}</button>
+        </div>
+      </form>
+    </div>
+  )
 }

@@ -4,10 +4,10 @@ import type { Adjustments, Discount, OrderLine, Payment, PaymentMethod } from '.
  * Payment methods offered at the cashier, in button order. `cash` takes the amount handed over and gives change back.
  * To add a mode (e.g. cheque): add it to PaymentMethod (types.ts), here, and a label in i18n (payMethod).
  */
-export const PAYMENT_METHODS: { id: PaymentMethod; icon: string; cash: boolean }[] = [
-  { id: 'cash', icon: '💵', cash: true },
-  { id: 'card', icon: '💳', cash: false },
-]
+/** Icon of a payment mode on the checkout buttons. */
+export function methodIcon(code: PaymentMethod): string {
+  return code === 'cash' ? '💵' : code === 'baridimob' ? '📱' : code === 'cheque' ? '🧾' : '💳'
+}
 
 const cents = (n: number) => Math.round(n * 100) / 100
 

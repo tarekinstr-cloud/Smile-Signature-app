@@ -11,6 +11,8 @@ export interface Hall {
   background_url?: string | null
   /** Chemin du fichier dans le bucket floor-backgrounds (pour le supprimer quand il est remplacé). */
   background_path?: string | null
+  /** Désactivée (Paramètres > Gestion des salles): cachée au service. Absent avant la migration: active. */
+  active?: boolean
 }
 
 export interface DiningTable {
@@ -46,6 +48,11 @@ export interface MenuItem {
   price: number
   sort_order: number
   active: boolean
+  /** Imprimante de cet article, à la place de celle(s) de sa catégorie (Gestion des imprimantes par plats). */
+  printer_id?: string | null
+  /** Photo (réduite à 512 px à l'envoi): Supabase Storage, ou image compressée en mode démo. */
+  photo_url?: string | null
+  photo_path?: string | null
 }
 
 export interface ItemOption {
@@ -92,6 +99,9 @@ export interface Adjustments {
   discount_value: number
   /** Offered: costs nothing, but stays in the statistics with its normal price. */
   offered: boolean
+  /** Motifs choisis (Paramètres > Configurations > Motifs); absents avant la migration 20261008000000. */
+  offer_reason?: string | null
+  discount_reason?: string | null
 }
 
 /** On a table of the floor plan, to take away, or delivered to the customer (no table for the last two). */
@@ -209,7 +219,8 @@ export interface StaffDriver extends Driver {
 export const CANCEL_REASONS = ['entry_error', 'customer_left', 'customer_changed', 'unavailable', 'too_long', 'customer_complaint', 'test', 'other'] as const
 export type CancelReason = (typeof CANCEL_REASONS)[number]
 export interface Cancellation {
-  reason: CancelReason
+  /** A code of CANCEL_REASONS (default list), 'other', or a reason written in Paramètres > Motifs. */
+  reason: CancelReason | string
   note: string
 }
 
@@ -333,7 +344,31 @@ export type MenuTable = 'categories' | 'items' | 'option_groups' | 'options'
  * How a payment is made. Stored as plain text, so a new mode (cheque, voucher…) only needs a new entry
  * in PAYMENT_METHODS (src/lib/billing.ts) and its label.
  */
-export type PaymentMethod = 'cash' | 'card'
+/** Code of a payment mode (Paramètres > Configurations > Paiement): 'cash' (Espèces, the only one in the cash drawer), 'card', or one added by the admin. */
+export type PaymentMethod = string
+
+/** A payment mode offered at checkout. label null: the app's translated name (cash, card). */
+export interface PaymentMode {
+  code: string
+  label: string | null
+  active: boolean
+  sort_order: number
+}
+
+/** Editable reason lists (Paramètres > Configurations > Motifs). null: the app's default list. */
+export interface ReasonLists {
+  cancel: string[] | null
+  offer: string[] | null
+  discount: string[] | null
+}
+
+/** Paramètres > Configurations > Sécurité. */
+export interface SecurityConfig {
+  /** Quick login with a 4-digit PIN, for the accounts that have one. */
+  pin_login_enabled: boolean
+  /** Sign out after this many minutes without a touch; null: never. */
+  auto_logout_min: number | null
+}
 
 /** One payment on an order; several of them make a partial payment. */
 export interface Payment {

@@ -77,6 +77,7 @@ export function weekDays(first: Date, n: number, sales: SalesData, days: CashDay
   }
   for (const p of sales.payments) {
     const r = rows.get(keyOf(p.created_at))
+    // Espèces apart (cash drawer); every other mode (carte, CIB, Edahabia…) in the second column.
     if (r) r[p.method === 'cash' ? 'cash' : 'card'] += p.amount
   }
   for (const e of spent) {

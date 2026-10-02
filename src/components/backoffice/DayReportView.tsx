@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { defaultReceiptSettings, repo } from '../../lib/repo'
 import type { CashDay, DayReport, ReceiptSettings, SalesRow } from '../../lib/types'
 import { money } from '../../lib/format'
+import { isCash, paymentLabel, usePaymentModes } from '../../lib/settings'
 import { useI18n } from '../../lib/i18n'
 
 const TOP = 15
@@ -13,7 +14,13 @@ export function DayReportView({ report, day }: { report: DayReport; day: CashDay
   const [allItems, setAllItems] = useState(false)
   const items = allItems ? report.items : report.items.slice(0, TOP)
   const closed = !!day?.closed_at
-  const methods = Object.entries(report.payments)
+  const modes = usePaymentModes()
+  // In the order of Paramètres > Paiement; a mode removed since (old payments) comes last.
+  const rank = (code: string) => {
+    const i = modes.findIndex((m) => m.code === code)
+    return i < 0 ? modes.length : i
+  }
+  const methods = Object.entries(report.payments).sort(([a], [b]) => rank(a) - rank(b))
   return (
     <>
       <section className="stat-tiles" aria-live="polite">
@@ -71,7 +78,10 @@ export function DayReportView({ report, day }: { report: DayReport; day: CashDay
             <tbody>
               {methods.length === 0 && <tr><td className="muted">{t.noSales}</td><td /></tr>}
               {methods.map(([m, v]) => (
-                <tr key={m}><td>{(t.payMethod as Record<string, string>)[m] ?? m}</td><td className="num">{money(v)}</td></tr>
+                <tr key={m}>
+                  <td><bdi>{paymentLabel(t, m, modes)}</bdi> {isCash(m) ? <span className="muted small">· {t.inDrawer}</span> : <span className="muted small">· {t.notInDrawer}</span>}</td>
+                  <td className="num">{money(v)}</td>
+                </tr>
               ))}
               {report.voids && report.voids.cash > 0 && (
                 <tr><td>{t.dayVoids}</td><td className="num neg">−{money(report.voids.cash)}</td></tr>
@@ -184,6 +194,7 @@ function SalesTable({ rows, withCategory, employees, nameLabel, countLabel }: { 
 /** The closing report on 80 mm paper. */
 export function ZTicket({ day, report, settings }: { day: CashDay; report: DayReport; settings: ReceiptSettings }) {
   const { t } = useI18n()
+  const modes = usePaymentModes()
   const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString(t.locale, { dateStyle: 'short', timeStyle: 'short', hourCycle: 'h23' }) : '—')
   const row = (label: string, value: ReactNode, strong = false) => (
     <div key={label} className={`receipt-row${strong ? ' receipt-strong' : ''}`}><span>{label}</span><span>{value}</span></div>
@@ -209,7 +220,7 @@ export function ZTicket({ day, report, settings }: { day: CashDay; report: DayRe
       {report.voids && row(`${t.dayVoids} (${report.voids.orders})`, `−${money(report.voids.cash)}`)}
       <div className="receipt-sep" />
       <div className="receipt-subtitle">{t.dayPayments}</div>
-      {Object.entries(report.payments).map(([m, v]) => row((t.payMethod as Record<string, string>)[m] ?? m, money(v)))}
+      {Object.entries(report.payments).map(([m, v]) => row(paymentLabel(t, m, modes), money(v)))}
       <div className="receipt-subtitle">{t.dayByType}</div>
       {(['dine_in', 'takeaway', 'delivery'] as const).map((k) => row(`${t.dayTypes[k]} (${report.byType[k].orders})`, money(report.byType[k].amount)))}
       {report.cash && (

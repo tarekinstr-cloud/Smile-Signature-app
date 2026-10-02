@@ -27,6 +27,9 @@ import ProfitPage from './ProfitPage'
 import { CancelledInvoicesPage, CancelledOrdersPage, PriceLogPage } from './ControlPages'
 import type { SupplierInvoice } from '../../lib/types'
 import { WallpaperPage } from './FloorSettingsPages'
+import HallsPage from './HallsPage'
+import ItemPrintersPage from './ItemPrintersPage'
+import ItemPhotosPage from './ItemPhotosPage'
 
 interface Props {
   page: BackOfficePage
@@ -42,13 +45,15 @@ interface Props {
   onPage(page: BackOfficePage): void
   /** Réservation honorée: leaves the back-office for the order of the table where the customer sits. */
   onOpenOrder(hallId: string, tableId: string): void
+  /** Gestion des salles → Modifier le plan de salle of that hall. Left out without the Édition permission. */
+  onOpenPlan?(hallId: string): void
 }
 
 /**
  * Back-office screen under the administration menus: Statistiques, Stock, Fournisseurs, Employés, Paramètres, and the
  * Fichier pages (Utilisateurs, Sauvegarde, Modifier le Ticket), Clients (réservations), Édition > Zones de livraison and Gestion des employés (Salaires et acomptes, Appareils connectés), Gestion du Stock (Effectuer un achat, Factures fournisseurs, Transfert dépôt / cuisine, Charges cuisine, État du stock), Édition > Fiches techniques, Statistiques (caisse, journalier, hebdomadaire, dépenses, bénéfice).
  */
-export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrinters, onOpenTicket, onPage, onOpenOrder }: Props) {
+export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrinters, onOpenTicket, onPage, onOpenOrder, onOpenPlan }: Props) {
   const { t } = useI18n()
   const canStats = usePermissions().can('stats')
   /** Booking just created from Nouvelle réservation, highlighted in the list. */
@@ -95,6 +100,9 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     priceLog: [t.priceLogTitle, t.priceLogSub],
     wallpaper: [t.bgTitle, t.bgSub],
     config: [t.cfgTitle, t.cfgSub],
+    halls: [t.hallsManage, t.hallsSub],
+    itemPrinters: [t.itemPrintersTitle, t.itemPrintersSub],
+    itemPhotos: [t.itemPhotosTitle, t.itemPhotosSub],
   }
   return (
     <div className="app back-office">
@@ -176,6 +184,9 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'priceLog' && <PriceLogPage />}
       {page === 'wallpaper' && <WallpaperPage />}
       {page === 'config' && <ConfigurationsPage />}
+      {page === 'halls' && <HallsPage onOpenPlan={onOpenPlan} />}
+      {page === 'itemPrinters' && <ItemPrintersPage />}
+      {page === 'itemPhotos' && <ItemPhotosPage />}
     </div>
   )
 }

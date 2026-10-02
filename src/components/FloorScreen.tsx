@@ -90,7 +90,8 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
 
   const reload = useCallback(async () => {
     await run(async () => {
-      const hs = await repo.listHalls()
+      // Halls deactivated in Gestion des salles are not shown in the service.
+      const hs = (await repo.listHalls()).filter((h) => h.active !== false)
       setHalls(hs)
       const current = hs.find((h) => h.id === hallId) ?? hs[0] ?? null
       if (current?.id !== hallId) setHallId(current?.id ?? null)
@@ -242,17 +243,6 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     setOrderTableId(id)
   }
 
-  async function addHall() {
-    if (!can('edit')) return
-    const name = await dialog.askText(t.newHallName)
-    if (!name) return
-    await run(async () => {
-      const h = await repo.createHall(name)
-      setHallId(h.id)
-      setMode('edit')
-    })
-  }
-
   async function addTable() {
     if (!hall) return
     const used = new Set(tables.map((t) => t.label))
@@ -320,13 +310,12 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       : page === 'cancelledOrders' ? can('cancelled_orders')
       : page === 'cancelledInvoices' ? can('cancelled_invoices')
       : page === 'priceLog' ? can('price_log')
-      : page === 'wallpaper' || page === 'config' ? can('settings')
+      : page === 'wallpaper' || page === 'config' || page === 'halls' || page === 'itemPrinters' || page === 'itemPhotos' ? can('settings')
       : can(page as Permission)
   const shown = (items: (AdminMenuItem | false)[]) => items.filter((i): i is AdminMenuItem => !!i)
   // Menus and entries the account has no permission for are left out, not just greyed.
   const editItems = shown([
     can('edit') && { id: 'plan', label: t.editPlanItem, checked: !backOffice && mode === 'edit', onSelect: () => { toFloor(); setMode('edit') } },
-    can('edit') && { id: 'hall', label: t.addHall, onSelect: () => { toFloor(); addHall() } },
     can('edit') && { id: 'menu', label: t.menuTitle, onSelect: () => { toFloor(); setMenuAdmin(true) } },
     can('edit') && { id: 'menu-csv', label: t.csvTitle, checked: onBo('menuCsv'), onSelect: () => openBo('menuCsv') },
     can('recipes') && { id: 'recipes', label: t.recipesTitle, checked: onBo('recipes'), onSelect: () => openBo('recipes') },
@@ -411,11 +400,14 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       id: 'stats', label: t.navStats, current: statsPages.some(onBo), items: statsItems,
     }] : []),
     ...(can('settings') ? [{
-      id: 'settings', label: t.settings, current: onBo('settings') || onBo('wallpaper') || onBo('config'), items: [
-        // Order of i-Restaurant: Configurations, imprimantes, fond d'écran (the next ones come with later updates).
+      id: 'settings', label: t.settings, current: ['settings', 'wallpaper', 'config', 'halls', 'itemPrinters', 'itemPhotos'].some((p) => onBo(p as BackOfficePage)), items: [
+        // Order of i-Restaurant: Configurations, imprimantes, imprimantes par plats, salles, fond d'écran, photos.
         { id: 'config', label: t.cfgTitle, checked: onBo('config'), onSelect: () => openBo('config') },
         { id: 'printers', label: t.printersManage, onSelect: () => { toFloor(); setPrinterSettings(true) } },
+        { id: 'item-printers', label: t.itemPrintersTitle, checked: onBo('itemPrinters'), onSelect: () => openBo('itemPrinters') },
+        { id: 'halls', label: t.hallsManage, checked: onBo('halls'), onSelect: () => openBo('halls') },
         { id: 'wallpaper', label: t.bgTitle, checked: onBo('wallpaper'), onSelect: () => openBo('wallpaper') },
+        { id: 'item-photos', label: t.itemPhotosTitle, checked: onBo('itemPhotos'), onSelect: () => openBo('itemPhotos') },
       ],
     }] : []),
     { id: 'help', label: t.navHelp, items: [{ id: 'about', label: t.about, onSelect: () => setInfo('about') }] },
@@ -448,6 +440,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
           onOpenTicket={can('ticket') ? () => setBackOffice('ticket') : undefined}
           onOpenMenu={can('edit') ? () => { setBackOffice(null); setMenuAdmin(true) } : undefined}
           onPage={(page) => setBackOffice(page)}
+          onOpenPlan={can('edit') ? (id) => { setBackOffice(null); setOpenList(null); setHallId(id); setSelectedId(null); setMode('edit') } : undefined}
           onOpenOrder={(id, tableId) => {
             setBackOffice(null)
             setHallId(id)
@@ -482,7 +475,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     <div className={`app mode-${mode}`}>
       {adminMenu}
       <ServiceTabs restaurant={restaurant} halls={halls} hallId={hallId} takeaways={takeaways.length} deliveries={deliveries.length}
-        area={openList} onAccount={() => setInfo('account')} onHall={(id) => { setOpenList(null); setHallId(id); setSelectedId(null) }} onAddHall={can('edit') ? addHall : undefined}
+        area={openList} onAccount={() => setInfo('account')} onHall={(id) => { setOpenList(null); setHallId(id); setSelectedId(null) }}
         onTakeaway={() => setOpenList('takeaway')} onDelivery={() => setOpenList('delivery')} />
 
       {repo.mode === 'local' && (
@@ -502,7 +495,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
           <div className="center">
             <div className="card empty">
               <p>{t.noHalls}</p>
-              {can('edit') && <button className="primary" onClick={addHall}>{t.addFirstHall}</button>}
+              {can('settings') && <button className="primary" onClick={() => openBo('halls')}>{t.hallsManage}</button>}
             </div>
           </div>
         ) : (

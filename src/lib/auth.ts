@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './repo'
 import { tr } from './i18n'
 import { checkPassword, loadLocalUsers, saveLocalUsers } from './admin'
+import { localPinCheck, settings } from './settings'
 import type { UserRole } from './types'
 
 /** Who is signed in: shown in the navigation, and the role for later permissions. */
@@ -24,13 +25,31 @@ export interface Auth {
   loginUsers(): Promise<LoginUser[]>
   /** Signs in with a username (or an e-mail address). Throws with a readable message when refused. */
   signIn(username: string, password: string): Promise<void>
+  /** Écran de connexion: whether quick PIN login is on, and the usernames that have a PIN. */
+  loginOptions(): Promise<LoginOptions>
+  /** Quick login with a 4-digit PIN (Paramètres > Configurations > Sécurité). Throws with a readable message when refused. */
+  signInWithPin(username: string, pin: string): Promise<void>
   signOut(): Promise<void>
   current(): Promise<SessionUser | null>
   /** Calls onChange after every sign in or sign out. Returns an unsubscribe function. */
   subscribe(onChange: () => void): () => void
 }
 
+export interface LoginOptions {
+  pinLogin: boolean
+  pinUsers: string[]
+}
+
 const badLogin = () => new Error(tr().badLogin)
+
+/** Readable message for a refused PIN (codes of pin_login_check, through the pin-login function). */
+function pinError(code: string | undefined): Error {
+  const t = tr()
+  if (code === 'pin_locked') return new Error(t.errPinLocked)
+  if (code === 'pin_disabled') return new Error(t.errPinDisabled)
+  if (code === 'pin_bad') return new Error(t.errPinBad)
+  return new Error(t.errPinFunction)
+}
 
 /** Address used by Supabase Auth for an account created in the app (see save_user). */
 export const internalEmail = (username: string) => `${username.trim().toLowerCase()}@smile-signature.local`
@@ -70,6 +89,23 @@ function supabaseAuth(sb: SupabaseClient): Auth {
       if (/email not confirmed/i.test(error.message)) throw new Error(t.errEmailNotConfirmed)
       // Anything else (account refused by Supabase, network…) is shown as is, so it can be fixed.
       throw new Error(`${t.errLoginOther} ${error.message}`)
+    },
+    async loginOptions() {
+      const res = await sb.rpc('login_options')
+      // Before the migration: password only.
+      if (res.error || !res.data) return { pinLogin: false, pinUsers: [] }
+      const d = res.data as { pin_login?: boolean; pin_users?: string[] }
+      return { pinLogin: !!d.pin_login, pinUsers: d.pin_users ?? [] }
+    },
+    async signInWithPin(username, pin) {
+      if (!/^\d{4}$/.test(pin)) throw pinError('pin_bad')
+      // The PIN is checked by the pin-login Edge Function, which hands back a one-time sign-in token for the account.
+      const res = await sb.functions.invoke('pin-login', { body: { username: username.trim(), pin } })
+      const data = res.data as { token_hash?: string; error?: string } | null
+      if (res.error || !data) throw pinError(undefined)
+      if (!data.token_hash) throw pinError(data.error)
+      const { error } = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: 'magiclink' })
+      if (error) throw new Error(`${tr().errLoginOther} ${error.message}`)
     },
     async signOut() {
       await sb.auth.signOut()
@@ -123,6 +159,18 @@ function localAuth(): Auth {
       saveLocalUsers(users.map((x) => (x.id === u.id ? { ...x, last_sign_in_at: new Date().toISOString() } : x)))
       memory = u.id
       setSession(u.id)
+      notify()
+    },
+    async loginOptions() {
+      const sec = await settings.getSecurity()
+      const users = loadLocalUsers().filter((u) => u.active && u.pin_hash).map((u) => u.username)
+      return { pinLogin: sec.pin_login_enabled, pinUsers: sec.pin_login_enabled ? users : [] }
+    },
+    async signInWithPin(username, pin) {
+      const id = await localPinCheck(username, pin)
+      saveLocalUsers(loadLocalUsers().map((x) => (x.id === id ? { ...x, last_sign_in_at: new Date().toISOString() } : x)))
+      memory = id
+      setSession(id)
       notify()
     },
     async signOut() {

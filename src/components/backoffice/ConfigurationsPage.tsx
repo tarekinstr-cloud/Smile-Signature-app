@@ -7,8 +7,9 @@ import Receipt from '../Receipt'
 import BackupPage from './BackupPage'
 import { ConfigPage } from './FloorSettingsPages'
 import { errorText } from './useLoad'
+import { PaymentTab, ReasonsTab, SecurityTab } from './ConfigTabsMore'
 
-export type ConfigTab = 'restaurant' | 'ticket' | 'service' | 'backup'
+export type ConfigTab = 'restaurant' | 'ticket' | 'payment' | 'reasons' | 'service' | 'security' | 'backup'
 
 /** Largest side of the stored logo, in pixels: sharp on 80 mm paper, small enough to keep in the database. */
 const LOGO_PX = 240
@@ -64,7 +65,8 @@ function useSample() {
 
 /**
  * Paramètres > Configurations, in tabs: Restaurant (name, address, phone, logo, NIF, RC, NIS, AI), Ticket (header,
- * footer, paper width, language, waiter and table shown), Service (timer, order numbers, pager) and Sauvegarde.
+ * footer, paper width, language, waiter and table shown), Paiement (payment modes), Motifs (cancel, offer and discount
+ * reasons), Service (timer, order numbers, pager), Sécurité (PIN login, automatic sign-out) and Sauvegarde.
  * Restaurant and Ticket save the same receipt settings, with a live preview of the ticket.
  */
 export default function ConfigurationsPage({ initialTab = 'restaurant' }: { initialTab?: ConfigTab }) {
@@ -73,7 +75,8 @@ export default function ConfigurationsPage({ initialTab = 'restaurant' }: { init
   const [tab, setTab] = useState<ConfigTab>(initialTab)
   useEffect(() => setTab(initialTab), [initialTab])
   const tabs: [ConfigTab, string][] = [
-    ['restaurant', t.cfgTabRestaurant], ['ticket', t.cfgTabTicket], ['service', t.cfgTabService],
+    ['restaurant', t.cfgTabRestaurant], ['ticket', t.cfgTabTicket], ['payment', t.cfgTabPayment], ['reasons', t.cfgTabReasons],
+    ['service', t.cfgTabService], ['security', t.cfgTabSecurity],
     ...(can('backup') ? [['backup', t.cfgTabBackup] as [ConfigTab, string]] : []),
   ]
   return (
@@ -84,7 +87,10 @@ export default function ConfigurationsPage({ initialTab = 'restaurant' }: { init
         ))}
       </div>
       {(tab === 'restaurant' || tab === 'ticket') && <ReceiptForm tab={tab} />}
+      {tab === 'payment' && <PaymentTab />}
+      {tab === 'reasons' && <ReasonsTab />}
       {tab === 'service' && <ConfigPage />}
+      {tab === 'security' && <SecurityTab />}
       {tab === 'backup' && can('backup') && <BackupPage />}
     </>
   )
