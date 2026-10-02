@@ -6,6 +6,7 @@ import type {
   ConsumptionRow, MenuItem, OptionGroup, OrderLine, PaidOrder, RecipeLine, RecipeLineInput, RecipeStockItem, StockMovement,
 } from './types'
 import { newId } from './id'
+import { nowIso } from './tz'
 
 /**
  * Fiches techniques (Édition > Gérer les articles, Édition > Fiches techniques) and the automatic consumption of the
@@ -256,7 +257,7 @@ function read(): LocalRecipes {
   } catch {
     // Unreadable: start again.
   }
-  const db = { lines: [], consumed: [], startedAt: new Date().toISOString() }
+  const db = { lines: [], consumed: [], startedAt: nowIso() }
   write(db)
   return db
 }
@@ -295,7 +296,7 @@ async function consumeLocal(order: PaidOrder, lines: OrderLine[]) {
       const item = s.stock.find((x) => x.id === id)
       if (!item) continue
       item.kitchen_quantity = round3(item.kitchen_quantity - quantity)
-      item.updated_at = new Date().toISOString()
+      item.updated_at = nowIso()
       s.movements.push(localMovement({
         type: 'consumption', item, quantity, from_location: 'kitchen', batch_id: batch, user_name: user, note, order_id: order.id,
         unit_cost: prices.get(id) ?? null,

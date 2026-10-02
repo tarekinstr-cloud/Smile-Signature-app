@@ -1,3 +1,4 @@
+import { appNow, nowIso, tzIsoDay, tzTime } from './tz'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './repo'
 import { tr } from './i18n'
@@ -172,7 +173,7 @@ export function loadLocalUsers(): LocalUser[] {
   }
   const users: LocalUser[] = [{
     id: 'demo-admin', username: DEMO_ADMIN.username, display_name: 'Administrateur', role: 'admin', active: true, email: null,
-    created_at: new Date().toISOString(), last_sign_in_at: null, password_hash: `plain:${DEMO_ADMIN.password}`,
+    created_at: nowIso(), last_sign_in_at: null, password_hash: `plain:${DEMO_ADMIN.password}`,
   }]
   saveLocalUsers(users)
   return users
@@ -249,7 +250,7 @@ function localAdmin(): Admin {
       const fields = { username, display_name: u.display_name.trim(), role: u.role as UserRole, active: u.active }
       if (!u.id) {
         const row: LocalUser = {
-          id: newId(), ...fields, email: null, created_at: new Date().toISOString(), last_sign_in_at: null,
+          id: newId(), ...fields, email: null, created_at: nowIso(), last_sign_in_at: null,
           password_hash: await hashPassword(u.password),
         }
         saveLocalUsers([...users, row])
@@ -270,7 +271,7 @@ function localAdmin(): Admin {
     },
     async logBackup(e) {
       const log = await this.listBackups()
-      const row: BackupLogEntry = { id: newId(), created_at: new Date().toISOString(), ...e }
+      const row: BackupLogEntry = { id: newId(), created_at: nowIso(), ...e }
       try {
         localStorage.setItem(BACKUPS_KEY, JSON.stringify([row, ...log].slice(0, 20)))
       } catch {
@@ -324,7 +325,6 @@ export function download(filename: string, text: string, type: string): number {
 }
 
 /** "2026-09-29_2215" for file names. */
-export function stamp(d = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`
+export function stamp(d: Date = appNow()): string {
+  return `${tzIsoDay(d)}_${tzTime(d).replace(':', '')}`
 }

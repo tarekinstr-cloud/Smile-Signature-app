@@ -4,6 +4,7 @@ import { tr } from './i18n'
 import { loadLocalUsers } from './admin'
 import type { DeviceSession } from './types'
 import { newId } from './id'
+import { nowIso } from './tz'
 
 /**
  * Appareils connectés (menu Gestion des employés): which tablet or PC is used by whom. Visibility only, no limit.
@@ -158,7 +159,7 @@ function localDevices(): DevicesService {
       const userId = me()
       if (!userId) return
       const d = thisDevice()
-      const now = new Date().toISOString()
+      const now = nowIso()
       const rows = read()
       const row = rows.find((r) => r.id === d.id)
       const restart = !row || row.user_id !== userId || row.ended_at !== null
@@ -169,7 +170,7 @@ function localDevices(): DevicesService {
       write([...rows.filter((r) => r.id !== d.id), next])
     },
     async signOut() {
-      const now = new Date().toISOString()
+      const now = nowIso()
       const id = thisDevice().id
       write(read().map((r) => (r.id === id && !r.ended_at ? { ...r, ended_at: now, last_seen_at: now } : r)))
     },

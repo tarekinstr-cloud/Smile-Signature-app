@@ -4,6 +4,7 @@ import { computeBill, discountOf, splitTva } from '../lib/billing'
 import { trIn, useI18n } from '../lib/i18n'
 import { deliveryContact } from '../lib/place'
 import { paymentLabel, usePaymentModes } from '../lib/settings'
+import { appNow } from '../lib/tz'
 
 /** receipt: after the last payment. bill: the running bill of an open order (Addition). invoice: Facture. */
 export type ReceiptKind = 'receipt' | 'bill' | 'invoice'
@@ -36,7 +37,7 @@ export default function Receipt({ settings, order, lines, payments, place, hallN
   const minus = (n: number) => <bdi dir="ltr">−{money(n)}</bdi>
   const ids = [['NIF', settings.nif], ['RC', settings.rc], ['NIS', settings.nis], ['AI', settings.ai]].filter(([, v]) => v?.trim())
   const waiter = settings.show_waiter !== false ? order.created_by_name?.trim() : null
-  const date = order.closed_at ? new Date(order.closed_at) : new Date()
+  const date = order.closed_at ? new Date(order.closed_at) : appNow()
   const bill = computeBill(order, lines, payments)
   const adjusted = bill.offered > 0 || bill.lineDiscounts > 0 || bill.orderDiscount > 0
   const clock = (iso: string) => new Date(iso).toLocaleTimeString(t.locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })

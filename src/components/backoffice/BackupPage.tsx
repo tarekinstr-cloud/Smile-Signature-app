@@ -4,6 +4,7 @@ import { repo } from '../../lib/repo'
 import { auth } from '../../lib/auth'
 import { useI18n } from '../../lib/i18n'
 import { errorText, locale, useLoad } from './useLoad'
+import { nowIso } from '../../lib/tz'
 
 /** "12,4 Ko" / "1,2 Mo". */
 function size(bytes: number, lang: 'fr' | 'ar'): string {
@@ -53,7 +54,7 @@ export default function BackupPage() {
       data[name] = await admin.readTable(name)
       rows += data[name].length
     }
-    const file = { app: 'smile-signature', mode: repo.mode, exported_at: new Date().toISOString(), tables: data }
+    const file = { app: 'smile-signature', mode: repo.mode, exported_at: nowIso(), tables: data }
     const bytes = download(`smile-signature_${stamp()}.json`, JSON.stringify(file, null, 1), 'application/json')
     return { rows, bytes, tables, format: 'json' }
   })

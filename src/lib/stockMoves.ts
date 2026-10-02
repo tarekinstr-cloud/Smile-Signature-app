@@ -5,6 +5,7 @@ import { tr } from './i18n'
 import type { ChargeReason, MovementFilter, MovementLine, StockLocation, StockMovement, StockMovementType, TransferDirection } from './types'
 import { CHARGE_REASONS } from './types'
 import { newId } from './id'
+import { nowIso, tzDate } from './tz'
 
 /**
  * Transfert dépôt / cuisine and Charges cuisine (menu Gestion du Stock). Supabase RPCs transfer_stock and
@@ -32,11 +33,11 @@ export const movementValue = (m: Pick<StockMovement, 'quantity' | 'unit_cost'>) 
 
 const TYPES: Record<'transfers' | 'charges', StockMovementType[]> = { transfers: ['transfer', 'return'], charges: ['charge'] }
 
-/** Start (included) and end (excluded) of the local days of a filter, as ISO times. */
+/** Start (included) and end (excluded) of the days (Algiers) of a filter, as ISO times. */
 function range(f: MovementFilter): [string | null, string | null] {
   const day = (iso: string, plus: number) => {
     const [y, m, d] = iso.split('-').map(Number)
-    return new Date(y, m - 1, d + plus).toISOString()
+    return tzDate(y, m - 1, d + plus).toISOString()
   }
   return [f.from ? day(f.from, 0) : null, f.to ? day(f.to, 1) : null]
 }
@@ -114,7 +115,7 @@ function localMoves(): StockMovesService {
         else item.kitchen_quantity = round3(item.kitchen_quantity - l.quantity)
         if (to === 'depot') item.quantity = round3(item.quantity + l.quantity)
         if (to === 'kitchen') item.kitchen_quantity = round3(item.kitchen_quantity + l.quantity)
-        item.updated_at = new Date().toISOString()
+        item.updated_at = nowIso()
         const m = localMovement({
           type: 'transfer', item, quantity: l.quantity, from_location: from, to_location: to, batch_id: batch, user_name: user, ...extra,
           ...(extra.type === 'charge' && { unit_cost: lastPrice(db.movements, item.id) }),

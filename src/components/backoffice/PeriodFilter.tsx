@@ -1,4 +1,5 @@
 import { useI18n } from '../../lib/i18n'
+import { appNow, tzAddDays, tzDate, tzDayStart, tzIsoDay, tzParts } from '../../lib/tz'
 
 export const PERIOD_PRESETS = ['day', 'today', '7d', 'month', 'lastMonth', 'custom'] as const
 /** Journée en cours (working day), Aujourd'hui, 7 jours, Ce mois, Mois dernier, Personnalisé. */
@@ -11,41 +12,38 @@ export interface Period {
   to: string
 }
 
-const pad = (n: number) => String(n).padStart(2, '0')
-export const isoDay = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-const parseDay = (s: string) => {
-  const [y, m, d] = s.split('-').map(Number)
-  return new Date(y, m - 1, d)
-}
+/** YYYY-MM-DD of an instant, Algiers time (lib/tz). */
+export const isoDay = (d: Date) => tzIsoDay(d)
 
 export const initialPeriod = (preset: PeriodPreset): Period => {
-  const today = isoDay(new Date())
+  const today = tzIsoDay(appNow())
   return { preset, from: today, to: today }
 }
 
 /**
- * Start and end (exclusive) of a period, in local time. `dayStart` is where the working day in progress began (the
- * previous closing); without it « Journée en cours » falls back to today.
+ * Start and end (exclusive) of a period, in Algiers time, « now » being the server's time. `dayStart` is where the
+ * working day in progress began (the previous closing); without it « Journée en cours » falls back to today.
  */
 export function periodRange(p: Period, dayStart?: string | null): [Date, Date] {
-  const now = new Date()
-  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const tomorrow = new Date(midnight.getFullYear(), midnight.getMonth(), midnight.getDate() + 1)
+  const now = appNow()
+  const t = tzParts(now)
+  const midnight = tzDate(t.year, t.month, t.day)
+  const tomorrow = tzDate(t.year, t.month, t.day + 1)
   switch (p.preset) {
     case 'day':
       return [dayStart ? new Date(dayStart) : midnight, new Date(Math.max(tomorrow.getTime(), now.getTime() + 60_000))]
     case 'today':
       return [midnight, tomorrow]
     case '7d':
-      return [new Date(midnight.getFullYear(), midnight.getMonth(), midnight.getDate() - 6), tomorrow]
+      return [tzDate(t.year, t.month, t.day - 6), tomorrow]
     case 'month':
-      return [new Date(now.getFullYear(), now.getMonth(), 1), new Date(now.getFullYear(), now.getMonth() + 1, 1)]
+      return [tzDate(t.year, t.month, 1), tzDate(t.year, t.month + 1, 1)]
     case 'lastMonth':
-      return [new Date(now.getFullYear(), now.getMonth() - 1, 1), new Date(now.getFullYear(), now.getMonth(), 1)]
+      return [tzDate(t.year, t.month - 1, 1), tzDate(t.year, t.month, 1)]
     case 'custom': {
-      const a = parseDay(p.from)
-      const b = parseDay(p.to < p.from ? p.from : p.to)
-      return [a, new Date(b.getFullYear(), b.getMonth(), b.getDate() + 1)]
+      const a = tzDayStart(p.from)
+      const b = tzDayStart(p.to < p.from ? p.from : p.to)
+      return [a, tzAddDays(b, 1)]
     }
   }
 }

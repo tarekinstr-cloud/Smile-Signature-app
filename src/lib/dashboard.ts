@@ -9,6 +9,7 @@ import { categoryOfItems, computeDayReport } from './dayReport'
 import { computeProfit, type ProfitReport } from './profit'
 import { loadLive } from './liveDay'
 import { da } from './format'
+import { tzAddDays, tzDate, tzParts } from './tz'
 import type {
   CancelledOrder, CashDay, CashMovement, DayReport, Menu, Order, OrderType, Payment, ProfitCosts, ReceiptSettings, SalesData,
 } from './types'
@@ -64,10 +65,12 @@ const lastDay = (to: Date) => isoDay(new Date(to.getTime() - 1))
 /** Months (YYYY-MM) touched by [from, to). */
 function months(from: Date, to: Date): string[] {
   const out: string[] = []
-  const d = new Date(from.getFullYear(), from.getMonth(), 1)
+  const p = tzParts(from)
+  let d = tzDate(p.year, p.month, 1)
   while (d < to && out.length < 36) {
-    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
-    d.setMonth(d.getMonth() + 1)
+    const q = tzParts(d)
+    out.push(`${q.year}-${String(q.month + 1).padStart(2, '0')}`)
+    d = tzDate(q.year, q.month + 1, 1)
   }
   return out
 }
@@ -115,8 +118,8 @@ export function inHours(iso: string | null | undefined, f: Pick<DashFilters, 'ho
   const b = minutes(f.hourTo)
   if (a === null && b === null) return true
   if (!iso) return false
-  const d = new Date(iso)
-  const m = d.getHours() * 60 + d.getMinutes()
+  const p = tzParts(iso)
+  const m = p.hour * 60 + p.minute
   const start = a ?? 0
   const end = b ?? 24 * 60
   return start <= end ? m >= start && m < end : m >= start || m < end
@@ -203,15 +206,12 @@ const pad = (n: number) => String(n).padStart(2, '0')
 /** CA of the orders grouped by day, week (from Monday), month, day of the week (Monday first) or hour. */
 export function chartSeries(rows: DashOrder[], mode: ChartMode, from: Date, to: Date): ChartPoint[] {
   const keyOf = (iso: string) => {
-    const d = new Date(iso)
-    if (mode === 'hour') return pad(d.getHours())
-    if (mode === 'weekday') return String((d.getDay() + 6) % 7)
-    if (mode === 'month') return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
-    if (mode === 'week') {
-      const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7))
-      return isoDay(monday)
-    }
-    return isoDay(d)
+    const p = tzParts(iso)
+    if (mode === 'hour') return pad(p.hour)
+    if (mode === 'weekday') return String((p.weekday + 6) % 7)
+    if (mode === 'month') return `${p.year}-${pad(p.month + 1)}`
+    if (mode === 'week') return isoDay(tzDate(p.year, p.month, p.day - ((p.weekday + 6) % 7)))
+    return isoDay(new Date(iso))
   }
   const map = new Map<string, ChartPoint>()
   // Every slot of the period, so a day without sales shows as zero.
@@ -219,11 +219,11 @@ export function chartSeries(rows: DashOrder[], mode: ChartMode, from: Date, to: 
   if (mode === 'hour') for (let h = 0; h < 24; h++) slots.push(pad(h))
   else if (mode === 'weekday') for (let w = 0; w < 7; w++) slots.push(String(w))
   else {
-    const d = new Date(from)
+    let d = new Date(from)
     while (d < to && slots.length < 400) {
       const k = keyOf(d.toISOString())
       if (!slots.includes(k)) slots.push(k)
-      d.setDate(d.getDate() + 1)
+      d = tzAddDays(d, 1)
     }
   }
   for (const k of slots) map.set(k, { key: k, amount: 0, orders: 0 })

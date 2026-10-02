@@ -1,3 +1,4 @@
+import { appNow, tzAddDays, tzIsoDay } from '../../lib/tz'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { backOffice, insufficientStock } from '../../lib/backoffice'
 import { HISTORY_LIMIT, movementValue, round2, stockMoves } from '../../lib/stockMoves'
@@ -22,10 +23,7 @@ const held = (s: StockItem, l: StockLocation) => (l === 'depot' ? s.quantity : s
 
 /** YYYY-MM-DD `days` before today. */
 function daysAgo(days: number) {
-  const d = new Date()
-  d.setDate(d.getDate() - days)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  return tzIsoDay(tzAddDays(appNow(), -days))
 }
 
 type Kind = 'transfers' | 'charges'

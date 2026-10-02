@@ -7,6 +7,7 @@ import type {
 } from './types'
 import { newId } from './id'
 import { auth } from './auth'
+import { nowIso } from './tz'
 
 /**
  * Data access for the back-office pages (Gestion du Stock, Fournisseurs, Employés).
@@ -122,7 +123,7 @@ function supabaseBackOffice(sb: SupabaseClient): BackOffice {
     async updateStockItem(id, patch) {
       checkName(patch.name)
       checkStock(patch)
-      check(await sb.from('stock_items').update({ ...cleanStock(patch), updated_at: new Date().toISOString() }).eq('id', id))
+      check(await sb.from('stock_items').update({ ...cleanStock(patch), updated_at: nowIso() }).eq('id', id))
     },
     async adjustStock(id, delta) {
       return normStock(check(await sb.rpc('adjust_stock', { p_item_id: id, p_delta: delta })) as StockItem)
@@ -165,7 +166,7 @@ interface LocalDb {
   inventories: (StockInventory & { lines: StockInventoryLine[] })[]
 }
 
-const now = () => new Date().toISOString()
+const now = () => nowIso()
 
 function seed(): LocalDb {
   const s = (name: string, quantity: number, unit: string): StockItem => ({

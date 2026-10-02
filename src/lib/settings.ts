@@ -3,7 +3,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { repo, sharedChannel, supabase } from './repo'
 import { tr, type Dict } from './i18n'
 import { checkPassword, hashPassword, loadLocalUsers, saveLocalUsers } from './admin'
+import { serverNow } from './serverClock'
 import type { PaymentMode, ReasonLists, SecurityConfig } from './types'
+import { nowIso } from './tz'
 
 /**
  * Paramètres > Configurations, tabs Paiement, Motifs and Sécurité, and the users' PIN codes. Supabase (table
@@ -143,7 +145,7 @@ function supabaseSettings(sb: SupabaseClient): SettingsService {
     return (res.error ? null : res.data) as Record<string, unknown> | null
   }
   const writeConfig = async (patch: object) => {
-    const res = await sb.from('app_config').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', 1).select('id')
+    const res = await sb.from('app_config').update({ ...patch, updated_at: nowIso() }).eq('id', 1).select('id')
     check(res)
     if (!res.data?.length) throw new Error(tr().errNoPermission)
   }
@@ -334,14 +336,14 @@ export async function localPinCheck(username: string, pin: string): Promise<stri
   const users = loadLocalUsers()
   const u = users.find((x) => x.active && x.username === username.trim().toLowerCase())
   if (!u?.pin_hash) throw new Error(t.errPinBad)
-  if (u.pin_locked_until && new Date(u.pin_locked_until).getTime() > Date.now()) throw new Error(t.errPinLocked)
+  if (u.pin_locked_until && new Date(u.pin_locked_until).getTime() > serverNow()) throw new Error(t.errPinLocked)
   if (/^\d{4}$/.test(pin) && (await checkPassword(u.pin_hash, pin))) {
     saveLocalUsers(users.map((x) => (x.id === u.id ? { ...x, pin_failed: 0, pin_locked_until: null } : x)))
     return u.id
   }
   const failed = (u.pin_failed ?? 0) + 1
   saveLocalUsers(users.map((x) => (x.id === u.id
-    ? { ...x, pin_failed: failed >= 5 ? 0 : failed, pin_locked_until: failed >= 5 ? new Date(Date.now() + 5 * 60_000).toISOString() : null }
+    ? { ...x, pin_failed: failed >= 5 ? 0 : failed, pin_locked_until: failed >= 5 ? new Date(serverNow() + 5 * 60_000).toISOString() : null }
     : x)))
   throw new Error(failed >= 5 ? t.errPinLocked : t.errPinBad)
 }

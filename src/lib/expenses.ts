@@ -1,3 +1,4 @@
+import { appNow, daysInMonth, nowIso, tzIsoDay } from './tz'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { onLocalOrderPaid, repo, sharedChannel, supabase } from './repo'
 import { editLocalStock, localUserName } from './backoffice'
@@ -137,9 +138,8 @@ export function writeLocalExpenses(db: LocalExpenses) {
   expenseListeners.forEach((l) => l())
 }
 
-/** Local day YYYY-MM-DD. */
-export const localIsoDay = (d = new Date()) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+/** Day YYYY-MM-DD of an instant, Algiers time (now: the server's clock). */
+export const localIsoDay = (d: Date = appNow()) => tzIsoDay(d)
 
 /** Last purchase price per stock unit of each item, from the demo purchase movements. */
 const lastPrices = (moves: StockMovement[]) => {
@@ -200,7 +200,7 @@ function localExpenses(): ExpensesService {
         }
         const row: Expense = {
           id: newId(), category_id: category.id, category_name: category.name, amount: c.amount, date: c.date, mode: c.mode, note: c.note,
-          cash_movement_id: null, user_name: await localUserName(), created_at: new Date().toISOString(),
+          cash_movement_id: null, user_name: await localUserName(), created_at: nowIso(),
         }
         edit((d) => d.expenses.push(row))
         return row
@@ -294,12 +294,14 @@ export function daysBetween(first: string, last: string): number {
 
 export function prorate(monthly: number, first: string, last: string): number {
   if (!(monthly > 0)) return 0
+  // Calendar days only (no time zone involved): counted on UTC dates.
   const [y, m, d] = first.split('-').map(Number)
-  const day = new Date(y, m - 1, d)
+  const day = new Date(Date.UTC(y, m - 1, d))
+  const iso = (x: Date) => x.toISOString().slice(0, 10)
   let total = 0
-  for (let i = 0; i < 400 && localIsoDay(day) <= last; i++) {
-    total += monthly / new Date(day.getFullYear(), day.getMonth() + 1, 0).getDate()
-    day.setDate(day.getDate() + 1)
+  for (let i = 0; i < 400 && iso(day) <= last; i++) {
+    total += monthly / daysInMonth(day.getUTCFullYear(), day.getUTCMonth())
+    day.setUTCDate(day.getUTCDate() + 1)
   }
   return total
 }

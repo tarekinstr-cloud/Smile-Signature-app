@@ -3,6 +3,8 @@ import { repo, sharedChannel, supabase } from './repo'
 import { tr } from './i18n'
 import type { NewReservation, Reservation, ReservationPatch } from './types'
 import { newId } from './id'
+import { serverNow } from './serverClock'
+import { appNow, nowIso } from './tz'
 
 /**
  * Table bookings (menu Clients, and the small indicator on the floor plan). Supabase table `reservations`
@@ -31,12 +33,12 @@ export const UPCOMING_HOURS = 3
 export const NO_SHOW_AFTER_MINUTES = 60
 
 /** Bookings shown on the floor plan: confirmed, from now to UPCOMING_HOURS ahead. */
-export function floorWindow(now = new Date()): [Date, Date] {
+export function floorWindow(now = appNow()): [Date, Date] {
   return [now, new Date(now.getTime() + UPCOMING_HOURS * 3_600_000)]
 }
 
 /** The booking to show on each table: its next one (the earliest, when a table has several). */
-export function bookingsByTable(list: Reservation[], now = new Date()): Map<string, Reservation> {
+export function bookingsByTable(list: Reservation[], now = appNow()): Map<string, Reservation> {
   const byTable = new Map<string, Reservation>()
   for (const r of [...list].sort((a, b) => a.reserved_at.localeCompare(b.reserved_at))) {
     if (r.status !== 'confirmed' || !r.table_id || new Date(r.reserved_at) < now) continue
@@ -46,7 +48,7 @@ export function bookingsByTable(list: Reservation[], now = new Date()): Map<stri
 }
 
 /** Whether a Confirmée booking is past the No-show delay. */
-const expired = (r: Reservation, now = Date.now()) =>
+const expired = (r: Reservation, now = serverNow()) =>
   r.status === 'confirmed' && new Date(r.reserved_at).getTime() < now - NO_SHOW_AFTER_MINUTES * 60_000
 
 const norm = (r: Reservation): Reservation => ({ ...r, party_size: Number(r.party_size), phone: r.phone ?? '', note: r.note ?? '' })
@@ -150,7 +152,7 @@ function localReservations(): ReservationsService {
       return sorted(read()).filter((r) => r.status === 'confirmed' && new Date(r.reserved_at) >= from && new Date(r.reserved_at) < to)
     },
     async create(r) {
-      const row: Reservation = { id: newId(), status: 'confirmed', created_at: new Date().toISOString(), ...clean(r) }
+      const row: Reservation = { id: newId(), status: 'confirmed', created_at: nowIso(), ...clean(r) }
       write([...read(), row])
       return row
     },

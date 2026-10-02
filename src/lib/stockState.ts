@@ -7,6 +7,7 @@ import type {
   InventoryCount, StockInventory, StockInventoryLine, StockLocation, StockMovement, StockReportRow, StockStateRow,
 } from './types'
 import { newId } from './id'
+import { nowIso } from './tz'
 
 /**
  * État du stock (menu Gestion du Stock): overview with values, Mouvements par période and Inventaire physique.
@@ -229,7 +230,7 @@ function localState(): StockStateService {
       return editLocalStock((db) => {
         const last = lastPurchases(db.movements)
         const inv: StockInventory & { lines: StockInventoryLine[] } = {
-          id: newId(), note: note.trim(), line_count: 0, gap_value: 0, user_name: user, created_at: new Date().toISOString(), lines: [],
+          id: newId(), note: note.trim(), line_count: 0, gap_value: 0, user_name: user, created_at: nowIso(), lines: [],
         }
         const moves: StockMovement[] = []
         // Everything is checked before anything changes, like the database transaction.

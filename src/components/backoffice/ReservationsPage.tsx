@@ -1,3 +1,5 @@
+import { appNow, tzDateTime, tzIsoDay, tzParts, tzStartOfDay, tzTime } from '../../lib/tz'
+import { serverNow } from '../../lib/serverClock'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { repo } from '../../lib/repo'
 import { reservations } from '../../lib/reservations'
@@ -17,17 +19,16 @@ function useFloor() {
   return useLoad(load)
 }
 
-const pad = (n: number) => String(n).padStart(2, '0')
-/** yyyy-mm-dd and hh:mm of a date in local time, for the date and time inputs. */
-const dateInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-const timeInput = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`
+/** yyyy-mm-dd and hh:mm of a date in Algiers time, for the date and time inputs. */
+const dateInput = (d: Date) => tzIsoDay(d)
+const timeInput = (d: Date) => tzTime(d)
 
 export const timeText = (iso: string, lang: Lang) => new Date(iso).toLocaleTimeString(locale(lang), { hour: '2-digit', minute: '2-digit' })
 /** Short date, with the year only when it is not the current one. */
 const dateText = (iso: string, lang: Lang) => {
   const d = new Date(iso)
   return d.toLocaleDateString(locale(lang), {
-    weekday: 'short', day: 'numeric', month: 'short', ...(d.getFullYear() !== new Date().getFullYear() && { year: 'numeric' }),
+    weekday: 'short', day: 'numeric', month: 'short', ...(tzParts(d).year !== tzParts(appNow()).year && { year: 'numeric' }),
   })
 }
 
@@ -51,9 +52,9 @@ export function ReservationForm({ initial, onSaved, onCancel }: FormProps) {
   const [others, setOthers] = useState<Reservation[]>([])
   const start = useMemo(() => {
     if (initial) return new Date(initial.reserved_at)
-    // Next half hour, a sensible default for a phone booking.
-    const d = new Date(Date.now() + 30 * 60_000)
-    d.setMinutes(d.getMinutes() < 30 ? 30 : 60, 0, 0)
+    // Next half hour, a sensible default for a phone booking (Algiers is a whole-hour offset: UTC minutes are the same).
+    const d = new Date(serverNow() + 30 * 60_000)
+    d.setUTCMinutes(d.getUTCMinutes() < 30 ? 30 : 60, 0, 0)
     return d
   }, [initial])
   const [name, setName] = useState(initial?.client_name ?? '')
@@ -79,7 +80,7 @@ export function ReservationForm({ initial, onSaved, onCancel }: FormProps) {
   const hall: Hall | null = floor.data?.halls.find((h) => h.id === hallId) ?? null
   const hallTables = floor.data?.tables.filter((x) => x.hall_id === hallId) ?? []
   const table = hallTables.find((x) => x.id === tableId) ?? null
-  const when = new Date(`${date}T${time}`)
+  const when = date && time ? tzDateTime(date, time) : new Date(NaN)
   const valid = !Number.isNaN(when.getTime())
 
   const conflict = valid && table
@@ -88,7 +89,7 @@ export function ReservationForm({ initial, onSaved, onCancel }: FormProps) {
     : undefined
   const warnings = [
     conflict && t.resConflict(table!.label, timeText(conflict.reserved_at, lang), conflict.client_name),
-    valid && !initial && when.getTime() < Date.now() && t.resInPast,
+    valid && !initial && when.getTime() < serverNow() && t.resInPast,
     table && Number(party) > table.seats && t.resTooBig(table.seats),
   ].filter(Boolean) as string[]
 
@@ -214,8 +215,7 @@ export function ReservationsList({ onOpenOrder, highlight }: ListProps) {
 
   useEffect(() => reservations.subscribe(() => reload()), [reload])
 
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const today = tzStartOfDay(appNow())
   const q = query.trim().toLowerCase()
   const rows = (data ?? [])
     .filter((r) => (new Date(r.reserved_at) >= today) === (view === 'upcoming'))
@@ -287,7 +287,7 @@ export function ReservationsList({ onOpenOrder, highlight }: ListProps) {
             </thead>
             <tbody>
               {rows.map((r) => {
-                const late = r.status === 'confirmed' && new Date(r.reserved_at).getTime() < Date.now()
+                const late = r.status === 'confirmed' && new Date(r.reserved_at).getTime() < serverNow()
                 const statusTags = (
                   <>
                     <span className={`tag res-status ${r.status}`}>{t.resStatuses[r.status]}</span>
