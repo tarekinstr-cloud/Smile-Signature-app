@@ -65,6 +65,12 @@ npm run build      # نسخة الإنتاج في dist/ (مع Service Worker و 
 
 أو عبر Supabase CLI: `supabase link --project-ref <ref>` ثم `supabase db push`.
 
+## Serveur local sans internet / خادم محلي بدون إنترنت
+Un PC Windows (le POS) peut servir toute l'application sur le Wi-Fi du restaurant, sans internet :
+voir **[serveur-local/LISEZMOI.md](serveur-local/LISEZMOI.md)** (installation pas à pas, en français).
+`VITE_SUPABASE_URL=same-origin` = Supabase à la même adresse que l'application (http://localhost sur le POS,
+http://IP-du-POS sur les tablettes).
+
 ## الأمان (RLS)
 الجداول محمية بـ Row Level Security: فقط المستخدمون المسجّلون يقرؤون ويعدّلون. الأدوار (مدير / نادل / كاسيير) تأتي لاحقاً.
 

@@ -1,0 +1,10 @@
+node_modules
+dist
+shots
+.git
+.env
+.env.*
+!.env.example
+serveur-local/.env
+serveur-local/sauvegardes
+tsconfig.tsbuildinfo

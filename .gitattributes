@@ -1,0 +1,7 @@
+# Fichiers Windows à double-cliquer : fins de ligne CRLF conservées telles quelles.
+*.bat -text
+# Scripts exécutés dans les conteneurs Linux : toujours LF, même après un passage par Windows.
+serveur-local/**/*.sh text eol=lf
+serveur-local/**/*.sql text eol=lf
+serveur-local/**/*.conf text eol=lf
+serveur-local/**/*.mjs text eol=lf

@@ -1,0 +1,345 @@
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+# Smile Signature — serveur local (Supabase allégé + application), pour fonctionner sans internet.
+#
+# Services : base Postgres, authentification, API REST, temps réel (Realtime), photos (Storage),
+# fonction pin-login, et un serveur web qui sert l'application ET l'API sur la même adresse :
+#   http://localhost        sur le POS
+#   http://IP-du-POS        sur les tablettes et téléphones (Wi-Fi du restaurant)
+#
+# Retirés pour économiser la mémoire : analytics/logs (Logflare, Vector), pooler (Supavisor),
+# redimensionnement d'images (imgproxy), passerelle Kong/Envoy (remplacée par le serveur web).
+# Studio (tableau de bord Supabase) est facultatif : profil « studio » (voir LISEZMOI.md).
+#
+# Ne pas lancer à la main : utiliser les fichiers .bat du dossier windows\ (voir LISEZMOI.md).
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+name: smile
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+
+  db:
+    <<: *restart
+    container_name: smile-db
+    image: supabase/postgres:17.6.1.136
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      PGPORT: 5432
+      POSTGRES_PORT: 5432
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: postgres
+      POSTGRES_DB: postgres
+      JWT_EXP: ${JWT_EXPIRY:-604800}
+      TZ: Africa/Algiers
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - log_min_messages=fatal
+      # Mémoire réduite : un seul restaurant, quelques dizaines de connexions.
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - max_connections=80
+      - -c
+      - timezone=Africa/Algiers
+      # Coupure de courant : chaque transaction validée est écrite sur le disque (valeurs par défaut,
+      # rappelées ici pour qu'on ne les désactive jamais).
+      - -c
+      - fsync=on
+      - -c
+      - synchronous_commit=on
+      - -c
+      - full_page_writes=on
+    volumes:
+      - ./db/realtime.sql:/docker-entrypoint-initdb.d/migrations/99-realtime.sql:ro
+      - ./db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
+      - ./db/jwt.sql:/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql:ro
+      # Données de la base : volume Docker (disque Linux de Docker Desktop, plus rapide et plus sûr
+      # qu'un dossier Windows pour Postgres).
+      - db-data:/var/lib/postgresql/data
+      - db-config:/etc/postgresql-custom
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # Arrêt propre : laisse à Postgres le temps d'écrire ce qui reste avant de s'arrêter.
+    stop_grace_period: 60s
+
+  auth:
+    <<: *restart
+    container_name: smile-auth
+    image: supabase/gotrue:v2.196.0
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${SITE_URL:-http://localhost}/auth/v1
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+      GOTRUE_SITE_URL: ${SITE_URL:-http://localhost}
+      GOTRUE_URI_ALLOW_LIST: ""
+      # Les comptes sont créés par l'administrateur dans l'application (Fichier > Utilisateurs).
+      GOTRUE_DISABLE_SIGNUP: "true"
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: ${JWT_EXPIRY:-604800}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "false"
+      # Aucun e-mail n'est envoyé (pas de serveur de messagerie au restaurant).
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+      GOTRUE_SMTP_ADMIN_EMAIL: admin@smile-signature.local
+      GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
+      # Beaucoup de connexions depuis la même adresse (le POS) : pas de limite trop basse.
+      GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "1800"
+      GOTRUE_RATE_LIMIT_VERIFY: "1800"
+      GOTRUE_RATE_LIMIT_OTP: "1800"
+      TZ: Africa/Algiers
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  rest:
+    <<: *restart
+    container_name: smile-rest
+    image: postgrest/postgrest:v14.17
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public,graphql_public
+      PGRST_DB_MAX_ROWS: 1000
+      PGRST_DB_EXTRA_SEARCH_PATH: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_ADMIN_SERVER_PORT: 3001
+      PGRST_ADMIN_SERVER_HOST: localhost
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY:-604800}
+      PGRST_DB_POOL: 10
+    healthcheck:
+      test: ["CMD", "postgrest", "--ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  realtime:
+    <<: *restart
+    # Ce nom est voulu : Realtime lit le nom du « tenant » (realtime-dev) dans l'adresse.
+    container_name: realtime-dev.supabase-realtime
+    image: supabase/realtime:v2.134.10
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: postgres
+      DB_AFTER_CONNECT_QUERY: SET search_path TO _realtime
+      DB_ENC_KEY: supabaserealtime
+      API_JWT_SECRET: ${JWT_SECRET}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      METRICS_JWT_SECRET: ${JWT_SECRET}
+      ERL_AFLAGS: -proto_dist inet_tcp
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: "10000"
+      APP_NAME: realtime
+      SEED_SELF_HOST: "true"
+      RUN_JANITOR: "true"
+      DISABLE_HEALTHCHECK_LOGGING: "true"
+      TZ: Africa/Algiers
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sSfL --head -o /dev/null -H \"Authorization: Bearer ${ANON_KEY}\" http://localhost:4000/api/tenants/realtime-dev/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  storage:
+    <<: *restart
+    container_name: smile-storage
+    image: supabase/storage-api:v1.74.0
+    depends_on:
+      db:
+        condition: service_healthy
+      rest:
+        condition: service_started
+    environment:
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      POSTGREST_URL: http://rest:3000
+      AUTH_JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+      STORAGE_PUBLIC_URL: ${SITE_URL:-http://localhost}
+      REQUEST_ALLOW_X_FORWARDED_PATH: "true"
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      GLOBAL_S3_BUCKET: stub
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: stub
+      # Les photos sont déjà compressées par l'application : pas de redimensionnement côté serveur.
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+      TZ: Africa/Algiers
+    volumes:
+      - storage-data:/var/lib/storage
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  functions:
+    <<: *restart
+    container_name: smile-functions
+    image: supabase/edge-runtime:v1.76.2
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      SUPABASE_URL: http://web:80
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+      SUPABASE_DB_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/postgres
+      TZ: Africa/Algiers
+    volumes:
+      - ./fonctions/main:/home/deno/functions/main:ro
+      # La fonction pin-login de l'application, « déployée » telle quelle depuis supabase/functions.
+      - ../supabase/functions/pin-login:/home/deno/functions/pin-login:ro
+      # Modules téléchargés au premier lancement (avec internet), puis réutilisés hors ligne.
+      - deno-cache:/root/.cache/deno
+    command: ["start", "--main-service", "/home/deno/functions/main"]
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/127.0.0.1/9000'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # L'application compilée + l'API Supabase sur la même adresse (port 80).
+  web:
+    <<: *restart
+    container_name: smile-web
+    build:
+      context: ..
+      dockerfile: serveur-local/web/Dockerfile
+      args:
+        # « same-origin » : l'app parle au serveur qui l'a servie (localhost ou IP du POS).
+        # Pour revenir au Supabase en ligne sans toucher au code : APP_SUPABASE_URL et APP_SUPABASE_ANON_KEY
+        # dans le fichier .env, puis METTRE-A-JOUR.bat.
+        VITE_SUPABASE_URL: ${APP_SUPABASE_URL:-same-origin}
+        VITE_SUPABASE_ANON_KEY: ${APP_SUPABASE_ANON_KEY:-${ANON_KEY}}
+        APP_VERSION: ${APP_VERSION:-}
+    image: smile-web:local
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    depends_on:
+      - auth
+      - rest
+      - realtime
+      - storage
+      - functions
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Outils (migrations, compte admin, vérification, sauvegardes). Lancés seulement par les .bat.
+  # Même image que la base : psql / pg_dump de la même version, rien de plus à télécharger.
+  outils:
+    container_name: smile-outils
+    image: supabase/postgres:17.6.1.136
+    profiles: ["outils"]
+    entrypoint: ["bash", "/kit/outils/scripts/outil.sh"]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+      PGHOST: db
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: postgres
+      PGOPTIONS: -c client_min_messages=warning
+      TZ: Africa/Algiers
+    volumes:
+      - ./:/kit
+      - ../supabase/migrations:/migrations:ro
+    working_dir: /kit
+
+  # Génère les secrets du fichier .env à l'installation.
+  secrets:
+    image: node:22-alpine
+    profiles: ["outils"]
+    command: ["node", "/kit/outils/secrets.mjs"]
+    volumes:
+      - ./:/kit
+
+  # ── Facultatif : Studio (tableau de bord Supabase) sur http://localhost:3000 du POS uniquement ──
+  meta:
+    <<: *restart
+    container_name: smile-meta
+    image: supabase/postgres-meta:v0.99.0
+    profiles: ["studio"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: postgres
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      CRYPTO_KEY: ${PG_META_CRYPTO_KEY}
+
+  studio:
+    <<: *restart
+    container_name: smile-studio
+    image: supabase/studio:2026.09.07-sha-7996410
+    profiles: ["studio"]
+    depends_on:
+      - meta
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      HOSTNAME: "0.0.0.0"
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PORT: 5432
+      POSTGRES_HOST: db
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER_READ_WRITE: postgres
+      PG_META_CRYPTO_KEY: ${PG_META_CRYPTO_KEY}
+      PGRST_DB_SCHEMAS: public,graphql_public
+      DEFAULT_ORGANIZATION_NAME: Smile Signature
+      DEFAULT_PROJECT_NAME: Serveur local
+      SUPABASE_URL: http://web:80
+      SUPABASE_PUBLIC_URL: http://localhost
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      AUTH_JWT_SECRET: ${JWT_SECRET}
+      ENABLED_FEATURES_LOGS_ALL: "false"
+
+volumes:
+  db-data:
+  db-config:
+  storage-data:
+  deno-cache:
