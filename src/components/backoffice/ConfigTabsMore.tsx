@@ -42,7 +42,7 @@ export function PaymentTab() {
     setLabels(({ [code]: _, ...rest }) => rest)
     if (v === undefined || v.trim() === current) return
     // Empty for Espèces / Carte: back to the app's translated name.
-    await run(() => settings.updatePaymentMode(code, { label: v.trim() || (code === 'cash' || code === 'card' ? null : current) }))
+    await run(() => settings.updatePaymentMode(code, { label: v.trim() || (code === 'cash' || code === 'card' || code === 'credit' ? null : current) }))
   }
 
   async function move(index: number, by: -1 | 1) {
@@ -86,7 +86,7 @@ export function PaymentTab() {
                       onChange={(e) => run(() => settings.updatePaymentMode(m.code, { active: e.target.checked }))} />
                     {t.payModeActive}
                   </label>
-                  {m.code !== 'cash' && m.code !== 'card' && (
+                  {m.code !== 'cash' && m.code !== 'card' && m.code !== 'credit' && (
                     <button className="danger" onClick={() => remove(m.code, name)} disabled={busy} aria-label={t.payModeDeleteFor(name)}>{t.delete}</button>
                   )}
                 </li>

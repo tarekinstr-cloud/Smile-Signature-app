@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CashClosedError, repo, type OpenOrder } from '../lib/repo'
 import { cash } from '../lib/cash'
-import type { AdjustmentsPatch, Discount, OrderLine, PaidOrder, Payment, PaymentMethod } from '../lib/types'
+import type { AdjustmentsPatch, Customer, Discount, OrderLine, PaidOrder, Payment, PaymentMethod } from '../lib/types'
 import { money } from '../lib/format'
 import { computeBill, discountOf, methodIcon } from '../lib/billing'
-import { isCash, paymentLabel, usePaymentModes, useReasons } from '../lib/settings'
+import { isCash, isCredit, paymentLabel, usePaymentModes, useReasons } from '../lib/settings'
+import { customers } from '../lib/customers'
+import CreditDialog from './CreditDialog'
 import { OfferReasonDialog } from './CancelDialog'
 import { useI18n } from '../lib/i18n'
 import { usePermissions } from '../lib/permissions'
@@ -80,7 +82,10 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
 
   const bill = useMemo(() => computeBill(data?.order ?? null, data?.lines ?? [], data?.payments ?? []), [data])
   const modes = usePaymentModes()
-  const offered = modes.filter((m) => m.active)
+  const offered = modes.filter((m) => m.active && !isCredit(m.code))
+  /** Compte client (crédit): offered when the mode is active and the account may sell on credit. */
+  const creditMode = modes.find((m) => isCredit(m.code) && m.active)
+  const [creditOpen, setCreditOpen] = useState(false)
   // Only Espèces counts in the cash drawer and gives change.
   const cashLike = isCash(method)
   const selected = bill.lines.find((b) => b.line.id === selectedId) ?? null
@@ -162,6 +167,39 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
       resetEntry()
       await reload()
     })
+  }
+
+  /** Compte client: a payment too, so it needs an open working day like the others. */
+  async function openCredit() {
+    if (!data || !amountOk || amount <= 0) return
+    setBusy(true)
+    const open = await cash.isOpen().catch(() => true)
+    setBusy(false)
+    if (!open) return setCashClosed(true)
+    setCreditOpen(true)
+  }
+
+  async function payOnCredit(customer: Customer) {
+    if (!data) return
+    const snapshot = data
+    try {
+      const done = await customers.payOnCredit(snapshot.order.id, customer.id, amount)
+      setCreditOpen(false)
+      if (done) {
+        const payments = await repo.listPayments(done.id)
+        onPaid({ order: done, lines: snapshot.lines, payments })
+        return
+      }
+      setNotice(t.creditPartDone(money(amount), customer.name))
+      resetEntry()
+      await reload()
+    } catch (e) {
+      if (e instanceof CashClosedError) {
+        setCreditOpen(false)
+        return setCashClosed(true)
+      }
+      throw e
+    }
   }
 
   async function adjust(lineId: string | null, patch: AdjustmentsPatch) {
@@ -329,6 +367,11 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
                       <span aria-hidden>{methodIcon(m.code)}</span><bdi>{paymentLabel(t, m.code, modes)}</bdi>
                     </button>
                   ))}
+                  {creditMode && can('credit_sale') && (
+                    <button type="button" className="pay-method credit" onClick={openCredit} disabled={busy || !amountOk || amount <= 0} title={t.creditButtonHint}>
+                      <span aria-hidden>📒</span><bdi>{paymentLabel(t, creditMode.code, modes)}</bdi>
+                    </button>
+                  )}
                 </div>
 
                 <button type="button" className={partial ? 'partial-toggle on' : 'partial-toggle'} aria-pressed={partial} title={t.partialHint} onClick={togglePartial}>
@@ -377,6 +420,9 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
         </main>
       )}
 
+      {creditOpen && data && (
+        <CreditDialog amount={amount} initialCustomer={data.order.customer_id ?? null} onCancel={() => setCreditOpen(false)} onConfirm={payOnCredit} />
+      )}
       {cashClosed && (
         <OpenCashDialog onCancel={() => setCashClosed(false)} onOpened={() => { setCashClosed(false); payNow() }} />
       )}

@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import type { DeliveryCustomer, DeliveryZone } from '../lib/types'
+import type { Customer, DeliveryCustomer, DeliveryZone } from '../lib/types'
+import { customers } from '../lib/customers'
+import { phoneKey } from '../lib/customerStore'
 import { useI18n } from '../lib/i18n'
 import { money } from '../lib/format'
 import { deliveryZones, zoneLabel } from '../lib/deliveryZones'
@@ -51,6 +53,32 @@ export default function DeliveryDialog({ place, initial, zone, submitLabel, numb
     return deliveryZones.subscribe(load)
   }, [])
 
+  /** Customer cards (menu Clients), to recognise the caller by phone. Empty without the migration or the list. */
+  const [known, setKnown] = useState<Customer[]>([])
+  useEffect(() => {
+    customers.list().then((l) => setKnown(l.filter((c) => c.active && c.phone)), () => setKnown([]))
+  }, [])
+  /** The card whose details were filled in (so the same card is not filled again over the user's corrections). */
+  const [filledFrom, setFilledFrom] = useState<string | null>(null)
+  const digits = phoneKey(phone)
+  const matches = digits.length >= 3 && !filledFrom ? known.filter((c) => phoneKey(c.phone).includes(digits)).slice(0, 5) : []
+
+  function fill(c: Customer, all: boolean) {
+    setFilledFrom(c.id)
+    setPhone(c.phone)
+    if (all || !name.trim()) setName(c.name)
+    if (all || !address.trim()) setAddress(c.address)
+    if (c.zone_id && (all || !zoneId) && zones.some((z) => z.id === c.zone_id)) setZoneId(c.zone_id)
+  }
+
+  // Full number of a known customer typed: name, address and zone are filled in (blank fields only).
+  useEffect(() => {
+    if (filledFrom || digits.length < 6) return
+    const exact = known.find((c) => phoneKey(c.phone) === digits)
+    if (exact) fill(exact, false)
+  }, [digits, known])
+  const filled = known.find((c) => c.id === filledFrom)
+
   const minutes = (n: number) => t.zoneMinutes(n)
   const picked = zones.find((z) => z.id === zoneId) ?? null
   const [busy, setBusy] = useState(false)
@@ -85,8 +113,20 @@ export default function DeliveryDialog({ place, initial, zone, submitLabel, numb
         </label>
         <label>
           {t.customerPhone}
-          <input type="tel" inputMode="tel" dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+          <input type="tel" inputMode="tel" dir="ltr" value={phone} onChange={(e) => { setPhone(e.target.value); setFilledFrom(null) }} required />
         </label>
+        {matches.length > 0 && (
+          <ul className="pick-list customer-suggest" aria-label={t.customerSuggest}>
+            {matches.map((c) => (
+              <li key={c.id}>
+                <button type="button" onClick={() => fill(c, true)}>
+                  <bdi>{c.name}</bdi> <span className="muted small" dir="ltr">{c.phone}</span>{c.address && <span className="muted small"> · <bdi>{c.address}</bdi></span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {filled && <p className="small customer-known">✓ {t.customerKnown(filled.name)}{filled.note && <> · <strong><bdi>{filled.note}</bdi></strong></>}</p>}
         <label>
           {t.customerAddress}
           <textarea rows={2} value={address} onChange={(e) => setAddress(e.target.value)} placeholder={t.addressOptionalPh} />

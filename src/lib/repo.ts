@@ -8,6 +8,7 @@ import type {
 } from './types'
 import { demoMenu } from './demoMenu'
 import { buildKitchenTickets, type SendResult } from './kitchen'
+import { linkLocalDeliveryCustomer } from './customerStore'
 import { tr } from './i18n'
 import { computeBill, normalizeAdjustments } from './billing'
 import { newId } from './id'
@@ -103,6 +104,8 @@ export interface Repo {
   moveOrder(orderId: string, tableId: string): Promise<Order>
   /** Moves logged for an order, oldest first. */
   listTableMoves(orderId: string): Promise<TableMove[]>
+  /** Demo mode: puts an open order on a customer's card (online, pay_on_credit does it in the same transaction). */
+  linkCustomer(orderId: string, customer: { id: string; name: string; phone: string }): Promise<void>
   /** Facture: saves the optional customer on the order and gives it an invoice number the first time. */
   issueInvoice(orderId: string, customer: InvoiceCustomer): Promise<Order>
   /** Kitchen tickets already sent for an order (reprint), oldest first. */
@@ -310,7 +313,7 @@ function localDayOpen(): boolean {
 
 export class CashClosedError extends Error {}
 
-function checkoutError(code: string): Error {
+export function checkoutError(code: string): Error {
   const t = tr()
   if (code.includes('no_open_day')) return new CashClosedError(t.errCashClosedPay)
   if (code.includes('cancel_reason_required')) return new Error(t.errCancelReason)
@@ -781,6 +784,10 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       if (res.error) throw checkoutError(res.error.message)
       return normalizeOrder(res.data as Order)
     },
+    async linkCustomer(orderId, customer) {
+      const res = await sb.from('orders').update({ customer_id: customer.id }).eq('id', orderId).eq('status', 'open')
+      if (res.error) throw checkoutError(res.error.message)
+    },
     async listKitchenTickets(orderId) {
       const res = await sb.from('kitchen_tickets').select('*').eq('order_id', orderId).order('created_at')
       if (res.error) throw checkoutError(res.error.message)
@@ -964,7 +971,7 @@ function groupLinks(rows: { category_id: string; printer_id: string }[]): Catego
   return out
 }
 
-function normalizeOrder(o: Order): Order {
+export function normalizeOrder(o: Order): Order {
   // Rows saved before the order-actions / delivery migrations (or old demo data) have no type, number or customer.
   return {
     ...normalizeAdjustments(o),
@@ -1012,18 +1019,18 @@ function deliveryRow(patch: DeliveryPatch): DeliveryRow {
   }
 }
 
-function normalizePaid(o: PaidOrder): PaidOrder {
+export function normalizePaid(o: PaidOrder): PaidOrder {
   return {
     ...normalizeOrder(o), status: o.status, closed_at: o.closed_at ?? new Date().toISOString(),
     ticket_no: Number(o.ticket_no), total: Number(o.total), payment_method: o.payment_method ?? null, amount_received: Number(o.amount_received),
   }
 }
 
-function normalizePayment(p: Payment): Payment {
+export function normalizePayment(p: Payment): Payment {
   return { ...p, amount: Number(p.amount), received: Number(p.received), change_amount: Number(p.change_amount) }
 }
 
-function normalizeLine(l: OrderLine): OrderLine {
+export function normalizeLine(l: OrderLine): OrderLine {
   return {
     ...normalizeAdjustments(l),
     unit_price: Number(l.unit_price),
@@ -1553,6 +1560,8 @@ function localRepo(): Repo {
       if (number && db.orders.some((o) => o.order_type === 'delivery' && o.delivery_no === number && inUse(o))) throw checkoutError('orders_delivery_number_in_use')
       const delivery_no = number ?? (db.lastDelivery ?? 0) + 1
       const order: Order = { ...newOrder(null), order_type: 'delivery', delivery_no, delivery_status: 'preparing', ...deliveryRow(customer) }
+      // Like the orders_link_customer trigger: the customer card is found by phone, or created.
+      order.customer_id = linkLocalDeliveryCustomer(order)
       if (!number) db.lastDelivery = delivery_no
       db.orders.push(order)
       commitOrders(db)
@@ -1562,7 +1571,9 @@ function localRepo(): Repo {
       const db = loadOrders()
       const order = db.orders.find((o) => o.id === orderId && o.order_type === 'delivery')
       if (!order) throw checkoutError('order_not_found')
+      const phone = order.customer_phone
       Object.assign(order, deliveryRow(patch))
+      if (order.customer_phone !== phone || !order.customer_id) order.customer_id = linkLocalDeliveryCustomer(order) ?? order.customer_id ?? null
       commitOrders(db)
       return normalizeOrder(order)
     },
@@ -1640,6 +1651,15 @@ function localRepo(): Repo {
       }
       commitOrders(db)
       return normalizeOrder(order)
+    },
+    async linkCustomer(orderId, customer) {
+      const db = loadOrders()
+      const order = db.orders.find((o) => o.id === orderId && o.status === 'open')
+      if (!order) throw checkoutError('order_not_open')
+      order.customer_id = customer.id
+      order.customer_name ||= customer.name
+      order.customer_phone ||= customer.phone || null
+      commitOrders(db)
     },
     async listKitchenTickets(orderId) {
       return (loadOrders().kitchenTickets ?? []).filter((k) => k.order_id === orderId)

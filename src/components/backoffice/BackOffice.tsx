@@ -30,6 +30,7 @@ import { WallpaperPage } from './FloorSettingsPages'
 import HallsPage from './HallsPage'
 import ItemPrintersPage from './ItemPrintersPage'
 import ItemPhotosPage from './ItemPhotosPage'
+import { AllInvoicesPage, CustomersList, DebtsPage, NewCustomerPage, SettlePage } from './CustomersPages'
 
 interface Props {
   page: BackOfficePage
@@ -62,6 +63,14 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
   const [createdZone, setCreatedZone] = useState<string | null>(null)
   /** Purchase just validated in Effectuer un achat, announced and highlighted in Factures fournisseurs. */
   const [createdInvoice, setCreatedInvoice] = useState<SupplierInvoice | null>(null)
+  /** Customer just created, or opened from Factures non réglées: its card is shown in Modifier Clients. */
+  const [customerFocus, setCustomerFocus] = useState<string | null>(null)
+  /** Régler une Facture Client opened for this customer (from the card or the debts list). */
+  const [settleFor, setSettleFor] = useState<string | null>(null)
+  const settle = (id: string) => {
+    setSettleFor(id)
+    onPage('customerSettle')
+  }
   useEffect(() => {
     if (page !== 'purchases') setCreatedInvoice(null)
   }, [page])
@@ -103,6 +112,11 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     halls: [t.hallsManage, t.hallsSub],
     itemPrinters: [t.itemPrintersTitle, t.itemPrintersSub],
     itemPhotos: [t.itemPhotosTitle, t.itemPhotosSub],
+    customerNew: [t.customerNewTitle, t.customersSub],
+    customers: [t.customersEditItem, t.customersSub],
+    customerSettle: [t.settleTitle, t.settleSub],
+    customerDebts: [t.debtsTitle, t.debtsSub],
+    invoices: [t.allInvoicesTitle, t.allInvoicesSub],
   }
   return (
     <div className="app back-office">
@@ -119,6 +133,15 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
           {(['users', 'permissions'] as const).map((p) => (
             <button key={p} type="button" role="tab" aria-selected={page === p} className={page === p ? 'on' : ''} onClick={() => onPage(p)}>
               {p === 'users' ? t.fileUsers : t.filePermissions}
+            </button>
+          ))}
+        </div>
+      )}
+      {(page === 'customerNew' || page === 'customers') && (
+        <div className="segmented bo-tabs" role="tablist" aria-label={t.customersTitle}>
+          {(['customerNew', 'customers'] as const).map((p) => (
+            <button key={p} type="button" role="tab" aria-selected={page === p} className={page === p ? 'on' : ''} onClick={() => onPage(p)}>
+              {p === 'customerNew' ? t.customerNewTitle : t.customersEditItem}
             </button>
           ))}
         </div>
@@ -187,6 +210,11 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'halls' && <HallsPage onOpenPlan={onOpenPlan} />}
       {page === 'itemPrinters' && <ItemPrintersPage />}
       {page === 'itemPhotos' && <ItemPhotosPage />}
+      {page === 'customerNew' && <NewCustomerPage onSaved={(c) => { setCustomerFocus(c.id); onPage('customers') }} />}
+      {page === 'customers' && <CustomersList highlight={customerFocus} onSettle={settle} />}
+      {page === 'customerSettle' && <SettlePage initialCustomer={settleFor} />}
+      {page === 'customerDebts' && <DebtsPage onOpenCustomer={(id) => { setCustomerFocus(id); onPage('customers') }} onSettle={settle} />}
+      {page === 'invoices' && <AllInvoicesPage />}
     </div>
   )
 }

@@ -133,6 +133,8 @@ export interface Order extends Adjustments {
   delivery_status: DeliveryStatus | null
   /** Set the first time an invoice is made for the order. */
   invoice_no: number | null
+  /** Fiche client (menu Clients): a delivery's customer (found by phone) or the account a sale was put on. */
+  customer_id?: string | null
   /** Delivery zone chosen for a delivery (null: none, or the zone was deleted since). */
   delivery_zone_id?: string | null
   /** Name of that zone when it was chosen; stays after the zone is renamed or deleted. */
@@ -1000,6 +1002,8 @@ export interface DayReport {
   drivers?: SalesRow[]
   /** Tickets paid then cancelled (Factures annulées) during the period: count, their total, cash given back. */
   voids?: { orders: number; amount: number; cash: number } | null
+  /** Ventes à crédit (put on customers' accounts) and Règlements crédit reçus, by method. Absent before the Clients menu. */
+  credit?: { sales: number; settlements: Record<string, number>; settled: number } | null
 }
 
 export interface ClosedSales {
@@ -1020,6 +1024,8 @@ export interface SalesData {
   openOrders: number
   /** Tickets paid then cancelled during the period (their cash part left the drawer). */
   voids?: (Order & { cancelled_at: string | null })[]
+  /** Credit invoices settled during the period (menu Clients). */
+  settlements?: CustomerSettlement[]
 }
 
 // ───────────── Dépenses, Bénéfice (migration 20260930120000_expenses_profit.sql) ─────────────
@@ -1073,4 +1079,86 @@ export interface ProfitCosts {
   period_days?: number
   expenses: number
   expenses_by_category: Record<string, number>
+}
+
+// ───────────── Clients, crédit (migration 20261009000000_customers_credit.sql) ─────────────
+
+/** A customer of the menu Clients. The phone is unique (compared on its digits). */
+export interface Customer {
+  id: string
+  name: string
+  phone: string
+  address: string
+  zone_id: string | null
+  /** Kitchen or delivery note (« sans oignon »). */
+  note: string
+  /** Most the customer may owe on credit; null: no limit. */
+  credit_limit: number | null
+  active: boolean
+  created_at: string
+}
+export type NewCustomer = Pick<Customer, 'name' | 'phone' | 'address' | 'zone_id' | 'note' | 'credit_limit'>
+export type CustomerPatch = Partial<NewCustomer & Pick<Customer, 'active'>>
+
+/** An order put (fully or partly) on a customer's account: what was owed, what is settled, what is left. */
+export interface CustomerInvoice {
+  order_id: string
+  customer_id: string
+  ticket_no: number | null
+  order_type: OrderType
+  table_id: string | null
+  takeaway_no: number | null
+  delivery_no: number | null
+  closed_at: string
+  total: number
+  credit: number
+  settled: number
+  due: number
+}
+
+/** A customer who owes money (Factures Clients non réglées). */
+export interface CustomerBalance {
+  customer: Customer
+  invoices: number
+  due: number
+  /** Date of the oldest unpaid invoice. */
+  oldest: string
+}
+
+/** Money received from a customer for their credit invoices. */
+export interface CustomerSettlement {
+  id: string
+  customer_id: string
+  customer_name: string
+  amount: number
+  method: string
+  note: string
+  user_name: string
+  created_at: string
+}
+
+/** Fiche client: what the customer bought. */
+export interface CustomerHistory {
+  orders: (Order & { total: number; closed_at: string; ticket_no: number | null })[]
+  spent: number
+  visits: number
+  last: string | null
+  /** Most ordered items, by quantity. */
+  topItems: { name: string; quantity: number }[]
+  due: number
+  settlements: CustomerSettlement[]
+}
+
+/** Toutes les Factures: a paid, credit or cancelled order. */
+export type InvoiceStatus = 'paid' | 'credit' | 'cancelled'
+export interface InvoiceRow {
+  order: Order & { total: number | null; closed_at: string | null; ticket_no: number | null; cancelled_at?: string | null }
+  status: InvoiceStatus
+  customer: string
+  /** Credit still owed (status credit). */
+  due: number
+  methods: string[]
+  amount: number
+  /** Paid, or cancelled, at. */
+  at: string
 }
