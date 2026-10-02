@@ -4,7 +4,7 @@ import { repo } from '../../lib/repo'
 import { reportCsvRows } from '../../lib/dayReport'
 import { loadLive } from '../../lib/liveDay'
 import { download, stamp, toCsv } from '../../lib/admin'
-import { csvDa, money } from '../../lib/format'
+import { csvDa, money, readAmount } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
 import { usePermissions } from '../../lib/permissions'
 import type { CashDay, SalesData } from '../../lib/types'
@@ -13,11 +13,8 @@ import PeriodFilter, { initialPeriod, periodRange, rangeLabel, type Period } fro
 import { DayReportView, ZDialog, gapClass, gapText } from './DayReportView'
 import { errorText, locale, useLoad } from './useLoad'
 
-/** Parses a DA amount typed with a comma or a dot; null when it is not a number. */
-export const parseAmount = (text: string) => {
-  const n = Number(text.replace(/\s/g, '').replace(',', '.'))
-  return text.trim() && Number.isFinite(n) ? n : null
-}
+/** Parses a DA amount typed on any keyboard (see readAmount); null when it is not a number. */
+export const parseAmount = readAmount
 
 /** Calls `fn` at most once per `ms` while events keep coming (payments on several tablets). */
 function useThrottled(fn: () => void, ms: number) {
@@ -150,10 +147,19 @@ function CloseDialog({ day, onClose, onDone }: { day: CashDay; onClose(): void; 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Figures reloaded when the dialog opens, so the expected cash is the latest.
-  const { data } = useLoad(loadLive)
+  const { data, error: loadError, reload } = useLoad(loadLive)
   const n = parseAmount(counted)
   const expected = data?.report.cash?.expected ?? null
   const gap = n !== null && expected !== null ? Math.round((n - expected) * 100) / 100 : null
+
+  // Why Clôturer is greyed out, shown under the button.
+  const blocked = busy ? null
+    : loadError ? t.dayCloseWhyLoadError
+    : !data ? t.dayCloseWhyLoading
+    : !counted.trim() ? t.dayCloseWhyEmpty
+    : n === null ? t.dayCloseWhyNotNumber(counted.trim())
+    : n < 0 ? t.dayCloseWhyNegative
+    : null
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -175,6 +181,11 @@ function CloseDialog({ day, onClose, onDone }: { day: CashDay; onClose(): void; 
         onKeyDown={(e) => e.key === 'Escape' && !busy && onClose()}>
         <h2 id="close-title">{t.dayCloseTitle(day.day_no)}</h2>
         {error && <p className="error small" role="alert">{error}</p>}
+        {loadError && (
+          <p className="error small" role="alert">
+            {t.dayCloseLoadFailed} {loadError} <button type="button" className="link" onClick={reload}>{t.consumptionRetry}</button>
+          </p>
+        )}
         {data && data.report.openOrders > 0 && <div className="banner">{t.dayCloseOpenOrders(data.report.openOrders)}</div>}
         <table className="bo-table day-summary">
           <tbody>
@@ -186,6 +197,7 @@ function CloseDialog({ day, onClose, onDone }: { day: CashDay; onClose(): void; 
           {t.cashCounted}
           <input autoFocus dir="ltr" inputMode="decimal" value={counted} placeholder="0" onChange={(e) => setCounted(e.target.value)} />
         </label>
+        {n !== null && n >= 0 && <p className="muted small">{t.dayCloseRead(money(n))}</p>}
         {gap !== null && (
           <p className={`day-gap ${gapClass(gap)}`}>
             {t.cashGap} : <strong>{gapText(gap)}</strong> {gap < 0 ? t.gapMissing : gap > 0 ? t.gapExtra : ''}
@@ -198,8 +210,11 @@ function CloseDialog({ day, onClose, onDone }: { day: CashDay; onClose(): void; 
         <p className="muted small">{t.dayCloseWarning}</p>
         <div className="dialog-actions">
           <button type="button" onClick={onClose} disabled={busy}>{t.cancel}</button>
-          <button type="submit" className="primary" disabled={busy || n === null || !data}>{busy ? t.saving : t.dayCloseConfirm}</button>
+          <button type="submit" className="primary" disabled={busy || !!blocked} aria-describedby={blocked ? 'close-why' : undefined}>
+            {busy ? t.saving : t.dayCloseConfirm}
+          </button>
         </div>
+        {blocked && <p id="close-why" className="muted small close-why" role="status">{blocked}</p>}
       </form>
     </div>
   )
