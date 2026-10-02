@@ -44,6 +44,8 @@ export interface DashboardData {
   days: CashDay[]
   /** Espèces attendues of the day in progress (live), null without an open day. */
   liveExpected: number | null
+  /** The working day in progress (the Caisse tile is about it, whatever the period). */
+  currentDay: CashDay | null
   /** Dettes clients: what customers owe now (credit not settled). */
   debts: number
   /** Salary advances paid in the period. */
@@ -91,9 +93,10 @@ export async function loadDashboard(from: Date, to: Date): Promise<DashboardData
   // The day in progress counts when it overlaps the period (opened before its end).
   const days = [...closed]
   if (current && new Date(current.opened_at) < to && !days.some((d) => d.id === current.id)) days.push(current)
-  const liveExpected = current && days.some((d) => d.id === current.id) ? await soft(loadLive().then((l) => l.report.cash?.expected ?? null), null) : null
+  // Espèces attendues of the open working day, whatever the period chosen.
+  const liveExpected = current ? await soft(loadLive().then((l) => l.report.cash?.expected ?? null), null) : null
   return {
-    from, to, sales, cancelled, moves, days, liveExpected, menu, receipt, costs,
+    from, to, sales, cancelled, moves, days, liveExpected, currentDay: current, menu, receipt, costs,
     debts: da(balances.reduce((s, b) => s + b.due, 0)),
     advances: da(advanceLists.flat().filter((a) => a.date >= first && a.date <= last).reduce((s, a) => s + Number(a.amount), 0)),
     purchases: da(invoices.filter((i) => !isCancelled(i) && i.date >= first && i.date <= last).reduce((s, i) => s + netTotal(i), 0)),
@@ -119,6 +122,15 @@ export function inHours(iso: string | null | undefined, f: Pick<DashFilters, 'ho
   return start <= end ? m >= start && m < end : m >= start || m < end
 }
 
+/** Filter value for the orders whose cashier was not recorded (paid before the cashier was saved). */
+export const NO_CASHIER = '__none__'
+
+/** Who took the money for an order: the employee who closed it, else the one of its last payment; '' if not recorded. */
+export function cashierOf(o: Pick<Order, 'closed_by_name'>, pays: Payment[]): string {
+  return o.closed_by_name?.trim() || pays.at(-1)?.created_by_name?.trim() || ''
+}
+const paidBy = (p: Payment, o: Pick<Order, 'closed_by_name'> | undefined) => p.created_by_name?.trim() || o?.closed_by_name?.trim() || ''
+
 const filtersActive = (f: DashFilters) => f.type !== 'all' && f.type !== 'drops' || !!(f.method || f.launchedBy || f.cashedBy || f.hourFrom || f.hourTo)
 
 /** The period's sales with the dashboard filters applied (orders, their lines and payments). */
@@ -131,14 +143,18 @@ export function filterSales(sales: SalesData, f: DashFilters): SalesData {
     if (f.launchedBy && (o.created_by_name ?? '') !== f.launchedBy) return false
     const pays = paysOf.get(o.id) ?? []
     if (f.method && !pays.some((p) => p.method === f.method)) return false
-    if (f.cashedBy && !pays.some((p) => (p.created_by_name ?? '') === f.cashedBy)) return false
+    if (f.cashedBy) {
+      const names = new Set([cashierOf(o, pays), ...pays.map((p) => paidBy(p, o))])
+      if (!names.has(f.cashedBy === NO_CASHIER ? '' : f.cashedBy)) return false
+    }
     return inHours(o.closed_at, f)
   })
   const ids = new Set(orders.map((o) => o.id))
   return {
     ...sales, orders,
     lines: sales.lines.filter((l) => ids.has(l.order_id)),
-    payments: sales.payments.filter((p) => ids.has(p.order_id) && (!f.method || p.method === f.method) && (!f.cashedBy || (p.created_by_name ?? '') === f.cashedBy)),
+    payments: sales.payments.filter((p) => ids.has(p.order_id) && (!f.method || p.method === f.method)
+      && (!f.cashedBy || paidBy(p, orders.find((o) => o.id === p.order_id)) === (f.cashedBy === NO_CASHIER ? '' : f.cashedBy))),
     voids: (sales.voids ?? []).filter((v) => (f.type === 'all' || f.type === 'drops' || v.order_type === f.type) && inHours(v.cancelled_at, f)),
   }
 }
@@ -153,7 +169,8 @@ export interface DashOrder {
   delivery: number
   net: number
   methods: string[]
-  cashiers: string[]
+  /** Employee who closed the order ('' when not recorded). */
+  cashier: string
 }
 
 export function orderRows(sales: SalesData): DashOrder[] {
@@ -169,7 +186,7 @@ export function orderRows(sales: SalesData): DashOrder[] {
       order: o, gross: da(bill.gross), delivery: da(bill.delivery), net,
       discount: da(bill.gross + bill.delivery - net),
       methods: [...new Set(pays.map((p) => p.method))],
-      cashiers: [...new Set(pays.map((p) => p.created_by_name ?? '').filter(Boolean))],
+      cashier: cashierOf(o, pays),
     }
   })
 }
@@ -254,8 +271,8 @@ export function staffReport(kind: 'server' | 'cashier', sales: SalesData, cancel
   for (const o of sales.orders) {
     const bill = computeBill(o, linesOf.get(o.id) ?? [])
     const pays = paysOf.get(o.id) ?? []
-    // A cashier is credited with the order they closed (the last payment).
-    const who = kind === 'server' ? o.created_by_name ?? '' : pays.at(-1)?.created_by_name ?? ''
+    // A cashier is credited with the order they closed.
+    const who = kind === 'server' ? o.created_by_name ?? '' : cashierOf(o, pays)
     const r = row(who)
     r.orders++
     r.sales += o.total ?? bill.total
@@ -264,7 +281,7 @@ export function staffReport(kind: 'server' | 'cashier', sales: SalesData, cancel
   }
   for (const p of sales.payments) {
     const o = sales.orders.find((x) => x.id === p.order_id)
-    const who = kind === 'server' ? o?.created_by_name ?? '' : p.created_by_name ?? ''
+    const who = kind === 'server' ? o?.created_by_name ?? '' : paidBy(p, o)
     const r = row(who)
     r.payments[p.method] = (r.payments[p.method] ?? 0) + p.amount
   }
@@ -286,7 +303,10 @@ export interface DashboardView {
   rows: DashOrder[]
   tiles: {
     float: number
+    /** Clients servis: couverts of the tables (1 when not given) + 1 per À emporter and Livraison order. */
     guests: number
+    /** Paid orders of the period and filters. */
+    orders: number
     sales: number
     cashIn: number
     expectedCash: number | null
@@ -318,16 +338,16 @@ export function dashboardView(data: DashboardData, f: DashFilters): DashboardVie
   const cancelled = data.cancelled.filter((c) => (f.type === 'all' || f.type === 'drops' || c.order_type === f.type)
     && (!f.launchedBy || (c.created_by_name ?? '') === f.launchedBy) && inHours(c.cancelled_at, f))
   const sum = (list: CashMovement[]) => da(list.reduce((s, m) => s + m.amount, 0))
-  const closedExpected = data.days.filter((d) => d.closed_at).reduce((s, d) => s + (d.expected_cash ?? 0), 0)
   const rate = data.receipt?.tva_enabled ? data.receipt.tva_rate ?? 0 : null
   return {
     sales, report, profit, rows, drops, cancelled,
     tiles: {
       float: da(data.days.reduce((s, d) => s + d.opening_float, 0)),
-      guests: report.guests ?? 0,
+      guests: sales.orders.reduce((s, o) => s + (o.order_type === 'dine_in' ? Math.max(1, Number(o.guests) || 1) : 1), 0),
+      orders: sales.orders.length,
       sales: report.net,
       cashIn: sum(moves.filter((m) => m.kind === 'in')),
-      expectedCash: data.days.length ? da(closedExpected + (data.liveExpected ?? 0)) : null,
+      expectedCash: data.liveExpected === null ? null : da(data.liveExpected),
       debts: data.debts,
       staff: data.advances,
       purchases: data.purchases,
@@ -344,7 +364,7 @@ export function dashboardView(data: DashboardData, f: DashFilters): DashboardVie
     },
     tva: rate === null ? null : { ...splitTva(report.net, rate), rate },
     waiters: [...new Set(data.sales.orders.map((o) => o.created_by_name ?? '').filter(Boolean))].sort(),
-    cashiers: [...new Set(data.sales.payments.map((p) => p.created_by_name ?? '').filter(Boolean))].sort(),
+    cashiers: [...new Set([...data.sales.payments.map((p) => p.created_by_name?.trim() ?? ''), ...data.sales.orders.map((o) => o.closed_by_name?.trim() ?? '')].filter(Boolean))].sort(),
   }
 }
 

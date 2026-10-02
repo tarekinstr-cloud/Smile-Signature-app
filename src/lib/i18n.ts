@@ -1776,6 +1776,12 @@ const fr = {
   cfgCancelAlertAmount: 'Seuil (DA)',
   cfgCancelAlertNone: 'Pas d’alerte',
   errCancelAlert: 'Seuil d’alerte invalide.',
+  notRecorded: 'Non enregistré',
+  dashGuestsHint: 'Couverts des tables (1 si non saisi) + 1 par commande À emporter et Livraison, sur la période et les filtres choisis',
+  dashCashDay: (no: number, opened: string) => `Journée n° ${no}, ouverte le ${opened.replace(' ', ' à ')}`,
+  dashNoOpenDay: 'Aucune journée ouverte',
+  dashDayStale: 'Journée non clôturée depuis plus de 24 h',
+  dashCloseDay: 'Clôturer la journée',
 }
 
 export type Dict = typeof fr
@@ -3535,6 +3541,12 @@ const ar: Dict = {
   cfgCancelAlertAmount: 'الحد (دج)',
   cfgCancelAlertNone: 'بلا تنبيه',
   errCancelAlert: 'حد التنبيه غير صحيح.',
+  notRecorded: 'غير مسجّل',
+  dashGuestsHint: 'عدد أفراد الطاولات (1 إذا ما تكتبش) + 1 لكل طلب للأخذ وتوصيل، في المدة والفلاتر المختارة',
+  dashCashDay: (no: number, opened: string) => `اليوم رقم ${no}، مفتوح في ${opened}`,
+  dashNoOpenDay: 'حتى يوم ماهو مفتوح',
+  dashDayStale: 'اليوم ما تسكّرش من أكثر من 24 ساعة',
+  dashCloseDay: 'سكّر اليوم',
 }
 
 const dicts: Record<Lang, Dict> = { fr, ar }

@@ -75,6 +75,7 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     if (page === 'dashboard') setHint(null)
   }, [page])
   const openFromDashboard = (link: DashboardLink, period: Period) => {
+    // Clôturer la journée is on the Statistique Journalier, tab Journée en cours.
     setHint({ period, statsTab: link === 'zReport' ? 'closed' : 'current' })
     onPage(link === 'expenses' ? 'expenses' : link === 'cancelledOrders' ? 'cancelledOrders' : 'stats')
   }
