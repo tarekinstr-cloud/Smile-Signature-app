@@ -3,7 +3,9 @@ import { CashClosedError, repo, type OpenOrder } from '../lib/repo'
 import { cash } from '../lib/cash'
 import type { AdjustmentsPatch, Discount, OrderLine, PaidOrder, Payment, PaymentMethod } from '../lib/types'
 import { money } from '../lib/format'
-import { PAYMENT_METHODS, computeBill, discountOf } from '../lib/billing'
+import { computeBill, discountOf, methodIcon } from '../lib/billing'
+import { isCash, paymentLabel, usePaymentModes, useReasons } from '../lib/settings'
+import { OfferReasonDialog } from './CancelDialog'
 import { useI18n } from '../lib/i18n'
 import { usePermissions } from '../lib/permissions'
 import Keypad, { amountText, parseAmount } from './Keypad'
@@ -57,6 +59,9 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
   const [discountFor, setDiscountFor] = useState<{ lineId: string | null } | null>(null)
   /** Caisse fermée: the payment waits for the drawer to be opened (Fond de caisse). */
   const [cashClosed, setCashClosed] = useState(false)
+  /** Offrir waiting for its reason: a line (its id) or the whole order (null). */
+  const [offerFor, setOfferFor] = useState<{ lineId: string | null } | null>(null)
+  const reasons = useReasons(t)
 
   const reload = useCallback(async () => {
     try {
@@ -74,7 +79,10 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
   useEffect(() => repo.subscribeOrders(() => reload()), [reload])
 
   const bill = useMemo(() => computeBill(data?.order ?? null, data?.lines ?? [], data?.payments ?? []), [data])
-  const cashLike = PAYMENT_METHODS.find((m) => m.id === method)?.cash ?? false
+  const modes = usePaymentModes()
+  const offered = modes.filter((m) => m.active)
+  // Only Espèces counts in the cash drawer and gives change.
+  const cashLike = isCash(method)
   const selected = bill.lines.find((b) => b.line.id === selectedId) ?? null
   const orderOffered = !!data?.order.offered
 
@@ -165,8 +173,14 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
     })
   }
 
-  const applyDiscount = (lineId: string | null, d: Discount | null) =>
-    adjust(lineId, d ? { discount_type: d.type, discount_value: d.value } : { discount_type: null, discount_value: 0 })
+  const applyDiscount = (lineId: string | null, d: Discount | null, reason?: string | null) =>
+    adjust(lineId, d ? { discount_type: d.type, discount_value: d.value, ...(reason ? { discount_reason: reason } : {}) } : { discount_type: null, discount_value: 0 })
+
+  /** Offrir asks for a reason when Paramètres > Motifs has some; taking the offer back needs none. */
+  function toggleOffer(lineId: string | null, on: boolean) {
+    if (on && reasons.offer.length) return setOfferFor({ lineId })
+    adjust(lineId, { offered: on })
+  }
 
   function togglePartial() {
     const on = !partial
@@ -243,7 +257,7 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
                   )}
                   {can('offer') && (
                     <button className={selected.line.offered ? 'on' : ''} aria-pressed={selected.line.offered} disabled={busy || orderOffered}
-                      onClick={() => adjust(selected.line.id, { offered: !selected.line.offered })}>
+                      onClick={() => toggleOffer(selected.line.id, !selected.line.offered)}>
                       🎁 {selected.line.offered ? t.unoffer : t.offer}
                     </button>
                   )}
@@ -256,7 +270,7 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
                   )}
                   {can('offer') && (
                     <button className={orderOffered ? 'on' : ''} aria-pressed={orderOffered} disabled={busy}
-                      onClick={() => adjust(null, { offered: !orderOffered })}>
+                      onClick={() => toggleOffer(null, !orderOffered)}>
                       🎁 {orderOffered ? t.unofferOrder : t.offerOrder}
                     </button>
                   )}
@@ -290,7 +304,7 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
                   {data.payments.map((p) => (
                     <li key={p.id}>
                       <span className="muted">{clock(p.created_at)}</span>
-                      <span>{t.payMethod[p.method] ?? p.method}</span>
+                      <span>{paymentLabel(t, p.method, modes)}</span>
                       {p.change_amount > 0 && <span className="muted small">{t.received} {money(p.received)} · {t.change} {money(p.change_amount)}</span>}
                       <strong>{money(p.amount)}</strong>
                     </li>
@@ -309,10 +323,10 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
             {bill.remaining > 0 && (
               <>
                 <div className="pay-methods">
-                  {PAYMENT_METHODS.map((m) => (
-                    <button key={m.id} type="button" className={method === m.id ? 'pay-method on' : 'pay-method'} aria-pressed={method === m.id}
-                      onClick={() => { setMethod(m.id); setReceivedStr('') }}>
-                      <span aria-hidden>{m.icon}</span>{t.payMethod[m.id]}
+                  {offered.map((m) => (
+                    <button key={m.code} type="button" className={method === m.code ? 'pay-method on' : 'pay-method'} aria-pressed={method === m.code}
+                      onClick={() => { setMethod(m.code); setReceivedStr('') }}>
+                      <span aria-hidden>{methodIcon(m.code)}</span><bdi>{paymentLabel(t, m.code, modes)}</bdi>
                     </button>
                   ))}
                 </div>
@@ -373,8 +387,14 @@ export default function PaymentScreen({ orderId, place, hallName, startPartial, 
           current={discountLine ? discountOf(discountLine.line) : discountOf(data.order)}
           busy={busy}
           onCancel={() => setDiscountFor(null)}
-          onApply={(d) => applyDiscount(discountFor.lineId, d)}
+          reasons={reasons.discount}
+          onApply={(d, reason) => applyDiscount(discountFor.lineId, d, reason)}
         />
+      )}
+      {offerFor && data && (
+        <OfferReasonDialog title={offerFor.lineId ? t.offerReasonTitle(data.lines.find((l) => l.id === offerFor.lineId)?.name ?? '') : t.offerOrder}
+          reasons={reasons.offer} onCancel={() => setOfferFor(null)}
+          onConfirm={(reason) => { const { lineId } = offerFor; setOfferFor(null); adjust(lineId, { offered: true, offer_reason: reason }) }} />
       )}
     </div>
   )

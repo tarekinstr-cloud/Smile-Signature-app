@@ -15,7 +15,8 @@ import { dispatchTickets, type SendResult } from '../lib/kitchen'
 import { deliveryContact, placeText, ticketPlace } from '../lib/place'
 import DeliveryDialog from './DeliveryDialog'
 import { useDialog } from './Dialog'
-import CancelDialog from './CancelDialog'
+import CancelDialog, { OfferReasonDialog } from './CancelDialog'
+import { useReasons } from '../lib/settings'
 import LangToggle from './LangToggle'
 import { useI18n } from '../lib/i18n'
 import { usePermissions } from '../lib/permissions'
@@ -81,7 +82,7 @@ interface PayMode {
   noTicket?: boolean
 }
 
-type Modal = 'move' | 'invoice' | 'bill' | 'print' | 'new' | 'discount' | 'delivery'
+type Modal = 'move' | 'invoice' | 'bill' | 'print' | 'new' | 'discount' | 'delivery' | 'offerReason'
 
 export default function OrderScreen({ table, hall: startHall, orderId: startOrderId, startCheckout, onBack, onNewTakeaway, onNewDelivery }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null)
@@ -101,6 +102,8 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
   /** Kitchen tickets on screen: the result of the last Valider, or a reprint. */
   const [sent, setSent] = useState<(SendResult & { sentCount: number; reprint?: boolean }) | null>(null)
   const [modal, setModal] = useState<Modal | null>(null)
+  /** Offrir waiting for its reason (Paramètres > Motifs): the line, or the whole order (null). */
+  const [offerLine, setOfferLine] = useState<string | null>(null)
   /** Annuler la CMD in progress: the reason dialog. */
   const [cancelling, setCancelling] = useState(false)
   /** Couverts: the guests picker is open. */
@@ -128,6 +131,7 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
   const menuRef = useRef<HTMLElement | null>(null)
   const dialog = useDialog()
   const { t } = useI18n()
+  const reasons = useReasons(t)
   /** Annuler la CMD, Offrir and Remise are shown only with their permission (Fichier > Permissions). */
   const { can } = usePermissions()
 
@@ -417,13 +421,18 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
       setModal(null)
     })
 
-  const applyDiscount = (d: Discount | null) =>
-    adjust(selected?.id ?? null, d ? { discount_type: d.type, discount_value: d.value } : { discount_type: null, discount_value: 0 })
+  const applyDiscount = (d: Discount | null, reason?: string | null) =>
+    adjust(selected?.id ?? null, d ? { discount_type: d.type, discount_value: d.value, ...(reason ? { discount_reason: reason } : {}) } : { discount_type: null, discount_value: 0 })
 
+  /** Offrir: with a reason when Paramètres > Motifs has offer reasons (the reason dialog replaces the confirmation). */
   async function offer() {
     if (!order) return
-    if (selected) return adjust(selected.id, { offered: !selected.offered })
-    const on = !order.offered
+    const on = selected ? !selected.offered : !order.offered
+    if (on && reasons.offer.length) {
+      setOfferLine(selected?.id ?? null)
+      return setModal('offerReason')
+    }
+    if (selected) return adjust(selected.id, { offered: on })
     if (!(await dialog.confirm(on ? t.confirmOfferOrder(where) : t.confirmUnofferOrder(where), on ? t.offerOrder : t.unofferOrder))) return
     await adjust(null, { offered: on })
   }
@@ -628,7 +637,8 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
             ) : (
               <div className="items-grid">
                 {buttons.map((b) => (
-                  <button key={b.key} className="item-card" onClick={() => tapItem(b)} disabled={busy}>
+                  <button key={b.key} className={b.item.photo_url ? 'item-card has-photo' : 'item-card'} onClick={() => tapItem(b)} disabled={busy}>
+                    {b.item.photo_url && <img className="item-photo" src={b.item.photo_url} alt="" loading="lazy" />}
                     <span className="item-name">{b.item.name}</span>
                     {b.size && <span className="item-size">{b.size.name}</span>}
                     <span className="item-price">{money(b.price)}</span>
@@ -684,8 +694,8 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
                         <span className="line-total">{offered ? <s className="muted">{money(l.unit_price * l.quantity)}</s> : money(l.unit_price * l.quantity)}</span>
                       </div>
                       {l.is_takeaway && <span className="tag takeaway-tag">{t.lineTakeaway}</span>}
-                      {offered && <span className="tag offered-tag">{t.offered}</span>}
-                      {discountOf(l) && !offered && <span className="tag">{t.discount}</span>}
+                      {offered && <span className="tag offered-tag">{t.offered}{(l.offer_reason || order?.offer_reason) && <> · <bdi>{l.offer_reason || order?.offer_reason}</bdi></>}</span>}
+                      {discountOf(l) && !offered && <span className="tag">{t.discount}{l.discount_reason && <> · <bdi>{l.discount_reason}</bdi></>}</span>}
                       {l.sent_at ? (
                         <div className="line-sent">✓ {t.sentAt(clock(l.sent_at))}</div>
                       ) : (
@@ -791,9 +801,14 @@ export default function OrderScreen({ table, hall: startHall, orderId: startOrde
           base={selectedBill ? selectedBill.gross : bill.subtotal}
           current={selected ? discountOf(selected) : discountOf(order)}
           busy={busy}
+          reasons={reasons.discount}
           onCancel={() => setModal(null)}
           onApply={applyDiscount}
         />
+      )}
+      {modal === 'offerReason' && order && (
+        <OfferReasonDialog title={offerLine ? t.offerReasonTitle(lines.find((l) => l.id === offerLine)?.name ?? '') : t.confirmOfferOrder(where)}
+          reasons={reasons.offer} onCancel={() => setModal(null)} onConfirm={(reason) => adjust(offerLine, { offered: true, offer_reason: reason })} />
       )}
       {modal === 'invoice' && order && (
         <InvoiceDialog order={order} lines={lines} payments={payments} place={where} hallName={place?.hall.name ?? null} onClose={() => { setModal(null); reloadOrder() }} />

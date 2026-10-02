@@ -156,6 +156,10 @@ export interface Repo {
   getCategoryPrinters(): Promise<CategoryPrinters>
   /** Replaces the printers of a category. The same printer cannot be given twice. */
   setCategoryPrinters(categoryId: string, printerIds: string[]): Promise<void>
+  /** Imprimante d'un article, à la place de celle(s) de sa catégorie; null: celle(s) de la catégorie. */
+  setItemPrinter(itemId: string, printerId: string | null): Promise<void>
+  /** Photo of an item (already compressed), or removes it (null). The previous file is deleted. */
+  setItemPhoto(itemId: string, image: Blob | null): Promise<void>
   /**
    * Valider: marks the order's new lines as sent, now, and builds one kitchen ticket per printer
    * concerned, with only those lines. The order stays open.
@@ -326,6 +330,8 @@ function checkoutError(code: string): Error {
   if (code.includes('cancel_paid')) return new Error(t.errCancelPaid)
   if (code.includes('table_link_required')) return new Error(t.errTableLinkRequired)
   if (code.includes('table_has_order')) return new Error(t.errTableHasOrder)
+  if (code.includes('payment_mode_inactive')) return new Error(t.errPayModeInactive)
+  if (/offer_reason|discount_reason/.test(code) && /schema cache|Could not find|does not exist/i.test(code)) return new Error(t.errMigrationSettings2)
   // Delivery zones need their own migration.
   if (code.includes('delivery_zone_not_found')) return new Error(t.errZoneGone)
   if (/delivery_zone|delivery_fee/.test(code)) return new Error(t.errMigrationZones)
@@ -449,6 +455,15 @@ function checkGuests(guests: number | null) {
 }
 
 const BACKGROUND_BUCKET = 'floor-backgrounds'
+const PHOTO_BUCKET = 'item-photos'
+
+/** Readable message when the Paramètres migration (20261008000000) has not been run, or the right is missing. */
+function settingsError(message: string): Error {
+  if (/set_item_printer|set_item_photo|printer_id|photo_url|payment_modes|bucket not found/i.test(message)
+    && /not found|does not exist|schema cache|Could not find/i.test(message)) return new Error(tr().errMigrationSettings2)
+  if (/permission_denied|row-level security|Unauthorized|403/i.test(message)) return new Error(tr().errNoPermission)
+  return new Error(message)
+}
 
 function supabaseRepo(sb: SupabaseClient): Repo {
   /** A table (or a hall's tables) with an open order cannot be deleted: the order would lose its table. */
@@ -486,7 +501,10 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       return check(await sb.from('halls').insert({ name, sort_order }).select().single()) as Hall
     },
     async updateHall(id, patch) {
-      check(await sb.from('halls').update(patch).eq('id', id))
+      const res = await sb.from('halls').update(patch).eq('id', id).select('id')
+      // « active » (Gestion des salles) comes with the migration 20261008000000.
+      if (res.error) throw /'active'/.test(res.error.message) ? new Error(tr().errMigrationSettings2) : settingsError(res.error.message)
+      if (!res.data?.length) throw new Error(tr().errNoPermission)
     },
     async deleteHall(id) {
       const tables = check(await sb.from('tables').select('id').eq('hall_id', id)) as { id: string }[]
@@ -620,7 +638,8 @@ function supabaseRepo(sb: SupabaseClient): Repo {
 
     async getMenu(opts) {
       let cats = sb.from('categories').select('id, name, color, sort_order, active')
-      let items = sb.from('items').select('id, category_id, name, price, sort_order, active')
+      // All columns: the printer and photo of an item come with a later migration.
+      let items = sb.from('items').select('*')
       if (!opts?.includeHidden) {
         cats = cats.eq('active', true)
         items = items.eq('active', true)
@@ -893,6 +912,27 @@ function supabaseRepo(sb: SupabaseClient): Repo {
         check(await sb.from('category_printers').upsert(added.map((printer_id) => ({ category_id: categoryId, printer_id })), { ignoreDuplicates: true }))
       }
     },
+    async setItemPrinter(itemId, printerId) {
+      const res = await sb.rpc('set_item_printer', { p_item_id: itemId, p_printer_id: printerId })
+      if (res.error) throw settingsError(res.error.message)
+    },
+    async setItemPhoto(itemId, image) {
+      let url: string | null = null
+      let path: string | null = null
+      if (image) {
+        path = `${itemId}/${newId()}.${image.type === 'image/webp' ? 'webp' : 'jpg'}`
+        const up = await sb.storage.from(PHOTO_BUCKET).upload(path, image, { contentType: image.type || 'image/jpeg', cacheControl: '31536000', upsert: false })
+        if (up.error) throw settingsError(up.error.message)
+        url = sb.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl
+      }
+      const res = await sb.rpc('set_item_photo', { p_item_id: itemId, p_url: url, p_path: path })
+      if (res.error) {
+        if (path) await sb.storage.from(PHOTO_BUCKET).remove([path])
+        throw settingsError(res.error.message)
+      }
+      const old = res.data as string | null
+      if (old && old !== path) await sb.storage.from(PHOTO_BUCKET).remove([old])
+    },
     async sendOrder(orderId, tableLabel) {
       const [waiter, printers, links] = await Promise.all([this.waiterName(), this.listPrinters(), this.getCategoryPrinters()])
       const res = await sb.rpc('send_order_lines', { p_order_id: orderId })
@@ -900,10 +940,11 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       const lines = (res.data as OrderLine[]).map(normalizeLine)
       if (!lines.length) return { tickets: [], unrouted: [] }
       const itemIds = [...new Set(lines.map((l) => l.item_id).filter((id): id is string => !!id))]
-      const items = itemIds.length ? (check(await sb.from('items').select('id, category_id').in('id', itemIds)) as Pick<MenuItem, 'id' | 'category_id'>[]) : []
+      const items = itemIds.length ? (check(await sb.from('items').select('*').in('id', itemIds)) as MenuItem[]) : []
       const itemCategory = Object.fromEntries(items.map((i) => [i.id, i.category_id]))
+      const itemPrinter = Object.fromEntries(items.map((i) => [i.id, i.printer_id ?? null]))
       const at = lines.reduce((max, l) => (l.sent_at && l.sent_at > max ? l.sent_at : max), '') || new Date().toISOString()
-      const built = buildKitchenTickets(lines, itemCategory, links, printers, { orderId, tableLabel, waiter, at })
+      const built = buildKitchenTickets(lines, itemCategory, links, printers, { orderId, tableLabel, waiter, at }, itemPrinter)
       const tickets = built.tickets.length ? (check(await sb.from('kitchen_tickets').insert(built.tickets).select()) as KitchenTicket[]) : []
       // Inserted rows come back in no set order: keep the printers' order.
       const rank = (t: KitchenTicket) => built.tickets.findIndex((b) => b.printer_id === t.printer_id)
@@ -1154,6 +1195,8 @@ function localRepo(): Repo {
       /* storage unavailable */
     }
   }
+  /** Like saveOrders, but tells the caller when the browser's storage is full. */
+  const saveOrdersStrict = (db: LocalOrdersDb) => localStorage.setItem(ORDERS_KEY, JSON.stringify(db))
   const orderListeners = new Set<() => void>()
   const commitOrders = (db: LocalOrdersDb) => {
     saveOrders(db)
@@ -1757,6 +1800,7 @@ function localRepo(): Repo {
       const db = loadKitchen()
       db.printers = db.printers.filter((p) => p.id !== id)
       for (const c of Object.keys(db.categoryPrinters)) db.categoryPrinters[c] = db.categoryPrinters[c].filter((x) => x !== id)
+      db.items = db.items.map((i) => (i.printer_id === id ? { ...i, printer_id: null } : i))
       db.kitchenTickets = db.kitchenTickets?.map((t) => (t.printer_id === id ? { ...t, printer_id: null } : t))
       commitOrders(db)
     },
@@ -1770,6 +1814,25 @@ function localRepo(): Repo {
       const known = new Set(db.printers.map((p) => p.id))
       db.categoryPrinters[categoryId] = printerIds.filter((id) => known.has(id))
       commitOrders(db)
+    },
+    async setItemPrinter(itemId, printerId) {
+      if (!localCan('settings')) throw new Error(tr().errNoPermission)
+      const db = loadKitchen()
+      if (printerId && !db.printers.some((p) => p.id === printerId)) throw new Error(tr().errPrinterGone)
+      db.items = db.items.map((i) => (i.id === itemId ? { ...i, printer_id: printerId } : i))
+      commitOrders(db)
+    },
+    async setItemPhoto(itemId, image) {
+      if (!localCan('edit') && !localCan('settings')) throw new Error(tr().errNoPermission)
+      const url = image ? await blobToDataUrl(image) : null
+      const db = loadOrders()
+      db.items = db.items.map((i) => (i.id === itemId ? { ...i, photo_url: url, photo_path: null } : i))
+      try {
+        saveOrdersStrict(db)
+      } catch {
+        throw new Error(tr().errPhotoStorage)
+      }
+      orderListeners.forEach((l) => l())
     },
     async sendOrder(orderId, tableLabel) {
       const waiter = await this.waiterName()
@@ -1788,7 +1851,8 @@ function localRepo(): Repo {
       // Like the order_items_restart_timer trigger: a send after « Servi » starts the timer again.
       if (order.served_at) Object.assign(order, { served_at: null, timer_at: at })
       const itemCategory = Object.fromEntries(db.items.map((i) => [i.id, i.category_id]))
-      const built = buildKitchenTickets(sent, itemCategory, db.categoryPrinters, db.printers, { orderId, tableLabel, waiter, at })
+      const itemPrinter = Object.fromEntries(db.items.map((i) => [i.id, i.printer_id ?? null]))
+      const built = buildKitchenTickets(sent, itemCategory, db.categoryPrinters, db.printers, { orderId, tableLabel, waiter, at }, itemPrinter)
       const tickets = built.tickets.map((t) => ({ ...t, id: newId() }))
       // The demo keeps only the latest tickets, to stay within the browser's storage.
       db.kitchenTickets = [...(db.kitchenTickets ?? []), ...tickets].slice(-200)

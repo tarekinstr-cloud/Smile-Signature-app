@@ -29,7 +29,24 @@ export function splitTakeaway(lines: KitchenTicketLine[]): { onSite: KitchenTick
 }
 
 /**
- * Splits the lines just sent across printers by the category of their item.
+ * Printers an item goes to: its own printer (Gestion des imprimantes par plats) when it has one that still exists,
+ * otherwise those of its category.
+ */
+export function itemTargets(
+  itemId: string | null | undefined,
+  itemCategory: Record<string, string>,
+  categoryPrinters: CategoryPrinters,
+  known: Set<string>,
+  itemPrinter: Record<string, string | null | undefined> = {},
+): string[] {
+  const own = itemId ? itemPrinter[itemId] : null
+  if (own && known.has(own)) return [own]
+  const category = itemId ? itemCategory[itemId] : undefined
+  return [...new Set(category ? categoryPrinters[category] ?? [] : [])].filter((id) => known.has(id))
+}
+
+/**
+ * Splits the lines just sent across printers by the category of their item, or the item's own printer.
  * A category linked to two printers puts its lines on both tickets. Tickets follow the printers' order.
  */
 export function buildKitchenTickets(
@@ -38,13 +55,13 @@ export function buildKitchenTickets(
   categoryPrinters: CategoryPrinters,
   printers: Printer[],
   ctx: TicketContext,
+  itemPrinter: Record<string, string | null | undefined> = {},
 ): Omit<SendResult, 'tickets'> & { tickets: Omit<KitchenTicket, 'id'>[] } {
   const byPrinter = new Map<string, KitchenTicketLine[]>()
   const unrouted: KitchenTicketLine[] = []
   const known = new Set(printers.map((p) => p.id))
   for (const l of [...lines].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
-    const category = l.item_id ? itemCategory[l.item_id] : undefined
-    const targets = (category ? categoryPrinters[category] ?? [] : []).filter((id) => known.has(id))
+    const targets = itemTargets(l.item_id, itemCategory, categoryPrinters, known, itemPrinter)
     if (!targets.length) unrouted.push(ticketLine(l))
     for (const id of new Set(targets)) {
       const list = byPrinter.get(id) ?? []

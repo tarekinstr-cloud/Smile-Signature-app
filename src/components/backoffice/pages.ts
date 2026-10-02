@@ -4,3 +4,4 @@ export type BackOfficePage = 'stats' | 'stock' | 'suppliers' | 'staff' | 'settin
   | 'purchaseNew' | 'purchases' | 'stockTransfer' | 'kitchenCharges' | 'stockState' | 'recipes'
   | 'resetNumbers' | 'cashFloat' | 'cashIn' | 'cashOut' | 'weekly' | 'expenses' | 'profit'
   | 'cancelledOrders' | 'cancelledInvoices' | 'priceLog' | 'wallpaper' | 'config'
+  | 'halls' | 'itemPrinters' | 'itemPhotos'

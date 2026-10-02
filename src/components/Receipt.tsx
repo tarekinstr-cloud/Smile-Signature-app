@@ -3,6 +3,7 @@ import { amount } from '../lib/format'
 import { computeBill, discountOf } from '../lib/billing'
 import { trIn, useI18n } from '../lib/i18n'
 import { deliveryContact } from '../lib/place'
+import { paymentLabel, usePaymentModes } from '../lib/settings'
 
 /** receipt: after the last payment. bill: the running bill of an open order (Addition). invoice: Facture. */
 export type ReceiptKind = 'receipt' | 'bill' | 'invoice'
@@ -30,6 +31,7 @@ const textLines = (text: string) => text.split('\n').map((line, i) => <div key={
 export default function Receipt({ settings, order, lines, payments, place, hallName, kind = 'receipt' }: Props) {
   const { t: appT } = useI18n()
   const t = settings.ticket_lang ? trIn(settings.ticket_lang) : appT
+  const modes = usePaymentModes()
   const money = (n: number) => `${amount(n)} ${t.currency}`
   const minus = (n: number) => <bdi dir="ltr">−{money(n)}</bdi>
   const ids = [['NIF', settings.nif], ['RC', settings.rc], ['NIS', settings.nis], ['AI', settings.ai]].filter(([, v]) => v?.trim())
@@ -144,7 +146,7 @@ export default function Receipt({ settings, order, lines, payments, place, hallN
         <>
           <div className="receipt-row">
             <span>{t.paidBy}</span>
-            <span>{t.payMethod[single.method] ?? single.method}</span>
+            <span>{paymentLabel(t, single.method, modes)}</span>
           </div>
           {single.method === 'cash' && (
             <>
@@ -159,7 +161,7 @@ export default function Receipt({ settings, order, lines, payments, place, hallN
           {payments.map((p) => (
             <div key={p.id}>
               <div className="receipt-row">
-                <span>{clock(p.created_at)} · {t.payMethod[p.method] ?? p.method}</span>
+                <span>{clock(p.created_at)} · {paymentLabel(t, p.method, modes)}</span>
                 <span>{money(p.amount)}</span>
               </div>
               {p.change_amount > 0 && <div className="receipt-sub">{t.received} {money(p.received)} · {t.change} {money(p.change_amount)}</div>}

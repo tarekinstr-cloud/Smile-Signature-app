@@ -4,6 +4,7 @@ import { money } from '../lib/format'
 import { discountAmount } from '../lib/billing'
 import { useI18n } from '../lib/i18n'
 import Keypad, { amountText, parseAmount } from './Keypad'
+import { ReasonChips } from './CancelDialog'
 
 interface Props {
   /** What the discount applies to: "Toute la commande" or the article's name. */
@@ -12,25 +13,29 @@ interface Props {
   base: number
   current: Discount | null
   busy: boolean
+  /** Reasons of Paramètres > Motifs: one must be chosen to apply a discount when the list is not empty. */
+  reasons?: string[]
   onCancel(): void
-  onApply(discount: Discount | null): void
+  onApply(discount: Discount | null, reason?: string | null): void
 }
 
 const PERCENTS = [5, 10, 15, 20, 50]
 
 /** Discount as a percentage or a fixed DA amount, typed on the keypad. */
-export default function DiscountDialog({ target, base, current, busy, onCancel, onApply }: Props) {
+export default function DiscountDialog({ target, base, current, busy, reasons = [], onCancel, onApply }: Props) {
   const { t } = useI18n()
   const [type, setType] = useState<DiscountType>(current?.type ?? 'percent')
   const [value, setValue] = useState(current ? amountText(current.value) : '')
+  const [reason, setReason] = useState<string | null>(null)
 
   const v = parseAmount(value)
-  const valid = Number.isFinite(v) && v > 0 && (type === 'amount' ? v <= base : v <= 100)
-  const off = valid ? discountAmount(base, { discount_type: type, discount_value: v }) : 0
+  const amountOk = Number.isFinite(v) && v > 0 && (type === 'amount' ? v <= base : v <= 100)
+  const valid = amountOk && (!reasons.length || !!reason)
+  const off = amountOk ? discountAmount(base, { discount_type: type, discount_value: v }) : 0
 
   function submit(e: FormEvent) {
     e.preventDefault()
-    if (valid && !busy) onApply({ type, value: v })
+    if (valid && !busy) onApply({ type, value: v }, reason)
   }
 
   return (
@@ -42,7 +47,7 @@ export default function DiscountDialog({ target, base, current, busy, onCancel, 
           <button type="button" className={type === 'percent' ? 'on' : ''} aria-pressed={type === 'percent'} onClick={() => setType('percent')}>%</button>
           <button type="button" className={type === 'amount' ? 'on' : ''} aria-pressed={type === 'amount'} onClick={() => setType('amount')}>{t.currency}</button>
         </div>
-        <div className={valid || !value ? 'amount-display' : 'amount-display bad'} dir="ltr">
+        <div className={amountOk || !value ? 'amount-display' : 'amount-display bad'} dir="ltr">
           {value || '0'} <span>{type === 'percent' ? '%' : t.currency}</span>
         </div>
         {type === 'percent' && (
@@ -51,6 +56,7 @@ export default function DiscountDialog({ target, base, current, busy, onCancel, 
           </div>
         )}
         <Keypad value={value} onChange={setValue} disabled={busy} />
+        {reasons.length > 0 && <ReasonChips label={t.reasonLabel} reasons={reasons} value={reason} onChange={setReason} />}
         <div className="change">
           <span>{t.discount}</span>
           <strong><bdi dir="ltr">−{money(off)}</bdi></strong>

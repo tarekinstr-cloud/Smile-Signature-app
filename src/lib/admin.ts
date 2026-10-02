@@ -135,6 +135,10 @@ const BACKUPS_KEY = 'smile.backups.v1'
 /** A demo user, with its password hash (never exported). */
 export interface LocalUser extends AppUser {
   password_hash: string
+  /** Code PIN (connexion rapide), hashed like the password; 5 wrong codes lock it 5 minutes. */
+  pin_hash?: string | null
+  pin_failed?: number
+  pin_locked_until?: string | null
 }
 
 /**
@@ -182,7 +186,7 @@ export function saveLocalUsers(users: LocalUser[]) {
   }
 }
 
-const publicUser = ({ password_hash: _, ...u }: LocalUser): AppUser => u
+const publicUser = ({ password_hash: _, pin_hash: _p, pin_failed: _f, pin_locked_until: _l, ...u }: LocalUser): AppUser => u
 
 /** Demo tables: every array inside the app's localStorage stores ("floor.halls", "orders.lines"…). */
 function localTables(): Map<string, Record<string, unknown>[]> {

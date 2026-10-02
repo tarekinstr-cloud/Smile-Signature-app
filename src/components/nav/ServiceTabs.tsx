@@ -13,7 +13,6 @@ interface Props {
   onAccount(): void
   onHall(id: string): void
   /** Absent for an Employé: adding a hall is an admin task. */
-  onAddHall?: () => void
   onTakeaway(): void
   onDelivery(): void
 }
@@ -39,7 +38,6 @@ export default function ServiceTabs(p: Props) {
           <bdi>{h.name}</bdi>
         </button>
       ))}
-      {p.onAddHall && <button className="svc-tab" onClick={p.onAddHall} title={t.addHall}>{t.addHallTab}</button>}
       <button className="svc-tab" aria-pressed={p.area === 'takeaway'} onClick={p.onTakeaway} title={t.takeawayOrders}>
         🥡 {t.takeawayBtn}{badge(p.takeaways)}
       </button>

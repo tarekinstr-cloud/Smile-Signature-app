@@ -63,6 +63,8 @@ export function CancelledOrdersPage() {
     for (const o of rows) m.set(o.cancel_reason || '', (m.get(o.cancel_reason || '') ?? 0) + 1)
     return [...m.entries()].sort((a, b) => b[1] - a[1])
   }, [rows])
+  // Default codes, plus the reasons written in Paramètres > Motifs that appear in the period.
+  const reasonOptions = useMemo(() => [...new Set([...CANCEL_REASONS, ...(data ?? []).map((o) => o.cancel_reason).filter((r): r is string => !!r)])], [data])
   const place = (o: Order) => placeText(t, o, o.table_id ? tables.get(o.table_id) ?? null : null)
 
   const exportCsv = () => download(`commandes-annulees-${stamp()}.csv`, toCsv(rows.map((o) => ({
@@ -80,7 +82,7 @@ export function CancelledOrdersPage() {
         <span className="muted small">{rangeLabel(range, loc)}</span>
         <select className="auto-width" value={reason} aria-label={t.cancelReasonLabel} onChange={(e) => setReason(e.target.value)}>
           <option value="">{t.allReasons}</option>
-          {CANCEL_REASONS.map((r) => <option key={r} value={r}>{t.cancelReasons[r]}</option>)}
+          {reasonOptions.map((r) => <option key={r} value={r}>{t.cancelReasons[r] ?? r}</option>)}
         </select>
         <div className="spacer" />
         <button type="button" onClick={exportCsv} disabled={!rows.length}>{t.exportCsv}</button>
