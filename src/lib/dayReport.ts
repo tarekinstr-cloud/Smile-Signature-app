@@ -130,6 +130,11 @@ export function computeDayReport(
         cash: da(voidList.reduce((s, o) => s + (o.void_cash ?? 0), 0)),
       }
     : null
+  // Ventes à crédit (already in the net: counted when sold) and Règlements crédit reçus, by method.
+  const settledBy: Record<string, number> = {}
+  for (const st of data.settlements ?? []) settledBy[st.method] = da((settledBy[st.method] ?? 0) + st.amount)
+  const settled = da(Object.values(settledBy).reduce((s, v) => s + v, 0))
+  const credit = payments.credit || settled ? { sales: payments.credit ?? 0, settlements: settledBy, settled } : null
   return {
     from, to,
     gross: da(gross), discounts: da(discounts), offered: da(offered), delivery: da(delivery), net: da(net),
@@ -142,6 +147,7 @@ export function computeDayReport(
     cash,
     closedSales,
     voids,
+    credit,
   }
 }
 
@@ -164,6 +170,10 @@ export function reportCsvRows(r: DayReport): Record<string, unknown>[] {
   }
   if (r.closedSales) line(t.daySummary, t.dayClosedSales, r.closedSales.orders, r.closedSales.amount)
   if (r.voids) line(t.daySummary, t.dayVoids, r.voids.orders, -r.voids.cash)
+  if (r.credit) {
+    line(t.daySummary, t.dayCreditSales, '', r.credit.sales)
+    line(t.daySummary, t.dayCreditSettled, '', r.credit.settled)
+  }
   for (const [m, v] of Object.entries(r.payments)) line(t.dayPayments, (t.payMethod as Record<string, string>)[m] ?? m, '', v)
   for (const type of ['dine_in', 'takeaway', 'delivery'] as const) {
     line(t.dayByType, t.dayTypes[type], r.byType[type].orders, r.byType[type].amount)

@@ -37,7 +37,11 @@ export const defaultPaymentModes = (): PaymentMode[] => [
   { code: 'cib', label: 'CIB', active: false, sort_order: 2 },
   { code: 'edahabia', label: 'Edahabia', active: false, sort_order: 3 },
   { code: 'baridimob', label: 'BaridiMob', active: false, sort_order: 4 },
+  { code: 'credit', label: null, active: true, sort_order: 90 },
 ]
+
+/** Compte client (crédit): not a checkout button like the others, it opens the customer picker (menu Clients). */
+export const isCredit = (code: string) => code === 'credit'
 
 /** Name shown for a payment mode (or a code found in old payments): its label, else the app's translation. */
 export function paymentLabel(t: Pick<Dict, 'payMethod'>, code: string, modes?: PaymentMode[]): string {
@@ -138,7 +142,7 @@ function supabaseSettings(sb: SupabaseClient): SettingsService {
     async listPaymentModes() {
       const res = await sb.from('payment_modes').select('code, label, active, sort_order')
       // Before the migration: Espèces and Carte, as before.
-      if (res.error) return missing(res.error.message) ? defaultPaymentModes().filter((m) => m.active) : Promise.reject(settingsError(res.error.message))
+      if (res.error) return missing(res.error.message) ? defaultPaymentModes().filter((m) => m.active && !isCredit(m.code)) : Promise.reject(settingsError(res.error.message))
       return (res.data as PaymentMode[]).sort(sortModes)
     },
     async createPaymentMode(label) {
@@ -223,7 +227,11 @@ function localSettings(): SettingsService {
   window.addEventListener('storage', (e) => {
     if (e.key === KEY) listeners.forEach((l) => l())
   })
-  const modes = () => load().paymentModes ?? defaultPaymentModes()
+  const modes = () => {
+    const saved = load().paymentModes ?? defaultPaymentModes()
+    // Demo saved before the Clients menu: Compte client is added.
+    return saved.some((m) => isCredit(m.code)) ? saved : [...saved, defaultPaymentModes().find((m) => isCredit(m.code))!]
+  }
   /** Payments already made in a mode (demo orders database), so it is not deleted. */
   const usedModes = (): Set<string> => {
     try {
@@ -250,7 +258,7 @@ function localSettings(): SettingsService {
       write({ ...load(), paymentModes: modes().map((m) => (m.code === code ? { ...m, ...p } : m)) })
     },
     async deletePaymentMode(code) {
-      if (code === 'cash' || code === 'card') throw new Error(tr().errPayModeBuiltin)
+      if (code === 'cash' || code === 'card' || code === 'credit') throw new Error(tr().errPayModeBuiltin)
       if (usedModes().has(code)) throw new Error(tr().errPayModeUsed)
       write({ ...load(), paymentModes: modes().filter((m) => m.code !== code) })
     },
@@ -312,7 +320,7 @@ export async function localPinCheck(username: string, pin: string): Promise<stri
 
 /** Payment modes, kept up to date (checkout screen, reports). Starts with the built-in active ones. */
 export function usePaymentModes(): PaymentMode[] {
-  const [modes, setModes] = useState<PaymentMode[]>(() => defaultPaymentModes().filter((m) => m.active))
+  const [modes, setModes] = useState<PaymentMode[]>(() => defaultPaymentModes().filter((m) => m.active && !isCredit(m.code)))
   useEffect(() => {
     let live = true
     const load = () => settings.listPaymentModes().then((m) => live && setModes(m), () => {})

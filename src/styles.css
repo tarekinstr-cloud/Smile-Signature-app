@@ -1054,3 +1054,37 @@ button.big { padding: 14px; font-size: 16px; font-weight: 600; }
 .pin-pad { display: grid; grid-template-columns: repeat(3, 72px); gap: 8px; }
 .pin-pad button { min-height: 56px; font-size: 22px; font-weight: 600; }
 button.link { background: none; border: none; color: var(--brand); text-decoration: underline; padding: 4px 0; min-height: 0; font-weight: 500; }
+
+/* Menu Clients: fiches, crédit, factures */
+.neg { color: var(--occ); }
+.customers-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 440px); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .customers-split { grid-template-columns: 1fr; } }
+.bo-table tr.selected td { background: var(--free-bg); }
+.customer-card .stat-tiles { margin: 12px 0; }
+.customer-card .stat-tile .link { padding: 0; font-size: 13px; }
+.customer-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0 0 10px; font-size: 14px; }
+.customer-facts dt { color: var(--muted); }
+.customer-facts dd { margin: 0; }
+.customer-form { display: flex; flex-direction: column; gap: 10px; }
+.customer-form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 600px) { .customer-form .row { grid-template-columns: 1fr; } }
+.customer-picker { display: flex; flex-direction: column; gap: 6px; }
+.pick-list { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.pick-list li + li { border-top: 1px solid var(--line); }
+.pick-list button { width: 100%; text-align: start; border: none; border-radius: 0; background: none; padding: 8px 10px; min-height: 40px; }
+.pick-list button:hover, .pick-list button:focus-visible { background: var(--bg); }
+.pick-list li.muted { padding: 8px 10px; }
+.customer-suggest { max-height: 180px; margin-top: -4px; }
+.customer-known { color: #14532d; margin: 0; }
+.customer-chosen { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--free-bg); }
+.credit-dialog { width: min(520px, 100%); }
+.credit-new { display: flex; flex-direction: column; gap: 8px; }
+.credit-state { margin: 0; }
+.pay-method.credit { border-style: dashed; }
+.plain-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.day-summary .sub-row td { padding-inline-start: 18px; color: var(--muted); }
+.invoice-filters { flex-wrap: wrap; }
+.invoice-filters .amount-filter { width: 110px; }
+.tag.invoice-credit { background: #fef3c7; color: #92400e; }
+.tag.invoice-cancelled { background: var(--occ-bg); color: var(--occ); }
+.tag.invoice-paid { background: var(--free-bg); color: #14532d; }

@@ -1,13 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { sharedChannel, supabase } from './repo'
 import { tr } from './i18n'
+import { loadCustomers } from './customerStore'
 import { newId } from './id'
 import { localUserName } from './backoffice'
 import { purchases } from './purchases'
 import { localIsoDay, readLocalExpenses, writeLocalExpenses } from './expenses'
 import { normalizeAdjustments } from './billing'
 import { money } from './format'
-import type { CashDay, CashMovement, DayReport, NewCashMovement, NumberReset, Order, OrderLine, Payment, SalesData } from './types'
+import type { CashDay, CashMovement, CustomerSettlement, DayReport, NewCashMovement, NumberReset, Order, OrderLine, Payment, SalesData } from './types'
 
 /**
  * Caisse (menu Statistiques / bénéfice): working days (Fond de caisse → clôture), Fonds d'entrée / de sortie, the
@@ -180,7 +181,10 @@ function supabaseCash(sb: SupabaseClient): CashService {
       const voided = await sb.from('orders').select('*').eq('status', 'cancelled').eq('voided', true)
         .gte('cancelled_at', from.toISOString()).lt('cancelled_at', to.toISOString())
       const voids = voided.error ? [] : (voided.data as NonNullable<SalesData['voids']>).map(normVoid)
-      return { orders, lines, payments: (check(pays) as Payment[]).map(normPayment), openOrders: open.count ?? 0, voids }
+      // Règlements crédit reçus (menu Clients, migration 20261009000000; none before it).
+      const settled = await sb.from('customer_settlements').select('*').gte('created_at', from.toISOString()).lt('created_at', to.toISOString())
+      const settlements = settled.error ? [] : (settled.data as CustomerSettlement[]).map((x) => ({ ...x, amount: Number(x.amount) }))
+      return { orders, lines, payments: (check(pays) as Payment[]).map(normPayment), openOrders: open.count ?? 0, voids, settlements }
     },
     subscribe: sharedChannel(sb, 'cash', ['cash_days', 'cash_movements']),
   }
@@ -437,6 +441,7 @@ function localCash(): CashService {
         openOrders: (o.orders ?? []).filter((x) => x.status === 'open').length,
         voids: (o.orders ?? []).filter((x) => x.status === 'cancelled' && x.voided && inRange(x.cancelled_at))
           .map((x) => normVoid({ ...x, cancelled_at: x.cancelled_at ?? null })),
+        settlements: loadCustomers().settlements.filter((x) => inRange(x.created_at)).map(({ items: _, ...x }) => x),
       }
     },
     subscribe(onChange) {

@@ -295,6 +295,8 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
   const pageAllowed = (page: BackOfficePage) =>
     page === 'users' || page === 'permissions' ? isAdmin
       : page === 'reservations' || page === 'reservationNew' ? can('reservations')
+      : page === 'customerNew' || page === 'customers' || page === 'customerDebts' || page === 'invoices' ? can('customers')
+      : page === 'customerSettle' ? can('credit_settle')
       : page === 'menuCsv' ? can('edit')
       : page === 'zones' || page === 'zoneNew' ? can('delivery_zones')
       : page === 'purchases' || page === 'purchaseNew' ? can('purchases')
@@ -314,6 +316,17 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       : can(page as Permission)
   const shown = (items: (AdminMenuItem | false)[]) => items.filter((i): i is AdminMenuItem => !!i)
   // Menus and entries the account has no permission for are left out, not just greyed.
+  // Clients, in the order of i-Restaurant: fiches | crédit | toutes les factures | réservations.
+  const clientPages: BackOfficePage[] = ['customerNew', 'customers', 'customerSettle', 'customerDebts', 'invoices', 'reservationNew', 'reservations']
+  const clientItems = shown([
+    can('customers') && { id: 'customer-new', label: t.customerNewTitle, checked: onBo('customerNew'), onSelect: () => openBo('customerNew') },
+    can('customers') && { id: 'customers', label: t.customersEditItem, checked: onBo('customers'), onSelect: () => openBo('customers') },
+    can('credit_settle') && { id: 'customer-settle', label: t.settleTitle, separator: can('customers'), checked: onBo('customerSettle'), onSelect: () => openBo('customerSettle') },
+    can('customers') && { id: 'customer-debts', label: t.debtsTitle, separator: !can('credit_settle'), checked: onBo('customerDebts'), onSelect: () => openBo('customerDebts') },
+    can('customers') && { id: 'invoices', label: t.allInvoicesTitle, separator: true, checked: onBo('invoices'), onSelect: () => openBo('invoices') },
+    can('reservations') && { id: 'res-new', label: t.resNewItem, separator: can('customers') || can('credit_settle'), checked: onBo('reservationNew'), onSelect: () => openBo('reservationNew') },
+    can('reservations') && { id: 'res-list', label: t.resListItem, checked: onBo('reservations'), onSelect: () => openBo('reservations') },
+  ])
   const editItems = shown([
     can('edit') && { id: 'plan', label: t.editPlanItem, checked: !backOffice && mode === 'edit', onSelect: () => { toFloor(); setMode('edit') } },
     can('edit') && { id: 'menu', label: t.menuTitle, onSelect: () => { toFloor(); setMenuAdmin(true) } },
@@ -387,12 +400,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
         signOutItem,
       ]),
     },
-    ...(can('reservations') ? [{
-      id: 'clients', label: t.navClients, current: onBo('reservations') || onBo('reservationNew'), items: [
-        { id: 'res-new', label: t.resNewItem, checked: onBo('reservationNew'), onSelect: () => openBo('reservationNew') },
-        { id: 'res-list', label: t.resListItem, checked: onBo('reservations'), onSelect: () => openBo('reservations') },
-      ],
-    }] : []),
+    ...(clientItems.length ? [{ id: 'clients', label: t.navClients, current: clientPages.some(onBo), items: clientItems }] : []),
     ...(editItems.length ? [{ id: 'edit', label: t.navEdit, current: onBo('zones') || onBo('zoneNew') || onBo('menuCsv') || onBo('recipes'), items: editItems }] : []),
     ...(staffItems.length ? [{ id: 'staff', label: t.staff, current: onBo('staff') || onBo('payroll') || onBo('devices'), items: staffItems }] : []),
     ...(stockItems.length ? [{ id: 'stock', label: t.stock, current: onBo('stock') || onBo('suppliers') || onBo('purchaseNew') || onBo('purchases') || onBo('stockTransfer') || onBo('kitchenCharges') || onBo('stockState'), items: stockItems }] : []),

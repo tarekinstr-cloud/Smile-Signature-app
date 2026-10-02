@@ -7,10 +7,10 @@ import { USER_ROLES, type UserRole } from './types'
 /**
  * What an account may open or do beyond the service screen (plan de salle, commandes, encaissement, à emporter,
  * livraison), which every account has. Same keys as the database (migrations 20260930000000_permissions.sql, 20260930010000_reservations.sql,
- * 20260930030000_delivery_zones.sql, 20260930050000_payroll.sql, 20260930060000_devices.sql, 20260930070000_supplier_purchases.sql, 20260930080000_stock_locations.sql, 20260930090000_stock_state.sql, 20260930100000_recipes.sql, 20260930110000_cash_register.sql, 20260930120000_expenses_profit.sql, 20260930140000_control.sql and 20261001000000_supplier_invoice_cancel.sql).
+ * 20260930030000_delivery_zones.sql, 20260930050000_payroll.sql, 20260930060000_devices.sql, 20260930070000_supplier_purchases.sql, 20260930080000_stock_locations.sql, 20260930090000_stock_state.sql, 20260930100000_recipes.sql, 20260930110000_cash_register.sql, 20260930120000_expenses_profit.sql, 20260930140000_control.sql, 20261001000000_supplier_invoice_cancel.sql and 20261009000000_customers_credit.sql).
  */
-export const SECTION_PERMISSIONS = ['staff', 'payroll', 'devices', 'stock', 'suppliers', 'purchases', 'stock_transfer', 'kitchen_charges', 'stock_state', 'stats', 'weekly_stats', 'expenses', 'profit', 'cancelled_orders', 'cancelled_invoices', 'price_log', 'settings', 'edit', 'recipes', 'backup', 'ticket', 'reservations', 'delivery_zones'] as const
-export const ACTION_PERMISSIONS = ['cancel_order', 'offer', 'discount', 'inventory', 'reset_numbers', 'cash_open', 'cash_in', 'cash_out', 'day_close', 'cancel_invoice', 'purchase_cancel'] as const
+export const SECTION_PERMISSIONS = ['staff', 'payroll', 'devices', 'stock', 'suppliers', 'purchases', 'stock_transfer', 'kitchen_charges', 'stock_state', 'stats', 'weekly_stats', 'expenses', 'profit', 'cancelled_orders', 'cancelled_invoices', 'price_log', 'settings', 'edit', 'recipes', 'backup', 'ticket', 'reservations', 'delivery_zones', 'customers'] as const
+export const ACTION_PERMISSIONS = ['cancel_order', 'offer', 'discount', 'inventory', 'reset_numbers', 'cash_open', 'cash_in', 'cash_out', 'day_close', 'cancel_invoice', 'purchase_cancel', 'credit_sale', 'credit_settle'] as const
 export const PERMISSIONS = [...SECTION_PERMISSIONS, ...ACTION_PERMISSIONS] as const
 export type Permission = (typeof PERMISSIONS)[number]
 

@@ -88,6 +88,20 @@ export function DayReportView({ report, day }: { report: DayReport; day: CashDay
               )}
             </tbody>
           </table>
+          {report.credit && (
+            <>
+              <h3 className="day-sub">{t.dayCredit}</h3>
+              <table className="bo-table day-summary">
+                <tbody>
+                  <tr><td>{t.dayCreditSales} <span className="muted small">· {t.dayCreditSalesHint}</span></td><td className="num">{money(report.credit.sales)}</td></tr>
+                  <tr><td>{t.dayCreditSettled}</td><td className="num">{money(report.credit.settled)}</td></tr>
+                  {Object.entries(report.credit.settlements).map(([m, v]) => (
+                    <tr key={m} className="sub-row"><td>· <bdi>{paymentLabel(t, m, modes)}</bdi> {isCash(m) && <span className="muted small">({t.inDrawer})</span>}</td><td className="num">{money(v)}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
           <h3 className="day-sub">{t.dayByType}</h3>
           <table className="bo-table day-summary">
             <tbody>
@@ -221,6 +235,7 @@ export function ZTicket({ day, report, settings }: { day: CashDay; report: DayRe
       <div className="receipt-sep" />
       <div className="receipt-subtitle">{t.dayPayments}</div>
       {Object.entries(report.payments).map(([m, v]) => row(paymentLabel(t, m, modes), money(v)))}
+      {report.credit && row(t.dayCreditSettled, money(report.credit.settled))}
       <div className="receipt-subtitle">{t.dayByType}</div>
       {(['dine_in', 'takeaway', 'delivery'] as const).map((k) => row(`${t.dayTypes[k]} (${report.byType[k].orders})`, money(report.byType[k].amount)))}
       {report.cash && (
