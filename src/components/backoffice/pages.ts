@@ -6,3 +6,4 @@ export type BackOfficePage = 'stats' | 'stock' | 'suppliers' | 'staff' | 'settin
   | 'cancelledOrders' | 'cancelledInvoices' | 'priceLog' | 'wallpaper' | 'config'
   | 'halls' | 'itemPrinters' | 'itemPhotos'
   | 'customerNew' | 'customers' | 'customerSettle' | 'customerDebts' | 'invoices'
+  | 'dashboard'

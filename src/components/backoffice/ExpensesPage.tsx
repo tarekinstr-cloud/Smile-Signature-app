@@ -13,7 +13,7 @@ import { errorText, locale, useLoad } from './useLoad'
 type Tab = 'list' | 'categories'
 
 /** Liste des dépenses: loyer, électricité… paid from the drawer (Fond de sortie) or otherwise; their categories. */
-export default function ExpensesPage() {
+export default function ExpensesPage({ initialPeriod: start }: { initialPeriod?: Period } = {}) {
   const { t } = useI18n()
   const { can } = usePermissions()
   const [tab, setTab] = useState<Tab>('list')
@@ -28,16 +28,16 @@ export default function ExpensesPage() {
           ))}
         </div>
       )}
-      {tab === 'list' ? <ExpenseList /> : <CategoryList />}
+      {tab === 'list' ? <ExpenseList start={start} /> : <CategoryList />}
     </main>
   )
 }
 
-function ExpenseList() {
+function ExpenseList({ start }: { start?: Period }) {
   const { t, lang } = useI18n()
   const { can } = usePermissions()
   const dialog = useDialog()
-  const [period, setPeriod] = useState<Period>(() => initialPeriod('month'))
+  const [period, setPeriod] = useState<Period>(() => start ?? initialPeriod('month'))
   const [categoryId, setCategoryId] = useState('')
   const range = useMemo(() => periodRange(period), [period])
   const first = isoDay(range[0])

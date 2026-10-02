@@ -297,6 +297,7 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
       : page === 'reservations' || page === 'reservationNew' ? can('reservations')
       : page === 'customerNew' || page === 'customers' || page === 'customerDebts' || page === 'invoices' ? can('customers')
       : page === 'customerSettle' ? can('credit_settle')
+      : page === 'dashboard' ? can('stats')
       : page === 'menuCsv' ? can('edit')
       : page === 'zones' || page === 'zoneNew' ? can('delivery_zones')
       : page === 'purchases' || page === 'purchaseNew' ? can('purchases')
@@ -364,8 +365,10 @@ export default function FloorScreen({ user, onSignOut }: { user: SessionUser; on
     can('devices') && { id: 'devices', label: t.devicesTitle, checked: onBo('devices'), onSelect: () => openBo('devices') },
   ])
   // Statistiques / bénéfice, in four groups with a line between them: numbering, caisse, rapports, contrôle.
-  const statsPages: BackOfficePage[] = ['resetNumbers', 'cashFloat', 'cashIn', 'cashOut', 'stats', 'weekly', 'expenses', 'profit', 'cancelledOrders', 'cancelledInvoices', 'priceLog']
+  const statsPages: BackOfficePage[] = ['dashboard', 'resetNumbers', 'cashFloat', 'cashIn', 'cashOut', 'stats', 'weekly', 'expenses', 'profit', 'cancelledOrders', 'cancelledInvoices', 'priceLog']
   const statsGroups: AdminMenuItem[][] = [
+    // Tableau de bord first, as the Statistique window of i-Restaurant.
+    shown([can('stats') && { id: 'dashboard', label: t.dashTitle, checked: onBo('dashboard'), onSelect: () => openBo('dashboard') }]),
     shown([can('reset_numbers') && { id: 'reset-numbers', label: t.resetTitle, checked: onBo('resetNumbers'), onSelect: () => openBo('resetNumbers') }]),
     shown([
       can('cash_open') && { id: 'cash-float', label: t.floatTitle, checked: onBo('cashFloat'), onSelect: () => openBo('cashFloat') },

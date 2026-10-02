@@ -298,3 +298,44 @@ export function SecurityTab() {
     </main>
   )
 }
+
+/** Configurations > Service: the cancellations amount that puts the dashboard tile « Annulations » in alert. */
+export function CancelAlertPanel() {
+  const { t } = useI18n()
+  const load = useCallback(() => settings.getCancelAlert(), [])
+  const { data, error, setError, reload } = useLoad(load)
+  useEffect(() => settings.subscribe(reload), [reload])
+  const [value, setValue] = useState('')
+  const [saved, setSaved] = useState(false)
+  useEffect(() => setValue(data == null ? '' : String(data)), [data])
+
+  async function save() {
+    try {
+      setError(null)
+      await settings.saveCancelAlert(value.trim() === '' ? null : Number(value))
+      setSaved(true)
+      await reload()
+    } catch (e) {
+      setError(errorText(e))
+    }
+  }
+
+  return (
+    <main className="content bo-content settings-content">
+      {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
+      <section className="panel">
+        <h2>{t.cfgCancelAlertTitle}</h2>
+        <p className="muted small">{t.cfgCancelAlertHint}</p>
+        <div className="config-row">
+          <label>
+            {t.cfgCancelAlertAmount}
+            <input type="number" inputMode="numeric" min={0} step={100} value={value} placeholder={t.cfgCancelAlertNone}
+              onChange={(e) => { setValue(e.target.value); setSaved(false) }} />
+          </label>
+          <button className="primary" onClick={save}>{t.save}</button>
+          {saved && <span className="banner ok small">{t.saved}</span>}
+        </div>
+      </section>
+    </main>
+  )
+}

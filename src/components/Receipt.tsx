@@ -1,6 +1,6 @@
 import type { Order, OrderLine, PaidOrder, Payment, ReceiptSettings } from '../lib/types'
 import { amount } from '../lib/format'
-import { computeBill, discountOf } from '../lib/billing'
+import { computeBill, discountOf, splitTva } from '../lib/billing'
 import { trIn, useI18n } from '../lib/i18n'
 import { deliveryContact } from '../lib/place'
 import { paymentLabel, usePaymentModes } from '../lib/settings'
@@ -138,8 +138,17 @@ export default function Receipt({ settings, order, lines, payments, place, hallN
           <div className="receipt-row"><span>{t.deliveryFee}</span><span>{money(bill.delivery)}</span></div>
         </>
       )}
+      {settings.tva_enabled && (() => {
+        const tva = splitTva(bill.total, settings.tva_rate ?? 0)
+        return (
+          <>
+            <div className="receipt-row receipt-sub"><span>{t.totalHt}</span><span>{money(tva.ht)}</span></div>
+            <div className="receipt-row receipt-sub"><span>{t.tvaLine(String(settings.tva_rate ?? 0))}</span><span>{money(tva.tva)}</span></div>
+          </>
+        )
+      })()}
       <div className="receipt-row receipt-total">
-        <span>{t.total}</span>
+        <span>{settings.tva_enabled ? t.totalTtc : t.total}</span>
         <span>{money(bill.total)}</span>
       </div>
       {single ? (

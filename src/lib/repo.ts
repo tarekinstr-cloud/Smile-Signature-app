@@ -225,6 +225,7 @@ export const defaultReceiptSettings = (): ReceiptSettings => ({
   logo: null,
   address: '', phone: '', nif: '', rc: '', nis: '', ai: '',
   paper_width: 80, ticket_lang: null, show_waiter: true, show_table: true,
+  tva_enabled: false, tva_rate: 19,
 })
 
 /** Receipt settings with every field (rows saved before the Configurations migration lack the new ones). */
@@ -238,6 +239,8 @@ export function normalizeReceipt(r: Partial<ReceiptSettings>): ReceiptSettings {
     ticket_lang: r.ticket_lang === 'fr' || r.ticket_lang === 'ar' ? r.ticket_lang : null,
     show_waiter: r.show_waiter ?? true,
     show_table: r.show_table ?? true,
+    tva_enabled: !!r.tva_enabled,
+    tva_rate: r.tva_rate == null ? d.tva_rate : Number(r.tva_rate),
   }
 }
 
@@ -318,6 +321,7 @@ export function checkoutError(code: string): Error {
   if (code.includes('no_open_day')) return new CashClosedError(t.errCashClosedPay)
   if (code.includes('cancel_reason_required')) return new Error(t.errCancelReason)
   if (code.includes('cancel_note_required')) return new Error(t.errCancelNote)
+  if (code.includes('cancel_needs_user')) return new Error(t.errCancelNeedsUser)
   if (code.includes('permission_denied:cancel_invoice')) return new Error(t.errCancelInvoice)
   if (code.includes('void_by_rpc_only')) return new Error(t.errCancelPaid)
   const short = /insufficient_cash:(-?[\d.]+)/.exec(code)
@@ -884,7 +888,13 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       return row ? normalizeReceipt(row) : defaultReceiptSettings()
     },
     async updateReceiptSettings(patch) {
-      const res = await sb.from('receipt_settings').upsert({ id: 1, ...patch })
+      let res = await sb.from('receipt_settings').upsert({ id: 1, ...patch })
+      // TVA comes with the dashboard migration: without it, the rest is saved as long as the TVA stays off.
+      if (res.error && /tva_/.test(res.error.message) && /schema cache|Could not find|does not exist/i.test(res.error.message)) {
+        if (patch.tva_enabled) throw new Error(tr().errMigrationDashboard)
+        const { tva_enabled: _e, tva_rate: _r, ...rest } = patch
+        res = await sb.from('receipt_settings').upsert({ id: 1, ...rest })
+      }
       if (res.error && /address|paper_width|ticket_lang|show_waiter|show_table|nif\b/.test(res.error.message)
         && /schema cache|Could not find|does not exist/i.test(res.error.message)) throw new Error(tr().errMigrationSettings)
       check(res)
@@ -1751,7 +1761,7 @@ function localRepo(): Repo {
         if (got < pay) throw checkoutError('amount_too_low')
         payments.push({
           id: newId(), order_id: orderId, method, amount: pay, received: got, change_amount: Math.round((got - pay) * 100) / 100,
-          created_at: new Date().toISOString(),
+          created_at: new Date().toISOString(), created_by_name: demoUserName ?? '',
         })
         remaining = Math.round((remaining - pay) * 100) / 100
       }

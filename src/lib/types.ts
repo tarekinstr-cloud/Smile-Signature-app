@@ -384,6 +384,8 @@ export interface Payment {
   /** Money given back: received − amount. */
   change_amount: number
   created_at: string
+  /** Employee who took the payment (Encaissée par, Rapport Caissier); absent before the dashboard migration. */
+  created_by_name?: string
 }
 
 /** An order after its last payment: what the receipt prints. */
@@ -419,6 +421,10 @@ export interface ReceiptSettings {
   ticket_lang?: 'fr' | 'ar' | null
   show_waiter?: boolean
   show_table?: boolean
+  /** TVA (optional, off by default): prices are TTC; the ticket shows HT, TVA and TTC when on. */
+  tva_enabled?: boolean
+  /** Rate in %, e.g. 19. */
+  tva_rate?: number
 }
 
 /** A kitchen / bar / cashier printer. The IP address is only needed once tickets are really printed. */
@@ -890,12 +896,16 @@ export interface CashMovement {
   supplier_name: string | null
   user_name: string
   created_at: string
+  /** Vidange (coffre): cash taken out of the drawer to the safe; not an expense, not in the profit. */
+  is_drop?: boolean
 }
 
 export interface NewCashMovement {
   kind: CashMovementKind
   amount: number
   reason: string
+  /** Vidange (coffre): Fond de sortie that is neither an expense nor an invoice payment. */
+  is_drop?: boolean
   supplier_invoice_id?: string | null
   /** Fond de sortie that is also a general expense of this category (Liste des dépenses). */
   expense_category_id?: string | null

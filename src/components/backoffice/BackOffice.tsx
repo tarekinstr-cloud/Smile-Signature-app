@@ -30,6 +30,8 @@ import { WallpaperPage } from './FloorSettingsPages'
 import HallsPage from './HallsPage'
 import ItemPrintersPage from './ItemPrintersPage'
 import ItemPhotosPage from './ItemPhotosPage'
+import DashboardPage, { type DashboardLink } from './DashboardPage'
+import type { Period } from './PeriodFilter'
 import { AllInvoicesPage, CustomersList, DebtsPage, NewCustomerPage, SettlePage } from './CustomersPages'
 
 interface Props {
@@ -67,6 +69,15 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
   const [customerFocus, setCustomerFocus] = useState<string | null>(null)
   /** Régler une Facture Client opened for this customer (from the card or the debts list). */
   const [settleFor, setSettleFor] = useState<string | null>(null)
+  /** Period handed from the Tableau de bord to the screen it opens (Dépenses, État Z, Rapport X, Commandes annulées). */
+  const [hint, setHint] = useState<{ period: Period; statsTab: 'current' | 'closed' } | null>(null)
+  useEffect(() => {
+    if (page === 'dashboard') setHint(null)
+  }, [page])
+  const openFromDashboard = (link: DashboardLink, period: Period) => {
+    setHint({ period, statsTab: link === 'zReport' ? 'closed' : 'current' })
+    onPage(link === 'expenses' ? 'expenses' : link === 'cancelledOrders' ? 'cancelledOrders' : 'stats')
+  }
   const settle = (id: string) => {
     setSettleFor(id)
     onPage('customerSettle')
@@ -117,6 +128,7 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
     customerSettle: [t.settleTitle, t.settleSub],
     customerDebts: [t.debtsTitle, t.debtsSub],
     invoices: [t.allInvoicesTitle, t.allInvoicesSub],
+    dashboard: [t.dashTitle, t.dashSub],
   }
   return (
     <div className="app back-office">
@@ -173,7 +185,8 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
           ))}
         </div>
       )}
-      {page === 'stats' && <StatsPage />}
+      {page === 'dashboard' && <DashboardPage onOpen={openFromDashboard} />}
+      {page === 'stats' && <StatsPage key={hint ? `${hint.statsTab}-${hint.period.from}` : 'stats'} initialTab={hint?.statsTab} initialPeriod={hint?.period} />}
       {page === 'stock' && <StockPage />}
       {page === 'suppliers' && <SuppliersPage />}
       {page === 'staff' && <StaffPage />}
@@ -200,9 +213,9 @@ export default function BackOffice({ page, menu, onBack, onOpenMenu, onOpenPrint
       {page === 'cashIn' && <CashMovesPage key="in" kind="in" onOpenFloat={() => onPage('cashFloat')} />}
       {page === 'cashOut' && <CashMovesPage key="out" kind="out" onOpenFloat={() => onPage('cashFloat')} />}
       {page === 'weekly' && <WeeklyPage />}
-      {page === 'expenses' && <ExpensesPage />}
+      {page === 'expenses' && <ExpensesPage key={hint?.period.from ?? 'expenses'} initialPeriod={hint?.period} />}
       {page === 'profit' && <ProfitPage />}
-      {page === 'cancelledOrders' && <CancelledOrdersPage />}
+      {page === 'cancelledOrders' && <CancelledOrdersPage key={hint?.period.from ?? 'cancelled'} initialPeriod={hint?.period} />}
       {page === 'cancelledInvoices' && <CancelledInvoicesPage />}
       {page === 'priceLog' && <PriceLogPage />}
       {page === 'wallpaper' && <WallpaperPage />}
