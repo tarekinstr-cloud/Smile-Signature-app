@@ -354,7 +354,13 @@ export function checkoutError(code: string): Error {
   return new Error(code)
 }
 
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
+/**
+ * VITE_SUPABASE_URL: the online project (https://xxx.supabase.co), or « same-origin » for the local server
+ * (serveur-local/): Supabase is then reached at the address the app was opened with, http://localhost on the POS and
+ * http://IP-du-POS on the tablets, behind the same web server.
+ */
+const rawUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim()
+const url = rawUrl === 'same-origin' && typeof window !== 'undefined' ? window.location.origin : rawUrl
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
 export const supabase: SupabaseClient | null = url && anonKey ? createClient(url, anonKey) : null
