@@ -10,6 +10,7 @@ import type {
   Customer, CustomerBalance, CustomerHistory, CustomerInvoice, CustomerPatch, CustomerSettlement, InvoiceRow, NewCustomer, Order,
   OrderLine, PaidOrder, Payment,
 } from './types'
+import { nowIso } from './tz'
 
 /**
  * Menu Clients: customer cards, sales on a customer's account (crédit), their settlement, and the list of every invoice.
@@ -161,7 +162,7 @@ function supabaseCustomers(sb: SupabaseClient): CustomersService {
       return normCustomer(check(await sb.from('customers').insert(cleanCustomer(c)).select('*').single()) as Customer)
     },
     async update(id, patch) {
-      check(await sb.from('customers').update({ ...cleanCustomer(patch), updated_at: new Date().toISOString() }).eq('id', id))
+      check(await sb.from('customers').update({ ...cleanCustomer(patch), updated_at: nowIso() }).eq('id', id))
     },
     async history(customerId) {
       const orders = (check(await sb.from('orders').select('*').eq('customer_id', customerId).eq('status', 'paid')
@@ -297,7 +298,7 @@ function localCustomers(): CustomersService {
       if (!localCan('customers') && !localCan('credit_sale')) throw new Error(tr().errNoPermission)
       const clean = cleanCustomer(c)
       refuseDuplicate(clean.phone)
-      const row: Customer = { ...clean, id: newId(), active: true, created_at: new Date().toISOString() }
+      const row: Customer = { ...clean, id: newId(), active: true, created_at: nowIso() }
       const db = loadCustomers()
       db.customers.push(row)
       saveCustomers(db)
@@ -365,7 +366,7 @@ function localCustomers(): CustomersService {
       })
       const row: CustomerSettlement = {
         id, customer_id: c.id, customer_name: c.name, amount: pay, method, note: (note ?? '').trim().slice(0, 300),
-        user_name: t.waiterDemo, created_at: new Date().toISOString(),
+        user_name: t.waiterDemo, created_at: nowIso(),
       }
       const fresh = loadCustomers()
       fresh.settlements.push({ ...row, items })

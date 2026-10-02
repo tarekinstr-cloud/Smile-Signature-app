@@ -8,6 +8,7 @@ import BackupPage from './BackupPage'
 import { ConfigPage } from './FloorSettingsPages'
 import { errorText } from './useLoad'
 import { CancelAlertPanel, PaymentTab, ReasonsTab, SecurityTab } from './ConfigTabsMore'
+import { nowIso } from '../../lib/tz'
 
 export type ConfigTab = 'restaurant' | 'ticket' | 'payment' | 'reasons' | 'service' | 'security' | 'backup'
 
@@ -43,7 +44,7 @@ function shrinkImage(file: File): Promise<string> {
 function useSample() {
   const { t } = useI18n()
   return useMemo(() => {
-    const now = new Date().toISOString()
+    const now = nowIso()
     const base = { discount_type: null, discount_value: 0, offered: false }
     const order: Order & Pick<PaidOrder, 'ticket_no' | 'closed_at'> = {
       ...base, id: 'preview', table_id: null, status: 'paid', note: null, created_at: now, order_type: 'dine_in',

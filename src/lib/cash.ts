@@ -9,6 +9,7 @@ import { localIsoDay, readLocalExpenses, writeLocalExpenses } from './expenses'
 import { normalizeAdjustments } from './billing'
 import { money } from './format'
 import type { CashDay, CashMovement, CustomerSettlement, DayReport, NewCashMovement, NumberReset, Order, OrderLine, Payment, SalesData } from './types'
+import { nowIso } from './tz'
 
 /**
  * Caisse (menu Statistiques / bénéfice): working days (Fond de caisse → clôture), Fonds d'entrée / de sortie, the
@@ -264,7 +265,7 @@ export function localSupplierRefund(invoiceId: string, reason: string, supplier:
   if (check) return amount
   db.movements.push({
     id: newId(), day_id: day.id, kind: 'in', amount, reason, supplier_invoice_id: invoiceId, supplier_name: supplier, user_name: user,
-    created_at: new Date().toISOString(),
+    created_at: nowIso(),
   })
   writeLocalCash(db)
   return amount
@@ -293,7 +294,7 @@ function localCash(): CashService {
     const o = readOrders()
     const row: NumberReset = {
       id: newId(), reason, last_ticket_no: o.lastTicket ?? null, last_takeaway_no: o.lastTakeaway ?? null, last_delivery_no: o.lastDelivery ?? null,
-      user_name: user, created_at: new Date().toISOString(),
+      user_name: user, created_at: nowIso(),
     }
     const max = (f: (x: NonNullable<LocalOrders['orders']>[number]) => number | null | undefined) =>
       since ? (o.orders ?? []).reduce((m, x) => Math.max(m, Number(f(x) ?? 0) || 0), 0) : 0
@@ -311,7 +312,7 @@ function localCash(): CashService {
     return row
   }
   const openDay = (db: LocalCash) => db.days.find((d) => !d.closed_at) ?? null
-  const now = () => new Date().toISOString()
+  const now = () => nowIso()
 
   return {
     async currentDay() {

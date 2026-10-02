@@ -1,3 +1,4 @@
+import { tzAddDays, tzDayStart, tzIsoDay } from '../../lib/tz'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { INVENTORY_LIMIT, InventoryStaleError, isNegative, stockLevel, stockState, stockValue, totalQty } from '../../lib/stockState'
 import { recipes } from '../../lib/recipes'
@@ -27,16 +28,12 @@ const csvNum = (n: number | null) => (n == null ? '' : String(round3(n)).replace
 const signed = (s: { unit: string }, n: number) => (n > 0 ? `+${qtyText({ quantity: n, unit: s.unit })}` : n < 0 ? `−${qtyText({ quantity: -n, unit: s.unit })}` : '0')
 const signedMoney = (n: number) => (n > 0 ? `+${money(n)}` : n < 0 ? `−${money(-n)}` : money(0))
 
-/** Local midnight of a YYYY-MM-DD date, plus `days`. */
+/** Midnight (Algiers) of a YYYY-MM-DD date, plus `days`. */
 function midnight(iso: string, days = 0) {
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Date(y, m - 1, d + days)
+  return tzAddDays(tzDayStart(iso), days)
 }
-function isoDay(d: Date) {
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
-/** Start (included) and end (excluded) of a period, in local days. */
+const isoDay = (d: Date) => tzIsoDay(d)
+/** Start (included) and end (excluded) of a period, in Algiers days. */
 function periodRange(period: Period, from: string, to: string): [Date, Date] {
   const today = todayIso()
   if (period === 'today') return [midnight(today), midnight(today, 1)]

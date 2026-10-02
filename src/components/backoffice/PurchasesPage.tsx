@@ -9,6 +9,7 @@ import { usePermissions } from '../../lib/permissions'
 import { newId } from '../../lib/id'
 import { qtyText } from './StockPage'
 import { errorText, locale, useLoad } from './useLoad'
+import { tzDate } from '../../lib/tz'
 
 /** Parses "2,5" or "2.5" (spaces ignored); null when it is not a number. */
 const parseNum = (v: string) => {
@@ -21,7 +22,7 @@ function useDay() {
   const { lang } = useI18n()
   return (iso: string) => {
     const [y, m, d] = iso.split('-').map(Number)
-    return new Date(y, m - 1, d).toLocaleDateString(locale(lang), { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+    return tzDate(y, m - 1, d).toLocaleDateString(locale(lang), { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
   }
 }
 

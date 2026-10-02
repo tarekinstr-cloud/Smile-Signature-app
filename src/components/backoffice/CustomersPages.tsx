@@ -12,6 +12,7 @@ import type { Customer, CustomerInvoice, DeliveryZone, DiningTable, InvoiceRow, 
 import ReceiptDialog from '../ReceiptDialog'
 import PeriodFilter, { initialPeriod, periodRange, rangeLabel, type Period } from './PeriodFilter'
 import { errorText, locale, useLoad } from './useLoad'
+import { serverNow } from '../../lib/serverClock'
 
 const csvType = 'text/csv;charset=utf-8'
 
@@ -45,7 +46,7 @@ const dateText = (iso: string | null | undefined, loc: string) =>
 const dateTime = (iso: string | null | undefined, loc: string) =>
   iso ? new Date(iso).toLocaleString(loc, { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : '—'
 /** Days since a date (ancienneté). */
-const ageDays = (iso: string) => Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000))
+const ageDays = (iso: string) => Math.max(0, Math.floor((serverNow() - new Date(iso).getTime()) / 86_400_000))
 
 const emptyCustomer = (): NewCustomer => ({ name: '', phone: '', address: '', zone_id: null, note: '', credit_limit: null })
 

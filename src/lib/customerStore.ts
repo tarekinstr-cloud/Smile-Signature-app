@@ -1,5 +1,6 @@
 import { newId } from './id'
 import type { Customer, CustomerSettlement } from './types'
+import { nowIso } from './tz'
 
 /**
  * Demo mode: the customers and their settlements in the browser (key smile.customers.v1). Kept apart from customers.ts so
@@ -71,7 +72,7 @@ export function linkLocalDeliveryCustomer(o: { customer_name: string | null; cus
   const c: Customer = {
     id: newId(), name: (o.customer_name?.trim() || o.customer_phone!.trim()).slice(0, 80), phone: o.customer_phone!.trim().slice(0, 30),
     address: (o.customer_address ?? '').trim().slice(0, 300), zone_id: o.delivery_zone_id ?? null, note: '', credit_limit: null,
-    active: true, created_at: new Date().toISOString(),
+    active: true, created_at: nowIso(),
   }
   db.customers.push(c)
   saveCustomers(db)

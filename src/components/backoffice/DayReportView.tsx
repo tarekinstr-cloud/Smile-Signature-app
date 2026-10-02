@@ -5,6 +5,7 @@ import type { CashDay, DayReport, ReceiptSettings, SalesRow } from '../../lib/ty
 import { money } from '../../lib/format'
 import { isCash, paymentLabel, usePaymentModes } from '../../lib/settings'
 import { useI18n } from '../../lib/i18n'
+import { nowIso } from '../../lib/tz'
 
 const TOP = 15
 
@@ -265,7 +266,7 @@ export function ZTicket({ day, report, settings }: { day: CashDay; report: DayRe
         </>
       )}
       <div className="receipt-sep" />
-      <div className="receipt-sub receipt-note">{t.zPrinted(when(new Date().toISOString()))}</div>
+      <div className="receipt-sub receipt-note">{t.zPrinted(when(nowIso()))}</div>
     </div>
   )
 }

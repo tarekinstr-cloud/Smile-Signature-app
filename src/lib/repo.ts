@@ -12,6 +12,7 @@ import { linkLocalDeliveryCustomer } from './customerStore'
 import { tr } from './i18n'
 import { computeBill, normalizeAdjustments } from './billing'
 import { newId } from './id'
+import { nowIso } from './tz'
 
 /** Data access for halls, tables, menu and orders. Backed by Supabase when configured, localStorage otherwise. */
 export interface Repo {
@@ -250,7 +251,7 @@ export const PRICE_LOG_KEY = 'smile.pricelog.v1'
 function logLocalPrice(c: Omit<PriceChange, 'id' | 'user_name' | 'created_at'>) {
   try {
     const list = JSON.parse(localStorage.getItem(PRICE_LOG_KEY) ?? '[]') as PriceChange[]
-    list.push({ ...c, id: newId(), user_name: demoUserName ?? '', created_at: new Date().toISOString() })
+    list.push({ ...c, id: newId(), user_name: demoUserName ?? '', created_at: nowIso() })
     localStorage.setItem(PRICE_LOG_KEY, JSON.stringify(list.slice(-5000)))
   } catch {
     // Not persisted (private mode).
@@ -587,7 +588,7 @@ function supabaseRepo(sb: SupabaseClient): Repo {
     },
     async updateFloorConfig(config) {
       const c = checkFloorConfig(config)
-      const res = await sb.from('app_config').update({ ...c, updated_at: new Date().toISOString() }).eq('id', 1).select('id')
+      const res = await sb.from('app_config').update({ ...c, updated_at: nowIso() }).eq('id', 1).select('id')
       if (res.error) {
         throw /pager_enabled/.test(res.error.message) ? new Error(tr().errMigrationArea)
           : /number_(min|max)/.test(res.error.message) ? new Error(tr().errMigrationNumbers) : floorError(res.error.message)
@@ -830,7 +831,7 @@ function supabaseRepo(sb: SupabaseClient): Repo {
     },
     async markPrinted(orderId) {
       // Before migration 20260930140000_control.sql the column does not exist: printing still works.
-      await sb.from('orders').update({ printed_at: new Date().toISOString() }).eq('id', orderId).eq('status', 'open').is('printed_at', null)
+      await sb.from('orders').update({ printed_at: nowIso() }).eq('id', orderId).eq('status', 'open').is('printed_at', null)
     },
     async addLine(orderId, line) {
       return normalizeLine(check(await sb.from('order_items').insert({ ...line, order_id: orderId }).select().single()) as OrderLine)
@@ -960,7 +961,7 @@ function supabaseRepo(sb: SupabaseClient): Repo {
       const items = itemIds.length ? (check(await sb.from('items').select('*').in('id', itemIds)) as MenuItem[]) : []
       const itemCategory = Object.fromEntries(items.map((i) => [i.id, i.category_id]))
       const itemPrinter = Object.fromEntries(items.map((i) => [i.id, i.printer_id ?? null]))
-      const at = lines.reduce((max, l) => (l.sent_at && l.sent_at > max ? l.sent_at : max), '') || new Date().toISOString()
+      const at = lines.reduce((max, l) => (l.sent_at && l.sent_at > max ? l.sent_at : max), '') || nowIso()
       const built = buildKitchenTickets(lines, itemCategory, links, printers, { orderId, tableLabel, waiter, at }, itemPrinter)
       const tickets = built.tickets.length ? (check(await sb.from('kitchen_tickets').insert(built.tickets).select()) as KitchenTicket[]) : []
       // Inserted rows come back in no set order: keep the printers' order.
@@ -1031,7 +1032,7 @@ function deliveryRow(patch: DeliveryPatch): DeliveryRow {
 
 export function normalizePaid(o: PaidOrder): PaidOrder {
   return {
-    ...normalizeOrder(o), status: o.status, closed_at: o.closed_at ?? new Date().toISOString(),
+    ...normalizeOrder(o), status: o.status, closed_at: o.closed_at ?? nowIso(),
     ticket_no: Number(o.ticket_no), total: Number(o.total), payment_method: o.payment_method ?? null, amount_received: Number(o.amount_received),
   }
 }
@@ -1071,7 +1072,7 @@ export function setDemoUserName(name: string | null) {
 }
 
 const newOrder = (tableId: string | null): Order => ({
-  id: newId(), table_id: tableId, status: 'open', note: null, created_at: new Date().toISOString(),
+  id: newId(), table_id: tableId, status: 'open', note: null, created_at: nowIso(),
   discount_type: null, discount_value: 0, offered: false,
   order_type: 'dine_in', takeaway_no: null, customer_name: null, customer_address: null, invoice_no: null,
   delivery_no: null, customer_phone: null, delivery_status: null,
@@ -1355,7 +1356,7 @@ function localRepo(): Repo {
       const db = loadOrders()
       const order = db.orders.find((o) => o.id === orderId && o.status === 'open')
       if (!order) throw checkoutError('order_not_open')
-      order.served_at = new Date().toISOString()
+      order.served_at = nowIso()
       commitOrders(db)
     },
     async getFloorConfig() {
@@ -1518,7 +1519,7 @@ function localRepo(): Repo {
       const available = localDrawerCash(dayId, db)
       if (cash > available) throw checkoutError(`insufficient_cash:${available}`)
       Object.assign(order, {
-        status: 'cancelled', cancel_reason: why.reason, cancel_note: why.note.trim().slice(0, 300), cancelled_at: new Date().toISOString(),
+        status: 'cancelled', cancel_reason: why.reason, cancel_note: why.note.trim().slice(0, 300), cancelled_at: nowIso(),
         cancelled_by_name: demoUserName ?? '', cancelled_total: (order as PaidOrder).total ?? 0, voided: true, voided_day_id: dayId,
         void_cash: Math.round(cash * 100) / 100,
       })
@@ -1535,7 +1536,7 @@ function localRepo(): Repo {
       const db = loadOrders()
       const order = db.orders.find((o) => o.id === orderId && o.status === 'open')
       if (!order || order.printed_at) return
-      order.printed_at = new Date().toISOString()
+      order.printed_at = nowIso()
       commitOrders(db)
     },
     async deleteOption(id) {
@@ -1638,7 +1639,7 @@ function localRepo(): Repo {
       order.order_type = 'dine_in'
       ;(db.tableMoves ??= []).push({
         id: newId(), order_id: orderId, from_table_id: fromId, to_table_id: tableId,
-        from_label: from?.label ?? null, to_label: to.label, moved_by_name: await this.waiterName(), moved_at: new Date().toISOString(),
+        from_label: from?.label ?? null, to_label: to.label, moved_by_name: await this.waiterName(), moved_at: nowIso(),
       })
       commitOrders(db)
       if (fromId && !db.orders.some((o) => o.table_id === fromId && o.status === 'open')) setTableStatus(fromId, 'free')
@@ -1698,7 +1699,7 @@ function localRepo(): Repo {
         if ((order.printed_at || order.invoice_no) && !localCan('cancel_invoice')) throw checkoutError('permission_denied:cancel_invoice')
       }
       Object.assign(order, {
-        cancel_reason: why?.reason ?? '', cancel_note: why?.note.trim().slice(0, 300) ?? '', cancelled_at: new Date().toISOString(),
+        cancel_reason: why?.reason ?? '', cancel_note: why?.note.trim().slice(0, 300) ?? '', cancelled_at: nowIso(),
         cancelled_by_name: demoUserName ?? '', cancelled_total: computeBill(normalizeOrder(order), lines).total,
       })
       order.status = 'cancelled'
@@ -1709,7 +1710,7 @@ function localRepo(): Repo {
       const db = loadOrders()
       const row: OrderLine = {
         is_takeaway: false,
-        ...line, id: newId(), order_id: orderId, created_at: new Date().toISOString(), sent_at: null,
+        ...line, id: newId(), order_id: orderId, created_at: nowIso(), sent_at: null,
         discount_type: null, discount_value: 0, offered: false,
       }
       db.lines.push(row)
@@ -1761,7 +1762,7 @@ function localRepo(): Repo {
         if (got < pay) throw checkoutError('amount_too_low')
         payments.push({
           id: newId(), order_id: orderId, method, amount: pay, received: got, change_amount: Math.round((got - pay) * 100) / 100,
-          created_at: new Date().toISOString(), created_by_name: demoUserName || tr().notRecorded,
+          created_at: nowIso(), created_by_name: demoUserName || tr().notRecorded,
         })
         remaining = Math.round((remaining - pay) * 100) / 100
       }
@@ -1772,7 +1773,7 @@ function localRepo(): Repo {
       const mine = payments.filter((p) => p.order_id === orderId)
       const ticket_no = (db.lastTicket ?? 0) + 1
       const paid: PaidOrder = {
-        ...normalizeOrder(db.orders[i]), status: 'paid', closed_at: new Date().toISOString(), ticket_no, total: bill.total,
+        ...normalizeOrder(db.orders[i]), status: 'paid', closed_at: nowIso(), ticket_no, total: bill.total,
         closed_by_name: demoUserName || tr().notRecorded,
         payment_method: mine.at(-1)?.method ?? null, amount_received: mine.reduce((s, p) => s + p.received, 0),
       }
@@ -1870,7 +1871,7 @@ function localRepo(): Repo {
       const db = loadKitchen()
       const order = db.orders.find((o) => o.id === orderId)
       if (!order || order.status !== 'open') throw checkoutError('order_not_open')
-      const at = new Date().toISOString()
+      const at = nowIso()
       const sent: OrderLine[] = []
       db.lines = db.lines.map((l) => {
         if (l.order_id !== orderId || l.sent_at) return l

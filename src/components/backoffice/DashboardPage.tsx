@@ -15,6 +15,8 @@ import {
 import type { DiningTable } from '../../lib/types'
 import { isoDay, type Period } from './PeriodFilter'
 import { locale, useLoad } from './useLoad'
+import { appNow, tzAddDays, tzDayStart, tzParts } from '../../lib/tz'
+import { serverNow } from '../../lib/serverClock'
 
 const csvType = 'text/csv;charset=utf-8'
 
@@ -32,7 +34,7 @@ export default function DashboardPage({ onOpen }: { onOpen?(page: DashboardLink,
   const loc = locale(lang)
   const { can } = usePermissions()
   const modes = usePaymentModes()
-  const today = isoDay(new Date())
+  const today = isoDay(appNow())
   const [first, setFirst] = useState(today)
   const [last, setLast] = useState(today)
   const [filters, setFilters] = useState<DashFilters>(noFilters)
@@ -45,11 +47,10 @@ export default function DashboardPage({ onOpen }: { onOpen?(page: DashboardLink,
 
   // Up to a year, so a few months (e.g. 2) load at once.
   const range = useMemo((): [Date, Date] => {
-    const a = new Date(`${first}T00:00:00`)
-    const b = new Date(`${last < first ? first : last}T00:00:00`)
-    b.setDate(b.getDate() + 1)
-    const max = new Date(a)
-    max.setFullYear(max.getFullYear() + 1)
+    const a = tzDayStart(first)
+    const b = tzAddDays(tzDayStart(last < first ? first : last), 1)
+    const p = tzParts(a)
+    const max = tzDayStart(`${p.year + 1}-${p.month + 1}-${p.day}`)
     return [a, b < max ? b : max]
   }, [first, last])
   const period: Period = { preset: 'custom', from: first, to: last < first ? first : last }
@@ -115,7 +116,7 @@ export default function DashboardPage({ onOpen }: { onOpen?(page: DashboardLink,
   // The Caisse tile is about the open working day, whatever the period: say which one, and warn when it is not closed for 24 h.
   const day = data?.currentDay ?? null
   const openedText = day ? new Date(day.opened_at).toLocaleString(loc, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : ''
-  const stale = !!day && Date.now() - new Date(day.opened_at).getTime() > 24 * 3_600_000
+  const stale = !!day && serverNow() - new Date(day.opened_at).getTime() > 24 * 3_600_000
   const top = view ? [...view.report.items].sort((a, b) => (topBy === 'quantity' ? b.quantity - a.quantity : b.amount - a.amount)).slice(0, 5) : []
 
   return (
@@ -364,8 +365,8 @@ function SalesChart({ points, mode, loc }: { points: ChartPoint[]; mode: ChartMo
   const name = (k: string) => {
     if (mode === 'hour') return `${k}h`
     if (mode === 'weekday') return t.weekdaysShort[Number(k)]
-    if (mode === 'month') return new Date(`${k}-01T00:00:00`).toLocaleDateString(loc, { month: 'short', year: '2-digit' })
-    return new Date(`${k}T00:00:00`).toLocaleDateString(loc, { day: '2-digit', month: '2-digit' })
+    if (mode === 'month') return tzDayStart(`${k}-01`).toLocaleDateString(loc, { month: 'short', year: '2-digit' })
+    return tzDayStart(k).toLocaleDateString(loc, { day: '2-digit', month: '2-digit' })
   }
   const every = Math.max(1, Math.ceil(points.length / 12))
   const shown = hover !== null ? points[hover] : null

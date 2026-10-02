@@ -1,3 +1,4 @@
+import { appNow, nowIso, tzIsoDay } from './tz'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { sharedChannel, supabase } from './repo'
 import { tr } from './i18n'
@@ -22,17 +23,14 @@ export interface PayrollService {
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
-/** Today as YYYY-MM-DD, in the device's time zone. */
-export const todayIso = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
+/** Today as YYYY-MM-DD, Algiers time on the server's clock. */
+export const todayIso = () => tzIsoDay(appNow())
 export const currentMonth = () => todayIso().slice(0, 7)
 /** "2026-09" moved by n months. */
 export function shiftMonth(month: string, n: number): string {
   const [y, m] = month.split('-').map(Number)
-  const d = new Date(y, m - 1 + n, 1)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
+  const d = new Date(Date.UTC(y, m - 1 + n, 1))
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`
 }
 /** First day of the month and first day of the next one. */
 const monthRange = (month: string): [string, string] => [`${month}-01`, `${shiftMonth(month, 1)}-01`]
@@ -158,7 +156,7 @@ function localPayroll(): PayrollService {
     },
     async addAdvance(advance) {
       const db = read()
-      const row: SalaryAdvance = { id: newId(), ...clean(advance), created_at: new Date().toISOString() }
+      const row: SalaryAdvance = { id: newId(), ...clean(advance), created_at: nowIso() }
       db.advances.push(row)
       write(db)
       return row

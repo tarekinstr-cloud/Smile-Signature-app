@@ -5,6 +5,7 @@ import { tr } from './i18n'
 import type { NewPurchase, StockItem, SupplierInvoice, SupplierInvoiceItem, SupplierPayment, SupplierPaymentStatus, SupplierReturn } from './types'
 import { newId } from './id'
 import { money } from './format'
+import { nowIso } from './tz'
 
 /**
  * Achats fournisseurs (menu Gestion du Stock): Effectuer un achat and Factures fournisseurs. Supabase tables
@@ -268,7 +269,7 @@ async function localStockOut(type: 'purchase_cancel' | 'supplier_return', invoic
       const fromKitchen = round3(l.quantity - fromDepot)
       item.quantity = round3(item.quantity - fromDepot)
       item.kitchen_quantity = round3(item.kitchen_quantity - fromKitchen)
-      item.updated_at = new Date().toISOString()
+      item.updated_at = nowIso()
       for (const [q, from] of [[fromDepot, 'depot'], [fromKitchen, 'kitchen']] as const) {
         if (q > 0) db.movements.push(localMovement({ type, item, quantity: q, from_location: from, unit_cost: l.unit_cost, invoice_id: invoiceId, batch_id: batch, user_name: user, note }))
       }
@@ -308,7 +309,7 @@ function localPurchases(): PurchasesService {
   window.addEventListener('storage', (e) => {
     if (e.key === KEY) listeners.forEach((l) => l())
   })
-  const now = () => new Date().toISOString()
+  const now = () => nowIso()
   return {
     async listInvoices() {
       return [...read().invoices].sort(invoiceOrder)

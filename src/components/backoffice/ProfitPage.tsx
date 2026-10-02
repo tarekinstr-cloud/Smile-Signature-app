@@ -1,3 +1,4 @@
+import { appNow, daysInMonth, tzParts } from '../../lib/tz'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { cash } from '../../lib/cash'
 import { expenses } from '../../lib/expenses'
@@ -23,10 +24,10 @@ export default function ProfitPage() {
   useEffect(() => {
     if (period.preset !== 'day') return
     let live = true
-    Promise.all([cash.currentDay(), cash.closedDays(new Date(0), new Date(Date.now() + 86_400_000))]).then(([day, closed]) => {
+    Promise.all([cash.currentDay(), cash.closedDays(new Date(0), new Date(appNow().getTime() + 86_400_000))]).then(([day, closed]) => {
       if (!live) return
       const start = day?.period_start ?? closed[0]?.closed_at ?? null
-      setWorkDay(start ? { start, date: isoDay(new Date(day?.opened_at ?? Date.now())) } : null)
+      setWorkDay(start ? { start, date: isoDay(day?.opened_at ? new Date(day.opened_at) : appNow()) } : null)
     }, () => live && setWorkDay(null))
     return () => { live = false }
   }, [period.preset])
@@ -34,7 +35,7 @@ export default function ProfitPage() {
   const load = useCallback(async () => {
     const [from, to] = range
     // Salaries and expenses of the working day: its date only.
-    const first = period.preset === 'day' ? workDay?.date ?? isoDay(new Date()) : isoDay(from)
+    const first = period.preset === 'day' ? workDay?.date ?? isoDay(appNow()) : isoDay(from)
     const last = period.preset === 'day' ? first : isoDay(new Date(to.getTime() - 1))
     const [sales, menu, costs] = await Promise.all([
       cash.sales(from, to),
@@ -49,7 +50,8 @@ export default function ProfitPage() {
     const c = data?.costs
     if (c?.salary_days == null || c.period_days == null) return t.profitSalariesHint
     const [from] = range
-    const whole = from.getDate() === 1 && c.period_days === new Date(from.getFullYear(), from.getMonth() + 1, 0).getDate() && period.preset !== 'day'
+    const f = tzParts(from)
+    const whole = f.day === 1 && c.period_days === daysInMonth(f.year, f.month) && period.preset !== 'day'
     return t.profitSalaryDays(c.salary_days, c.period_days, whole)
   })()
   useEffect(() => {

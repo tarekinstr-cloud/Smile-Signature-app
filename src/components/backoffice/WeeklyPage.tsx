@@ -1,3 +1,5 @@
+import { appNow } from '../../lib/tz'
+import { tzAddDays, tzDayStart, tzParts, tzStartOfDay } from '../../lib/tz'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { cash } from '../../lib/cash'
 import { expenses } from '../../lib/expenses'
@@ -22,13 +24,10 @@ const readWeekStart = () => {
   }
 }
 
-const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
-const parseDay = (s: string) => {
-  const [y, m, d] = s.split('-').map(Number)
-  return new Date(y, m - 1, d)
-}
-/** Start (local midnight) of the week containing `d`. */
-const weekOf = (d: Date, start: number) => addDays(new Date(d.getFullYear(), d.getMonth(), d.getDate()), -((d.getDay() - start + 7) % 7))
+const addDays = (d: Date, n: number) => tzAddDays(d, n)
+const parseDay = (s: string) => tzDayStart(s)
+/** Start (Algiers midnight) of the week containing `d`. */
+const weekOf = (d: Date, start: number) => addDays(tzStartOfDay(d), -((tzParts(d).weekday - start + 7) % 7))
 
 export interface WeekDay {
   day: string
@@ -104,7 +103,7 @@ interface Week {
 export default function WeeklyPage() {
   const { t, lang } = useI18n()
   const [weekStart, setWeekStart] = useState(readWeekStart)
-  const [anchor, setAnchor] = useState(() => isoDay(new Date()))
+  const [anchor, setAnchor] = useState(() => isoDay(appNow()))
   const first = useMemo(() => weekOf(parseDay(anchor), weekStart), [anchor, weekStart])
   const last = addDays(first, 6)
 
@@ -171,7 +170,7 @@ export default function WeeklyPage() {
           <button type="button" aria-label={t.weekPrev} onClick={() => setAnchor(isoDay(addDays(first, -7)))}>{lang === 'ar' ? '→' : '←'}</button>
           <input type="date" value={anchor} aria-label={t.weekPick} onChange={(e) => e.target.value && setAnchor(e.target.value)} />
           <button type="button" aria-label={t.weekNext} onClick={() => setAnchor(isoDay(addDays(first, 7)))}>{lang === 'ar' ? '←' : '→'}</button>
-          <button type="button" onClick={() => setAnchor(isoDay(new Date()))}>{t.weekThis}</button>
+          <button type="button" onClick={() => setAnchor(isoDay(appNow()))}>{t.weekThis}</button>
         </div>
         <strong>{t.weekRange(short(first), short(last))}</strong>
         <div className="spacer" />

@@ -5,6 +5,7 @@ import { useI18n } from '../../lib/i18n'
 import { money } from '../../lib/format'
 import { useDialog } from '../Dialog'
 import { errorText, locale, useLoad } from './useLoad'
+import { tzDate } from '../../lib/tz'
 
 /** Parses a DA amount typed with a comma or a dot; null when it is not a number. */
 const amount = (text: string) => {
@@ -38,7 +39,7 @@ export default function PayrollPage() {
 
   const isCurrent = month === currentMonth()
   const [y, m] = month.split('-').map(Number)
-  const monthLabel = new Date(y, m - 1, 1).toLocaleDateString(locale(lang), { month: 'long', year: 'numeric' })
+  const monthLabel = tzDate(y, m - 1, 1).toLocaleDateString(locale(lang), { month: 'long', year: 'numeric' })
   // Inactive accounts only when something concerns them this month.
   const rows = (data ?? []).filter((r) => r.active || r.monthly_salary > 0 || r.advances > 0)
   const sum = (f: (r: PayrollRow) => number) => rows.reduce((s, r) => s + f(r), 0)
@@ -145,7 +146,7 @@ function PayrollLine({ row, month, version, open, onToggle, onSalary, onAdvance,
 
   const day = (iso: string) => {
     const [y, m, d] = iso.split('-').map(Number)
-    return new Date(y, m - 1, d).toLocaleDateString(locale(lang), { weekday: 'short', day: 'numeric', month: 'short' })
+    return tzDate(y, m - 1, d).toLocaleDateString(locale(lang), { weekday: 'short', day: 'numeric', month: 'short' })
   }
 
   async function remove(a: SalaryAdvance) {

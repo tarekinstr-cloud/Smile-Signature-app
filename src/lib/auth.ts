@@ -4,6 +4,7 @@ import { tr } from './i18n'
 import { checkPassword, loadLocalUsers, saveLocalUsers } from './admin'
 import { localPinCheck, settings } from './settings'
 import type { UserRole } from './types'
+import { nowIso } from './tz'
 
 /** Who is signed in: shown in the navigation, and the role for later permissions. */
 export interface SessionUser {
@@ -156,7 +157,7 @@ function localAuth(): Auth {
       const users = loadLocalUsers()
       const u = users.find((x) => x.active && x.username === username.trim().toLowerCase())
       if (!u || !(await checkPassword(u.password_hash, password))) throw badLogin()
-      saveLocalUsers(users.map((x) => (x.id === u.id ? { ...x, last_sign_in_at: new Date().toISOString() } : x)))
+      saveLocalUsers(users.map((x) => (x.id === u.id ? { ...x, last_sign_in_at: nowIso() } : x)))
       memory = u.id
       setSession(u.id)
       notify()
@@ -168,7 +169,7 @@ function localAuth(): Auth {
     },
     async signInWithPin(username, pin) {
       const id = await localPinCheck(username, pin)
-      saveLocalUsers(loadLocalUsers().map((x) => (x.id === id ? { ...x, last_sign_in_at: new Date().toISOString() } : x)))
+      saveLocalUsers(loadLocalUsers().map((x) => (x.id === id ? { ...x, last_sign_in_at: nowIso() } : x)))
       memory = id
       setSession(id)
       notify()
