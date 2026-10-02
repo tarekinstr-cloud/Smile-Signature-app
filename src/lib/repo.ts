@@ -1761,7 +1761,7 @@ function localRepo(): Repo {
         if (got < pay) throw checkoutError('amount_too_low')
         payments.push({
           id: newId(), order_id: orderId, method, amount: pay, received: got, change_amount: Math.round((got - pay) * 100) / 100,
-          created_at: new Date().toISOString(), created_by_name: demoUserName ?? '',
+          created_at: new Date().toISOString(), created_by_name: demoUserName || tr().notRecorded,
         })
         remaining = Math.round((remaining - pay) * 100) / 100
       }
@@ -1773,6 +1773,7 @@ function localRepo(): Repo {
       const ticket_no = (db.lastTicket ?? 0) + 1
       const paid: PaidOrder = {
         ...normalizeOrder(db.orders[i]), status: 'paid', closed_at: new Date().toISOString(), ticket_no, total: bill.total,
+        closed_by_name: demoUserName || tr().notRecorded,
         payment_method: mine.at(-1)?.method ?? null, amount_received: mine.reduce((s, p) => s + p.received, 0),
       }
       db.orders[i] = paid

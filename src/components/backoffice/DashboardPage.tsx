@@ -9,7 +9,7 @@ import { useI18n } from '../../lib/i18n'
 import { usePermissions } from '../../lib/permissions'
 import { placeText } from '../../lib/place'
 import {
-  chartSeries, dashOrderNo, dashboardView, loadDashboard, noFilters, staffReport,
+  NO_CASHIER, chartSeries, dashOrderNo, dashboardView, loadDashboard, noFilters, staffReport,
   type ChartMode, type ChartPoint, type DashFilters, type DashOrder, type DashType,
 } from '../../lib/dashboard'
 import type { DiningTable } from '../../lib/types'
@@ -19,7 +19,7 @@ import { locale, useLoad } from './useLoad'
 const csvType = 'text/csv;charset=utf-8'
 
 /** Pages the dashboard opens on the same period (existing screens, not copies). */
-export type DashboardLink = 'expenses' | 'zReport' | 'xReport' | 'cancelledOrders'
+export type DashboardLink = 'expenses' | 'zReport' | 'xReport' | 'cancelledOrders' | 'closeDay'
 
 type SortKey = 'no' | 'place' | 'server' | 'cashier' | 'gross' | 'discount' | 'net' | 'method'
 
@@ -81,7 +81,7 @@ export default function DashboardPage({ onOpen }: { onOpen?(page: DashboardLink,
         case 'no': return dashOrderNo(r.order) ?? 0
         case 'place': return place(r)
         case 'server': return r.order.created_by_name ?? ''
-        case 'cashier': return r.cashiers.join(', ')
+        case 'cashier': return r.cashier
         case 'gross': return r.gross
         case 'discount': return r.discount
         case 'net': return r.net
@@ -97,7 +97,7 @@ export default function DashboardPage({ onOpen }: { onOpen?(page: DashboardLink,
 
   const exportOrders = () => view && download(`tableau-de-bord-${stamp()}.csv`, toCsv(sorted.map((r) => ({
     [t.orderNoCol]: dashOrderNo(r.order) ?? '', [t.colDate]: r.order.closed_at ?? '', [t.placeCol]: place(r), [t.dashServer]: r.order.created_by_name ?? '',
-    [t.dashCashier]: r.cashiers.join(', '), [t.dashGross]: csvDa(r.gross), [t.dashDiscount]: csvDa(r.discount), [t.dayDelivery]: csvDa(r.delivery),
+    [t.dashCashier]: r.cashier || t.notRecorded, [t.dashGross]: csvDa(r.gross), [t.dashDiscount]: csvDa(r.discount), [t.dayDelivery]: csvDa(r.delivery),
     [t.dashNet]: csvDa(r.net), [t.payMethodLabel]: r.methods.map(label).join(' + '),
   }))), csvType)
 
@@ -112,6 +112,10 @@ export default function DashboardPage({ onOpen }: { onOpen?(page: DashboardLink,
     </th>
   )
   const alert = !!view && alertAt !== null && view.tiles.cancelledAmount > alertAt
+  // The Caisse tile is about the open working day, whatever the period: say which one, and warn when it is not closed for 24 h.
+  const day = data?.currentDay ?? null
+  const openedText = day ? new Date(day.opened_at).toLocaleString(loc, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : ''
+  const stale = !!day && Date.now() - new Date(day.opened_at).getTime() > 24 * 3_600_000
   const top = view ? [...view.report.items].sort((a, b) => (topBy === 'quantity' ? b.quantity - a.quantity : b.amount - a.amount)).slice(0, 5) : []
 
   return (
@@ -147,6 +151,7 @@ export default function DashboardPage({ onOpen }: { onOpen?(page: DashboardLink,
           <select className="auto-width" value={filters.cashedBy} onChange={(e) => set({ cashedBy: e.target.value })}>
             <option value="">{t.dashAll}</option>
             {(view?.cashiers ?? []).map((n) => <option key={n} value={n}>{n}</option>)}
+            <option value={NO_CASHIER}>{t.notRecorded}</option>
           </select>
         </label>
         {JSON.stringify(filters) !== JSON.stringify(noFilters()) && <button type="button" className="link" onClick={() => setFilters(noFilters())}>{t.dashReset}</button>}
@@ -156,10 +161,16 @@ export default function DashboardPage({ onOpen }: { onOpen?(page: DashboardLink,
         <>
           <section className="stat-tiles dash-tiles" aria-live="polite">
             {tile(t.dashFloat, money(view.tiles.float))}
-            {tile(t.dashGuests, String(view.tiles.guests))}
+            {tile(t.dashGuests, String(view.tiles.guests), <small className="muted" title={t.dashGuestsHint}>{t.dashOrders(view.tiles.orders)}</small>)}
             {tile(t.dashSales, money(view.tiles.sales), view.tva && <small className="muted">{t.dashHt} {money(view.tva.ht)} · {t.tvaShort} {money(view.tva.tva)}</small>, 'main')}
             {tile(t.dashIn, money(view.tiles.cashIn))}
-            {tile(t.dashCash, view.tiles.expectedCash === null ? '—' : money(view.tiles.expectedCash))}
+            <div className={`stat-tile${stale ? ' alert-tile' : ''}`}>
+              <span>{t.dashCash}</span>
+              <strong>{view.tiles.expectedCash === null ? '—' : money(view.tiles.expectedCash)}</strong>
+              {day ? <small className="muted">{t.dashCashDay(day.day_no, openedText)}</small> : <small className="muted">{t.dashNoOpenDay}</small>}
+              {stale && <small>⚠ {t.dashDayStale}</small>}
+              {stale && onOpen && can('day_close') && <button type="button" className="link" onClick={() => onOpen('closeDay', period)}>{t.dashCloseDay}</button>}
+            </div>
             {tile(t.dashDebts, money(view.tiles.debts), undefined, view.tiles.debts ? 'warn-tile' : '')}
             {tile(t.dashStaff, money(view.tiles.staff))}
             {tile(t.dashPurchases, money(view.tiles.purchases))}
@@ -251,7 +262,7 @@ export default function DashboardPage({ onOpen }: { onOpen?(page: DashboardLink,
                           <td>{dashOrderNo(r.order) ?? '—'}</td>
                           <td>{place(r)}</td>
                           <td><bdi>{r.order.created_by_name || '—'}</bdi></td>
-                          <td><bdi>{r.cashiers.join(', ') || '—'}</bdi></td>
+                          <td>{r.cashier ? <bdi>{r.cashier}</bdi> : <span className="muted">{t.notRecorded}</span>}</td>
                           <td className="num">{money(r.gross)}</td>
                           <td className="num">{r.discount ? `−${money(r.discount)}` : '—'}</td>
                           <td className="num"><strong>{money(r.net)}</strong></td>
@@ -288,7 +299,7 @@ export default function DashboardPage({ onOpen }: { onOpen?(page: DashboardLink,
                 <tfoot><tr className="total"><td>{t.total}</td><td /><td className="num">{money(view.report.categories.reduce((s, c) => s + c.amount, 0))}</td></tr></tfoot>
               </table>
             ) : (
-              <StaffTable rows={staffReport(modal, view.sales, view.cancelled, t.dayUnknownEmployee)} label={label} kind={modal} />
+              <StaffTable rows={staffReport(modal, view.sales, view.cancelled, modal === 'cashier' ? t.notRecorded : t.dayUnknownEmployee)} label={label} kind={modal} />
             )}
           </div>
         </div>

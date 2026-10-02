@@ -135,6 +135,8 @@ export interface Order extends Adjustments {
   invoice_no: number | null
   /** Fiche client (menu Clients): a delivery's customer (found by phone) or the account a sale was put on. */
   customer_id?: string | null
+  /** Employee who closed the order (last payment, or an entirely offered order); written by the database. */
+  closed_by_name?: string | null
   /** Delivery zone chosen for a delivery (null: none, or the zone was deleted since). */
   delivery_zone_id?: string | null
   /** Name of that zone when it was chosen; stays after the zone is renamed or deleted. */
