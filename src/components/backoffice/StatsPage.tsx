@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { cash } from '../../lib/cash'
 import { repo } from '../../lib/repo'
-import { cashSummary, categoryOfItems, computeDayReport, reportCsvRows } from '../../lib/dayReport'
+import { reportCsvRows } from '../../lib/dayReport'
+import { loadLive } from '../../lib/liveDay'
 import { download, stamp, toCsv } from '../../lib/admin'
 import { csvDa, money } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
 import { usePermissions } from '../../lib/permissions'
-import type { CashDay, DayReport, SalesData } from '../../lib/types'
+import type { CashDay, SalesData } from '../../lib/types'
 import { PaidTicketsTable, paidTickets } from './ControlPages'
 import PeriodFilter, { initialPeriod, periodRange, rangeLabel, type Period } from './PeriodFilter'
 import { DayReportView, ZDialog, gapClass, gapText } from './DayReportView'
@@ -34,46 +35,13 @@ function useThrottled(fn: () => void, ms: number) {
   }, [fn, ms])
 }
 
-interface Live {
-  day: CashDay | null
-  report: DayReport
-  sales: SalesData
-}
-
-/** Report of the working day in progress: sales since the last closing, cash expected in the drawer. */
-async function loadLive(): Promise<Live> {
-  const day = await cash.currentDay()
-  let start = day?.period_start
-  if (!start) {
-    // Drawer not opened yet: what was sold since the last closing (or since midnight).
-    const [last] = await cash.closedDays(new Date(0), new Date(Date.now() + 86_400_000))
-    const midnight = new Date()
-    midnight.setHours(0, 0, 0, 0)
-    start = last?.closed_at ?? midnight.toISOString()
-  }
-  const from = new Date(start)
-  const to = new Date(Date.now() + 60_000)
-  const [sales, menu, moves] = await Promise.all([
-    cash.sales(from, to),
-    repo.getMenu({ includeHidden: true }).catch(() => null),
-    day ? cash.movements({ dayId: day.id }) : Promise.resolve([]),
-  ])
-  const sum = (k: 'in' | 'out') => moves.filter((m) => m.kind === k).reduce((s, m) => s + m.amount, 0)
-  // Cash given back for tickets cancelled today (Factures annulées) leaves the drawer, as in cash_day_totals.
-  const refunded = (sales.voids ?? []).filter((v) => day && v.voided_day_id === day.id).reduce((s, v) => s + (v.void_cash ?? 0), 0)
-  const cashSales = sales.payments.filter((p) => p.method === 'cash').reduce((s, p) => s + p.amount, 0) - refunded
-  const box = day ? cashSummary(day.opening_float, cashSales, sum('in'), sum('out')) : null
-  const now = new Date().toISOString()
-  // Drawer closed: everything since the last closing was taken with the drawer closed.
-  return { day, sales, report: computeDayReport(sales, categoryOfItems(menu), from.toISOString(), now, box, day?.opened_at ?? now) }
-}
-
-type Tab = 'current' | 'closed'
+export type Tab = 'current' | 'closed'
 
 /** Statistique Journalier: the day in progress (live), its closing, and the closed days. */
-export default function StatsPage() {
+export default function StatsPage({ initialTab = 'current', initialPeriod: start }: { initialTab?: Tab; initialPeriod?: Period } = {}) {
   const { t } = useI18n()
-  const [tab, setTab] = useState<Tab>('current')
+  const [tab, setTab] = useState<Tab>(initialTab)
+  useEffect(() => setTab(initialTab), [initialTab])
   return (
     <main className="content bo-content">
       <div className="segmented bo-tabs inline-tabs" role="tablist" aria-label={t.dailyStatsTitle}>
@@ -83,7 +51,7 @@ export default function StatsPage() {
           </button>
         ))}
       </div>
-      {tab === 'current' ? <CurrentDay onClosed={() => setTab('closed')} /> : <ClosedDays />}
+      {tab === 'current' ? <CurrentDay onClosed={() => setTab('closed')} /> : <ClosedDays start={start} />}
     </main>
   )
 }
@@ -238,9 +206,9 @@ function CloseDialog({ day, onClose, onDone }: { day: CashDay; onClose(): void; 
 }
 
 /** Journées clôturées: list over a period, each day's report and its Z ticket. */
-function ClosedDays() {
+function ClosedDays({ start }: { start?: Period }) {
   const { t, lang } = useI18n()
-  const [period, setPeriod] = useState<Period>(() => initialPeriod('month'))
+  const [period, setPeriod] = useState<Period>(() => start ?? initialPeriod('month'))
   const range = useMemo(() => periodRange(period), [period])
   const load = useCallback(() => cash.closedDays(range[0], range[1]), [range])
   const { data, error, setError, reload } = useLoad(load)

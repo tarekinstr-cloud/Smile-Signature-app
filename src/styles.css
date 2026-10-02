@@ -1088,3 +1088,36 @@ button.link { background: none; border: none; color: var(--brand); text-decorati
 .tag.invoice-credit { background: #fef3c7; color: #92400e; }
 .tag.invoice-cancelled { background: var(--occ-bg); color: var(--occ); }
 .tag.invoice-paid { background: var(--free-bg); color: #14532d; }
+
+/* Tableau de bord */
+.bo-content.dashboard { max-width: 1440px; }
+.dash-filters { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 10px 14px; }
+.dash-tiles { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+.stat-tile.alert-tile { border-color: var(--occ); background: var(--occ-bg); }
+.stat-tile.alert-tile span, .stat-tile.alert-tile small { color: var(--occ); }
+.stat-tile.warn-tile strong, .stat-tile.neg-tile strong { color: var(--occ); }
+.stat-tile .link { padding: 0; font-size: 13px; text-align: start; }
+.dash-split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; align-items: start; }
+@media (max-width: 1000px) { .dash-split { grid-template-columns: 1fr; } }
+.dash-range { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+@media (max-width: 600px) { .dash-range { grid-template-columns: 1fr 1fr; } }
+.dash-left .segmented { flex-wrap: wrap; }
+.dash-chart { margin: 10px 0; }
+.dash-bar { fill: var(--chart-this); }
+.week-chart g.on .dash-bar { fill: #b45309; }
+.dash-top { margin: 0 0 12px; padding-inline-start: 20px; display: flex; flex-direction: column; gap: 4px; }
+.dash-top li strong { float: inline-end; font-variant-numeric: tabular-nums; }
+.dash-links { flex-wrap: wrap; }
+.dash-orders { max-height: 480px; overflow-y: auto; }
+.dash-orders td, .dash-orders th { white-space: nowrap; }
+.dash-chart .chart-axis { font-size: 13px; }
+.sort-btn { background: none; border: none; padding: 0; min-height: 0; font: inherit; color: inherit; cursor: pointer; }
+.dash-totals { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 24px; margin: 10px 0 0; }
+.dash-totals div { display: flex; gap: 8px; }
+.dash-totals dt { color: var(--muted); }
+.dash-totals dd { margin: 0; font-variant-numeric: tabular-nums; }
+.dash-dialog { width: min(900px, 100%); }
+.cancel-detail { display: grid; gap: 8px; padding: 6px 0; }
+.cancel-detail .bo-table { font-size: 13px; }
+.tva-row { align-items: end; }
+.print-area .print-cancel .receipt-sub { padding-inline-start: 6px; }

@@ -118,7 +118,9 @@ export function CashMovesPage({ kind, onOpenFloat }: { kind: CashMovementKind; o
   const reloadDay = dayLoad.reload
   useEffect(() => cash.subscribe(() => { reloadDay(); reload() }), [reload, reloadDay])
 
-  const rows = data ?? []
+  /** Fonds de sortie: all, only the vidanges (coffre), or the other outs. */
+  const [show, setShow] = useState<'all' | 'drops' | 'others'>('all')
+  const rows = (data ?? []).filter((m) => show === 'all' || (show === 'drops') === !!m.is_drop)
   const total = rows.reduce((s, m) => s + m.amount, 0)
 
   async function remove(m: CashMovement) {
@@ -133,7 +135,7 @@ export function CashMovesPage({ kind, onOpenFloat }: { kind: CashMovementKind; o
 
   const exportCsv = () => download(`${kind === 'in' ? 'fonds-entree' : 'fonds-sortie'}-${stamp()}.csv`, toCsv(rows.map((m) => ({
     [t.colDate]: new Date(m.created_at).toLocaleString(locale(lang)), [t.colAmount]: csvDa(m.amount), [t.cashReason]: m.reason,
-    [t.cashInvoiceCol]: m.supplier_name ?? '', [t.colEmployee]: m.user_name,
+    [t.cashInvoiceCol]: m.supplier_name ?? '', [t.colEmployee]: m.user_name, [t.dropTag]: m.is_drop ? '✓' : '',
   }))), 'text/csv;charset=utf-8')
 
   return (
@@ -158,6 +160,13 @@ export function CashMovesPage({ kind, onOpenFloat }: { kind: CashMovementKind; o
         <div className="bo-toolbar">
           <PeriodFilter value={period} onChange={setPeriod} />
           <span className="muted small">{period.preset === 'day' ? (day ? t.dayNo(day.day_no) : t.dayNotOpen) : rangeLabel(range, locale(lang))}</span>
+          {kind === 'out' && (
+            <select className="auto-width" value={show} aria-label={t.dropFilter} onChange={(e) => setShow(e.target.value as typeof show)}>
+              <option value="all">{t.dropAll}</option>
+              <option value="drops">{t.dropOnly}</option>
+              <option value="others">{t.dropOthers}</option>
+            </select>
+          )}
         </div>
         {!data ? (
           !error && <p className="muted">{t.loading}</p>
@@ -181,6 +190,7 @@ export function CashMovesPage({ kind, onOpenFloat }: { kind: CashMovementKind; o
                   <td className="num"><strong>{money(m.amount)}</strong></td>
                   <td>
                     <bdi>{m.reason}</bdi>
+                    {m.is_drop && <> <span className="tag">{t.dropTag}</span></>}
                     {m.supplier_name && <div className="muted small">{m.kind === 'in' ? t.cashRefundInvoice(m.supplier_name) : t.cashPaidInvoice(m.supplier_name)}</div>}
                   </td>
                   <td>{m.user_name || '—'}</td>
@@ -215,6 +225,8 @@ function MoveForm({ kind, day, canPayInvoice, onSaved }: { kind: CashMovementKin
   const [invoices, setInvoices] = useState<SupplierInvoice[]>([])
   const [categoryId, setCategoryId] = useState('')
   const [categories, setCategories] = useState<ExpenseCategory[]>([])
+  /** Vidange (coffre): cash to the safe, neither an expense nor an invoice payment. */
+  const [drop, setDrop] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -225,7 +237,7 @@ function MoveForm({ kind, day, canPayInvoice, onSaved }: { kind: CashMovementKin
   useEffect(() => {
     if (kind === 'out') expenses.categories().then((l) => setCategories(l.filter((c) => c.active)), () => setCategories([]))
   }, [kind])
-  const invoice = invoices.find((i) => i.id === invoiceId) ?? null
+  const invoice = drop ? null : invoices.find((i) => i.id === invoiceId) ?? null
   const presets = kind === 'in' ? t.cashInPresets : t.cashOutPresets
 
   async function submit(e: FormEvent) {
@@ -234,20 +246,21 @@ function MoveForm({ kind, day, canPayInvoice, onSaved }: { kind: CashMovementKin
     const n = parseAmount(amount)
     if (n === null || n <= 0) return setError(t.errCashAmount)
     if (invoice && n > remaining(invoice) + 0.001) return setError(t.errPayAmount)
-    const category = !invoice ? categories.find((c) => c.id === categoryId) : undefined
-    if (!reason.trim() && !invoice && !category) return setError(t.errCashReason)
+    const category = !invoice && !drop ? categories.find((c) => c.id === categoryId) : undefined
+    if (!reason.trim() && !invoice && !category && !drop) return setError(t.errCashReason)
     setBusy(true)
     try {
       setError(null)
       const m = await cash.addMovement({
-        kind, amount: n, reason: reason.trim() || (invoice ? t.cashInvoiceReason(invoice.supplier_name) : category?.name ?? ''), supplier_invoice_id: invoice?.id ?? null,
-        expense_category_id: !invoice && categoryId ? categoryId : null,
+        kind, amount: n, reason: reason.trim() || (drop ? t.dropReason : invoice ? t.cashInvoiceReason(invoice.supplier_name) : category?.name ?? ''), supplier_invoice_id: invoice?.id ?? null,
+        expense_category_id: !invoice && !drop && categoryId ? categoryId : null, is_drop: drop,
       })
       setNotice(kind === 'in' ? t.cashInSaved(money(m.amount)) : t.cashOutSaved(money(m.amount)))
       setAmount('')
       setReason('')
       setInvoiceId('')
       setCategoryId('')
+      setDrop(false)
       loadInvoices()
       onSaved()
     } catch (err) {
@@ -265,7 +278,13 @@ function MoveForm({ kind, day, canPayInvoice, onSaved }: { kind: CashMovementKin
       {notice && <div className="banner ok" role="status" onClick={() => setNotice(null)}>{notice}</div>}
       <form className="res-form" onSubmit={submit}>
         {error && <p className="error small" role="alert">{error}</p>}
-        {canPayInvoice && invoices.length > 0 && (
+        {kind === 'out' && (
+          <label className="check">
+            <input type="checkbox" checked={drop} onChange={(e) => { setDrop(e.target.checked); setInvoiceId(''); setCategoryId('') }} />
+            <span><strong>{t.dropReason}</strong> <span className="muted small">— {t.dropHint}</span></span>
+          </label>
+        )}
+        {canPayInvoice && !drop && invoices.length > 0 && (
           <label>
             {t.cashPayInvoice}
             <select value={invoiceId} onChange={(e) => {
@@ -280,7 +299,7 @@ function MoveForm({ kind, day, canPayInvoice, onSaved }: { kind: CashMovementKin
             </select>
           </label>
         )}
-        {kind === 'out' && !invoice && categories.length > 0 && (
+        {kind === 'out' && !invoice && !drop && categories.length > 0 && (
           <label>
             {t.cashExpenseCategory} ({t.optional})
             <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
@@ -295,12 +314,12 @@ function MoveForm({ kind, day, canPayInvoice, onSaved }: { kind: CashMovementKin
             <input dir="ltr" inputMode="decimal" value={amount} placeholder="0" onChange={(e) => setAmount(e.target.value)} />
           </label>
           <label>
-            {t.cashReason}{invoice ? ` (${t.optional})` : ''}
-            <input value={reason} placeholder={invoice ? t.cashInvoiceReason(invoice.supplier_name) : kind === 'in' ? t.cashReasonPh : t.cashReasonOutPh} maxLength={300}
+            {t.cashReason}{invoice || drop ? ` (${t.optional})` : ''}
+            <input value={reason} placeholder={drop ? t.dropReason : invoice ? t.cashInvoiceReason(invoice.supplier_name) : kind === 'in' ? t.cashReasonPh : t.cashReasonOutPh} maxLength={300}
               onChange={(e) => setReason(e.target.value)} />
           </label>
         </div>
-        {!invoice && (
+        {!invoice && !drop && (
           <div className="chip-row">
             {presets.map((p) => (
               <button key={p} type="button" className={`chip${reason === p ? ' on' : ''}`} onClick={() => setReason(p)}>{p}</button>

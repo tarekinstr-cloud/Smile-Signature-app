@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { cash } from '../../lib/cash'
 import { priceLog } from '../../lib/control'
 import { repo } from '../../lib/repo'
@@ -24,8 +25,8 @@ function useTables() {
   return tables
 }
 
-function usePeriod(preset: Period['preset'] = 'month') {
-  const [period, setPeriod] = useState<Period>(() => initialPeriod(preset))
+function usePeriod(preset: Period['preset'] = 'month', initial?: Period) {
+  const [period, setPeriod] = useState<Period>(() => initial ?? initialPeriod(preset))
   const range = useMemo(() => periodRange(period), [period])
   return { period, setPeriod, range }
 }
@@ -48,10 +49,11 @@ const when = (iso: string | null | undefined, loc: string) =>
   iso ? new Date(iso).toLocaleString(loc, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : '—'
 
 /** Commandes Annulées: every order cancelled with items, its reason, who, when, and what was already sent to the kitchen. */
-export function CancelledOrdersPage() {
+export function CancelledOrdersPage({ initialPeriod: start }: { initialPeriod?: Period } = {}) {
   const { t, lang } = useI18n()
   const loc = locale(lang)
-  const { period, setPeriod, range } = usePeriod()
+  const { period, setPeriod, range } = usePeriod('month', start)
+  const [printing, setPrinting] = useState(false)
   const { data, error, setError } = useCancelled(range)
   const tables = useTables()
   const [reason, setReason] = useState('')
@@ -85,8 +87,10 @@ export function CancelledOrdersPage() {
           {reasonOptions.map((r) => <option key={r} value={r}>{t.cancelReasons[r] ?? r}</option>)}
         </select>
         <div className="spacer" />
+        <button type="button" onClick={() => setPrinting(true)} disabled={!rows.length}>🖨 {t.print}</button>
         <button type="button" onClick={exportCsv} disabled={!rows.length}>{t.exportCsv}</button>
       </div>
+      {printing && <PrintCancelled title={t.cancelledOrdersTitle} range={rangeLabel(range, loc)} rows={rows} place={place} loc={loc} onDone={() => setPrinting(false)} />}
       <div className="stat-tiles">
         <div className="stat-tile main"><span>{t.cancelledCount}</span><strong>{rows.length}</strong><small className="muted">{money(total)}</small></div>
         {byReason.slice(0, 3).map(([r, n]) => (
@@ -159,14 +163,34 @@ function CancelledRow({ o, place, loc, open, onToggle, kind }: {
       {open && (
         <tr className="control-lines">
           <td colSpan={kind !== undefined ? 9 : 8}>
-            {o.lines.map((l) => (
-              <div key={l.id}>
-                {l.quantity} × {l.name}
-                {(l.options ?? []).length > 0 && <span className="muted"> ({l.options.map((x) => x.name).join(', ')})</span>}
-                {l.sent_at && <span className="muted small"> · {t.sentShort}</span>}
-              </div>
-            ))}
-            <div className="muted small">{t.openedBy(when(o.created_at, loc), o.created_by_name || '—')}</div>
+            <div className="cancel-detail">
+              <table className="bo-table">
+                <thead><tr><th className="num">{t.colQty}</th><th>{t.itemCol}</th><th className="num">{t.unitPriceCol}</th><th className="num">{t.colAmount}</th></tr></thead>
+                <tbody>
+                  {o.lines.map((l) => {
+                    const unit = l.unit_price + (l.options ?? []).reduce((s, x) => s + (x.price_delta ?? 0), 0)
+                    return (
+                      <tr key={l.id}>
+                        <td className="num">{l.quantity}</td>
+                        <td>
+                          <bdi>{l.name}</bdi>
+                          {(l.options ?? []).length > 0 && <span className="muted"> ({l.options.map((x) => x.name).join(', ')})</span>}
+                          {l.note && <div className="muted small">📝 <bdi>{l.note}</bdi></div>}
+                          {l.sent_at && <span className="muted small"> · {t.sentShort}</span>}
+                        </td>
+                        <td className="num">{money(unit)}</td>
+                        <td className="num">{money(unit * l.quantity)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              <dl className="customer-facts small">
+                <dt>{t.cancelReasonLabel}</dt><dd>{reasonText(t, o.cancel_reason, o.cancel_note) || '—'}</dd>
+                <dt>{t.launchedBy}</dt><dd>{o.created_by_name || '—'} · {when(o.created_at, loc)}</dd>
+                <dt>{t.cancelledByCol}</dt><dd>{o.cancelled_by_name || '—'} · {when(o.cancelled_at, loc)}</dd>
+              </dl>
+            </div>
           </td>
         </tr>
       )}
@@ -174,10 +198,47 @@ function CancelledRow({ o, place, loc, open, onToggle, kind }: {
   )
 }
 
+/** Imprimer: the cancellations of the period on the ticket printer (one block per order, then the total). */
+function PrintCancelled({ title, range, rows, place, loc, onDone }: {
+  title: string; range: string; rows: CancelledOrder[]; place(o: Order): string; loc: string; onDone(): void
+}) {
+  const { t } = useI18n()
+  useEffect(() => {
+    const done = () => onDone()
+    window.addEventListener('afterprint', done)
+    const timer = window.setTimeout(() => window.print(), 50)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('afterprint', done)
+    }
+  }, [onDone])
+  const total = rows.reduce((s, o) => s + (o.cancelled_total ?? 0), 0)
+  return createPortal(
+    <div className="print-area">
+      <div className="receipt">
+        <div className="receipt-name">{title}</div>
+        <div className="receipt-sub">{range}</div>
+        <div className="receipt-sep" />
+        {rows.map((o) => (
+          <div key={o.id} className="print-cancel">
+            <div className="receipt-row"><span>{when(o.cancelled_at, loc)} · {orderNo(o) ?? '—'} · {place(o)}</span><span>{money(o.cancelled_total ?? 0)}</span></div>
+            {o.lines.map((l) => <div key={l.id} className="receipt-sub">{l.quantity} × {l.name}{l.note ? ` (${l.note})` : ''}</div>)}
+            <div className="receipt-sub">{t.cancelReasonLabel} : {reasonText(t, o.cancel_reason, o.cancel_note) || '—'}</div>
+            <div className="receipt-sub">{t.launchedBy} : {o.created_by_name || '—'} · {t.cancelledByCol} : {o.cancelled_by_name || '—'}</div>
+            <div className="receipt-sep" />
+          </div>
+        ))}
+        <div className="receipt-row receipt-total"><span>{t.total} ({rows.length})</span><span>{money(total)}</span></div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 type InvoiceTab = 'list' | 'void'
 
 /** Factures Annulées: tickets cancelled after payment, bills and invoices cancelled after printing; and cancelling a paid ticket. */
-export function CancelledInvoicesPage() {
+export function CancelledInvoicesPage({ initialPeriod: start }: { initialPeriod?: Period } = {}) {
   const { t } = useI18n()
   const { can } = usePermissions()
   const [tab, setTab] = useState<InvoiceTab>('list')
@@ -192,15 +253,16 @@ export function CancelledInvoicesPage() {
           ))}
         </div>
       )}
-      {tab === 'list' ? <CancelledInvoices /> : <VoidTickets onDone={() => setTab('list')} />}
+      {tab === 'list' ? <CancelledInvoices start={start} /> : <VoidTickets onDone={() => setTab('list')} />}
     </main>
   )
 }
 
-function CancelledInvoices() {
+function CancelledInvoices({ start }: { start?: Period }) {
   const { t, lang } = useI18n()
   const loc = locale(lang)
-  const { period, setPeriod, range } = usePeriod()
+  const { period, setPeriod, range } = usePeriod('month', start)
+  const [printing, setPrinting] = useState(false)
   const { data, error, setError } = useCancelled(range)
   const tables = useTables()
   const [open, setOpen] = useState<string | null>(null)
@@ -223,8 +285,10 @@ function CancelledInvoices() {
         <PeriodFilter value={period} onChange={setPeriod} presets={PRESETS} />
         <span className="muted small">{rangeLabel(range, loc)}</span>
         <div className="spacer" />
+        <button type="button" onClick={() => setPrinting(true)} disabled={!rows.length}>🖨 {t.print}</button>
         <button type="button" onClick={exportCsv} disabled={!rows.length}>{t.exportCsv}</button>
       </div>
+      {printing && <PrintCancelled title={t.cancelledInvoicesTitle} range={rangeLabel(range, loc)} rows={rows} place={place} loc={loc} onDone={() => setPrinting(false)} />}
       <div className="stat-tiles">
         <div className="stat-tile main"><span>{t.cancelledInvoicesTitle}</span><strong>{rows.length}</strong><small className="muted">{money(sum((o) => o.cancelled_total ?? 0))}</small></div>
         <div className="stat-tile"><span>{t.cashBackCol}</span><strong>{money(sum((o) => (o.voided ? o.void_cash ?? 0 : 0)))}</strong></div>

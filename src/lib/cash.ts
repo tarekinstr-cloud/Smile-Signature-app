@@ -59,6 +59,8 @@ function cashError(message: string): Error {
     && /does not exist|schema cache|Could not find/i.test(message)) return new Error(t.errMigrationCash)
   if (/no_permission|row-level security|permission denied/i.test(message)) return new Error(t.errNoPermission)
   if (message.includes('category_not_found')) return new Error(t.errExpenseCategory)
+  if (message.includes('drop_not_expense')) return new Error(t.errDropNotExpense)
+  if (/p_is_drop|is_drop/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return new Error(t.errMigrationDashboard)
   if (message.includes('day_already_open')) return new Error(t.errDayAlreadyOpen)
   if (message.includes('day_already_closed')) return new Error(t.errDayAlreadyClosed)
   if (message.includes('no_open_day')) return new Error(t.errNoOpenDay)
@@ -74,11 +76,14 @@ function checkMovement(m: NewCashMovement): NewCashMovement {
   const t = tr()
   if (!(validAmount(m.amount) && m.amount > 0)) throw new Error(t.errCashAmount)
   const reason = m.reason.trim().slice(0, 300)
-  if (!reason && !m.supplier_invoice_id) throw new Error(t.errCashReason)
+  if (!reason && !m.supplier_invoice_id && !m.is_drop) throw new Error(t.errCashReason)
   if ((m.supplier_invoice_id || m.expense_category_id) && m.kind !== 'out') throw new Error(t.errCashAmount)
   if (m.supplier_invoice_id && m.expense_category_id) throw new Error(t.errCashAmount)
+  // A vidange (coffre) is never an expense nor an invoice payment.
+  if (m.is_drop && (m.kind !== 'out' || m.supplier_invoice_id || m.expense_category_id)) throw new Error(t.errDropNotExpense)
   return {
     kind: m.kind, amount: round2(m.amount), reason, supplier_invoice_id: m.supplier_invoice_id ?? null, expense_category_id: m.expense_category_id ?? null,
+    is_drop: !!m.is_drop,
   }
 }
 
@@ -89,7 +94,7 @@ export const normDay = (d: CashDay): CashDay => ({
   expected_cash: num(d.expected_cash), counted_cash: num(d.counted_cash), difference: num(d.difference),
   report: d.report ?? null, note: d.note ?? '',
 })
-const normMove = (m: CashMovement): CashMovement => ({ ...m, amount: Number(m.amount) })
+const normMove = (m: CashMovement): CashMovement => ({ ...m, amount: Number(m.amount), is_drop: !!m.is_drop })
 const normReset = (r: NumberReset): NumberReset => ({
   ...r, last_ticket_no: num(r.last_ticket_no), last_takeaway_no: num(r.last_takeaway_no), last_delivery_no: num(r.last_delivery_no),
 })
@@ -141,6 +146,8 @@ function supabaseCash(sb: SupabaseClient): CashService {
       return normMove(check(await sb.rpc('add_cash_movement', {
         p_kind: c.kind, p_amount: c.amount, p_reason: c.reason, p_supplier_invoice_id: c.supplier_invoice_id,
         p_expense_category_id: c.expense_category_id,
+        // Only sent for a vidange, so a database without the dashboard migration still takes the other movements.
+        ...(c.is_drop && { p_is_drop: true }),
       })) as CashMovement)
     },
     async deleteMovement(id) {
@@ -356,8 +363,8 @@ function localCash(): CashService {
       let supplier: string | null = null
       if (c.supplier_invoice_id) supplier = (await purchases.pay(c.supplier_invoice_id, c.amount, now().slice(0, 10))).supplier_name
       const row: CashMovement = {
-        id: newId(), day_id: day.id, kind: c.kind, amount: c.amount, reason: c.reason, supplier_invoice_id: c.supplier_invoice_id ?? null,
-        supplier_name: supplier, user_name: user, created_at: now(),
+        id: newId(), day_id: day.id, kind: c.kind, amount: c.amount, reason: c.reason || (c.is_drop ? tr().dropReason : ''), supplier_invoice_id: c.supplier_invoice_id ?? null,
+        supplier_name: supplier, user_name: user, created_at: now(), is_drop: !!c.is_drop,
       }
       const fresh = read()
       fresh.movements.push(row)

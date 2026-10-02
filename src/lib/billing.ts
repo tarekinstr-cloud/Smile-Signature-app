@@ -100,3 +100,10 @@ export function normalizeAdjustments<T extends Partial<Adjustments>>(row: T): T 
     offered: !!row.offered,
   }
 }
+
+/** TVA included in a TTC amount (prices are TTC): HT and TVA, whole dinars, HT + TVA = TTC. */
+export function splitTva(ttc: number, rate: number): { ht: number; tva: number; ttc: number } {
+  const total = Math.round(ttc)
+  const ht = rate > 0 ? Math.round(total / (1 + rate / 100)) : total
+  return { ht, tva: total - ht, ttc: total }
+}

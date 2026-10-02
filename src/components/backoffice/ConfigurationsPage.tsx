@@ -7,7 +7,7 @@ import Receipt from '../Receipt'
 import BackupPage from './BackupPage'
 import { ConfigPage } from './FloorSettingsPages'
 import { errorText } from './useLoad'
-import { PaymentTab, ReasonsTab, SecurityTab } from './ConfigTabsMore'
+import { CancelAlertPanel, PaymentTab, ReasonsTab, SecurityTab } from './ConfigTabsMore'
 
 export type ConfigTab = 'restaurant' | 'ticket' | 'payment' | 'reasons' | 'service' | 'security' | 'backup'
 
@@ -89,7 +89,7 @@ export default function ConfigurationsPage({ initialTab = 'restaurant' }: { init
       {(tab === 'restaurant' || tab === 'ticket') && <ReceiptForm tab={tab} />}
       {tab === 'payment' && <PaymentTab />}
       {tab === 'reasons' && <ReasonsTab />}
-      {tab === 'service' && <ConfigPage />}
+      {tab === 'service' && <><ConfigPage /><CancelAlertPanel /></>}
       {tab === 'security' && <SecurityTab />}
       {tab === 'backup' && can('backup') && <BackupPage />}
     </>
@@ -229,6 +229,18 @@ function ReceiptForm({ tab }: { tab: 'restaurant' | 'ticket' }) {
               <input type="checkbox" checked={receipt.show_table !== false} onChange={(e) => edit({ show_table: e.target.checked })} />
               {t.cfgShowTable}
             </label>
+            <div className="config-row tva-row">
+              <label className="check">
+                <input type="checkbox" checked={!!receipt.tva_enabled} onChange={(e) => edit({ tva_enabled: e.target.checked })} />
+                {t.cfgTvaEnabled}
+              </label>
+              <label>
+                {t.cfgTvaRate}
+                <input type="number" inputMode="decimal" min={0} max={100} step={0.5} value={receipt.tva_rate ?? 19} disabled={!receipt.tva_enabled}
+                  onChange={(e) => edit({ tva_rate: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })} />
+              </label>
+            </div>
+            <p className="muted small">{t.cfgTvaHint}</p>
           </>
         )}
         {receipt && (

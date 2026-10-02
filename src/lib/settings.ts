@@ -22,6 +22,9 @@ export interface SettingsService {
   saveReasons(lists: ReasonLists): Promise<void>
   getSecurity(): Promise<SecurityConfig>
   saveSecurity(config: SecurityConfig): Promise<void>
+  /** Tableau de bord: cancellations of the period above this amount (DA) put the tile in alert; null: never. */
+  getCancelAlert(): Promise<number | null>
+  saveCancelAlert(amount: number | null): Promise<void>
   /** Sets (4 digits) or removes (null) a user's PIN. Admin only. */
   setUserPin(userId: string, pin: string | null): Promise<void>
   /** Ids of the users who have a PIN (page Utilisateurs). */
@@ -105,6 +108,12 @@ function cleanSecurity(c: SecurityConfig): SecurityConfig {
   return { pin_login_enabled: !!c.pin_login_enabled, auto_logout_min: min }
 }
 
+function cleanAlert(amount: number | null): number | null {
+  if (amount === null) return null
+  if (!(Number.isFinite(amount) && amount >= 0 && amount <= 1e9)) throw new Error(tr().errCancelAlert)
+  return Math.round(amount)
+}
+
 function checkPin(pin: string | null) {
   if (pin !== null && !/^\d{4}$/.test(pin)) throw new Error(tr().errPinFormat)
 }
@@ -176,6 +185,18 @@ function supabaseSettings(sb: SupabaseClient): SettingsService {
     async saveSecurity(c) {
       await writeConfig(cleanSecurity(c))
     },
+    async getCancelAlert() {
+      const c = await config()
+      return c?.cancel_alert_amount == null ? null : Number(c.cancel_alert_amount)
+    },
+    async saveCancelAlert(amount) {
+      try {
+        await writeConfig({ cancel_alert_amount: cleanAlert(amount) })
+      } catch (e) {
+        if (e instanceof Error && /cancel_alert_amount/.test(e.message)) throw new Error(tr().errMigrationDashboard)
+        throw e
+      }
+    },
     async setUserPin(userId, pin) {
       checkPin(pin)
       check(await sb.rpc('set_user_pin', { p_user_id: userId, p_pin: pin }))
@@ -198,6 +219,7 @@ function supabaseSettings(sb: SupabaseClient): SettingsService {
 const KEY = 'smile.settings.v1'
 
 interface LocalSettings {
+  cancelAlert?: number | null
   paymentModes?: PaymentMode[]
   reasons?: ReasonLists
   security?: SecurityConfig
@@ -273,6 +295,12 @@ function localSettings(): SettingsService {
     },
     async saveSecurity(c) {
       write({ ...load(), security: cleanSecurity(c) })
+    },
+    async getCancelAlert() {
+      return load().cancelAlert ?? null
+    },
+    async saveCancelAlert(amount) {
+      write({ ...load(), cancelAlert: cleanAlert(amount) })
     },
     async setUserPin(userId, pin) {
       checkPin(pin)
