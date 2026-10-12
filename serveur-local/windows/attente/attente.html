@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smile Signature – Démarrage</title>
+<!--
+  Page d'attente du mode caisse, ouverte depuis le disque du POS (aucun serveur nécessaire).
+  windows\demarrage.ps1 écrit l'étape en cours dans etat.js, relu toutes les 2 secondes.
+  Dès que le serveur est prêt, la page ouvre l'application (adresse dans etat.js ou dans ?url=).
+-->
+<style>
+  :root { --fond: #111827; --carte: #1f2937; --accent: #f59e0b; --texte: #f9fafb; --doux: #9ca3af; --erreur: #f87171; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--fond); color: var(--texte);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    display: flex; align-items: center; justify-content: center;
+    user-select: none; cursor: default;
+  }
+  main { width: min(560px, calc(100% - 32px)); text-align: center; }
+  svg.logo { width: 120px; height: 120px; }
+  h1 { font-size: 32px; font-weight: 600; margin: 28px 0 8px; }
+  #etape { font-size: 20px; color: var(--doux); min-height: 28px; margin: 0; }
+  #detail { font-size: 15px; color: var(--doux); min-height: 22px; margin: 8px 0 0; }
+  .barre { height: 6px; background: var(--carte); border-radius: 3px; overflow: hidden; margin: 32px auto 0; width: 70%; }
+  .barre i { display: block; height: 100%; width: 35%; background: var(--accent); border-radius: 3px; animation: va 1.4s ease-in-out infinite; }
+  @keyframes va { 0% { transform: translateX(-100%); } 100% { transform: translateX(290%); } }
+  .erreur h1 { color: var(--erreur); }
+  .erreur .barre { display: none; }
+  #aide { display: none; margin-top: 28px; padding: 16px 20px; background: var(--carte); border-radius: 12px; text-align: left; font-size: 15px; line-height: 1.5; }
+  .erreur #aide { display: block; }
+  #aide b { color: var(--accent); }
+  #temps { position: fixed; bottom: 16px; left: 0; right: 0; text-align: center; color: #4b5563; font-size: 13px; }
+</style>
+</head>
+<body>
+<main id="carte">
+  <svg class="logo" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="96" fill="#1f2937"/><circle cx="256" cy="256" r="150" fill="none" stroke="#f59e0b" stroke-width="28"/><path d="M186 280q70 70 140 0" fill="none" stroke="#f59e0b" stroke-width="28" stroke-linecap="round"/><circle cx="206" cy="220" r="18" fill="#f59e0b"/><circle cx="306" cy="220" r="18" fill="#f59e0b"/></svg>
+  <h1 id="titre">Démarrage du serveur…</h1>
+  <p id="etape">Préparation…</p>
+  <p id="detail"></p>
+  <div class="barre"><i></i></div>
+  <div id="aide">
+    L'application s'ouvrira toute seule dès que le serveur répondra.<br>
+    Si rien ne change :<br>
+    1. Vérifiez que <b>Docker Desktop</b> est lancé (icône de baleine près de l'horloge).<br>
+    2. Double-cliquez <b>VERIFIER.bat</b> dans le dossier <b>serveur-local</b>.<br>
+    3. Redémarrez le PC.
+  </div>
+</main>
+<div id="temps"></div>
+<script>
+  var ETAPES = {
+    verification: 'Vérification du serveur…',
+    docker: 'Démarrage de Docker…',
+    services: 'Lancement des services…',
+    api: 'Attente de l’application et de la base…',
+    pret: 'Serveur prêt : ouverture de l’application…',
+    erreur_docker: 'Docker ne démarre pas.',
+    erreur_services: 'Les services ne démarrent pas.',
+    erreur_api: 'Le serveur ne répond pas.'
+  };
+  var params = new URLSearchParams(location.search);
+  var urlParDefaut = params.get('url') || 'http://localhost/';
+  var ouverture = Date.now();
+  var accessibleDepuis = 0;
+  window.ETAT = null;
+
+  // etat.js est réécrit par demarrage.ps1 : on le recharge à chaque fois (balise script, permise depuis le disque).
+  function lireEtat(suite) {
+    var ancien = document.getElementById('etat-js');
+    if (ancien) ancien.remove();
+    var s = document.createElement('script');
+    s.id = 'etat-js';
+    s.src = 'etat.js?t=' + Date.now();
+    s.onload = s.onerror = function () { suite(window.ETAT); };
+    document.head.appendChild(s);
+  }
+
+  // Le serveur web répond-il ? (image de l'application : fonctionne depuis une page du disque)
+  function sonder(url, suite) {
+    var img = new Image();
+    var fini = false;
+    var minuteur = setTimeout(function () { if (!fini) { fini = true; suite(false); } }, 4000);
+    img.onload = function () { if (!fini) { fini = true; clearTimeout(minuteur); suite(true); } };
+    img.onerror = function () { if (!fini) { fini = true; clearTimeout(minuteur); suite(false); } };
+    img.src = url + 'icon.svg?t=' + Date.now();
+  }
+
+  function afficher(etat) {
+    var etape = etat ? etat.etape : '';
+    var erreur = etape.indexOf('erreur') === 0;
+    document.body.className = erreur ? 'erreur' : '';
+    document.getElementById('titre').textContent = erreur ? 'Le serveur n’a pas démarré' : 'Démarrage du serveur…';
+    document.getElementById('etape').textContent = ETAPES[etape] || 'Préparation…';
+    var detail = '';
+    if (etat && etat.detail) {
+      if (etape === 'api') detail = 'En attente : ' + etat.detail;
+      else if (etape !== 'docker') detail = etat.detail;
+    }
+    document.getElementById('detail').textContent = detail;
+    var s = Math.round((Date.now() - ((etat && etat.depuis) || ouverture)) / 1000);
+    document.getElementById('temps').textContent = 'Depuis ' + Math.floor(s / 60) + ' min ' + ('0' + (s % 60)).slice(-2) + ' s';
+  }
+
+  function tour() {
+    lireEtat(function (etat) {
+      // Etat absent ou plus mis à jour depuis 30 s : le script de démarrage ne tourne plus.
+      var perime = !etat || (Date.now() - etat.maj > 30000);
+      var etape = etat ? etat.etape : '';
+      var url = (etat && etat.url) || urlParDefaut;
+      afficher(etat);
+      sonder(url, function (ok) {
+        if (!ok) { accessibleDepuis = 0; return setTimeout(tour, 2000); }
+        if (!accessibleDepuis) accessibleDepuis = Date.now();
+        // Prêt selon le script, ou script arrêté / en erreur mais serveur joignable depuis 20 s.
+        if (etape === 'pret' || ((perime || etape.indexOf('erreur') === 0) && Date.now() - accessibleDepuis > 20000)) {
+          location.replace(url);
+        } else {
+          setTimeout(tour, 2000);
+        }
+      });
+    });
+  }
+  tour();
+  // Filet de sécurité : rechargement complet de la page toutes les 5 minutes.
+  setTimeout(function () { location.reload(); }, 300000);
+</script>
+</body>
+</html>
