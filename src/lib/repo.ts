@@ -365,6 +365,21 @@ const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
 export const supabase: SupabaseClient | null = url && anonKey ? createClient(url, anonKey) : null
 
+/**
+ * Address saved in the database for an uploaded photo or background. Local server: relative (/storage/v1/object/…),
+ * because http://localhost (the POS) would not open on the tablets (http://IP-du-POS) and vice versa; the browser
+ * completes it with the address the app was opened with. Online project: the full Supabase address, as before.
+ */
+function storedFileUrl(publicUrl: string): string {
+  if (rawUrl !== 'same-origin') return publicUrl
+  try {
+    const u = new URL(publicUrl)
+    return u.pathname + u.search
+  } catch {
+    return publicUrl
+  }
+}
+
 function check<T>(res: { data: T; error: { message: string } | null }): T {
   // Refused by the database permissions (Fichier > Permissions): a readable message rather than the SQL error.
   if (res.error && /permission_denied|row-level security/i.test(res.error.message)) throw new Error(tr().errNoPermission)
@@ -548,7 +563,7 @@ function supabaseRepo(sb: SupabaseClient): Repo {
         path = `${hallId}/${newId()}.jpg`
         const up = await sb.storage.from(BACKGROUND_BUCKET).upload(path, image, { contentType: image.type || 'image/jpeg', cacheControl: '31536000', upsert: false })
         if (up.error) throw floorError(up.error.message)
-        url = sb.storage.from(BACKGROUND_BUCKET).getPublicUrl(path).data.publicUrl
+        url = storedFileUrl(sb.storage.from(BACKGROUND_BUCKET).getPublicUrl(path).data.publicUrl)
       }
       const res = await sb.rpc('set_hall_background', { p_hall_id: hallId, p_url: url, p_path: path })
       if (res.error) {
@@ -611,7 +626,7 @@ function supabaseRepo(sb: SupabaseClient): Repo {
         path = `area-${area}/${newId()}.jpg`
         const up = await sb.storage.from(BACKGROUND_BUCKET).upload(path, image, { contentType: image.type || 'image/jpeg', cacheControl: '31536000', upsert: false })
         if (up.error) throw areaError(up.error.message)
-        url = sb.storage.from(BACKGROUND_BUCKET).getPublicUrl(path).data.publicUrl
+        url = storedFileUrl(sb.storage.from(BACKGROUND_BUCKET).getPublicUrl(path).data.publicUrl)
       }
       const res = await sb.rpc('set_area_background', { p_area: area, p_url: url, p_path: path })
       if (res.error) {
@@ -947,7 +962,7 @@ function supabaseRepo(sb: SupabaseClient): Repo {
         path = `${itemId}/${newId()}.${image.type === 'image/webp' ? 'webp' : 'jpg'}`
         const up = await sb.storage.from(PHOTO_BUCKET).upload(path, image, { contentType: image.type || 'image/jpeg', cacheControl: '31536000', upsert: false })
         if (up.error) throw settingsError(up.error.message)
-        url = sb.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl
+        url = storedFileUrl(sb.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl)
       }
       const res = await sb.rpc('set_item_photo', { p_item_id: itemId, p_url: url, p_path: path })
       if (res.error) {
