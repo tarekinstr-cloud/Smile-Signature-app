@@ -9,8 +9,10 @@ case "$cmd" in
   migrer)       exec bash "$here/migrer.sh" "$@" ;;
   creer-admin)  exec bash "$here/creer-admin.sh" "$@" ;;
   verifier)     exec bash "$here/verifier.sh" "$@" ;;
+  sauvegarder)  exec bash "$here/sauvegarder.sh" "$@" ;;
+  restaurer)    exec bash "$here/restaurer.sh" "$@" ;;
   sql)          exec psql -v ON_ERROR_STOP=1 "$@" ;;
   *)
-    echo "Commandes : attendre | migrer | creer-admin | verifier | sql"
+    echo "Commandes : attendre | migrer | creer-admin | verifier | sauvegarder | restaurer | sql"
     exit 1 ;;
 esac

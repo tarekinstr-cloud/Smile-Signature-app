@@ -10,7 +10,7 @@
 # redimensionnement d'images (imgproxy), passerelle Kong/Envoy (remplacée par le serveur web).
 # Studio (tableau de bord Supabase) est facultatif : profil « studio » (voir LISEZMOI.md).
 #
-# Ne pas lancer à la main : utiliser les fichiers .bat du dossier windows\ (voir LISEZMOI.md).
+# Ne pas lancer à la main : utiliser les fichiers .bat de ce dossier (voir LISEZMOI.md).
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 
 name: smile
@@ -282,6 +282,8 @@ services:
     volumes:
       - ./:/kit
       - ../supabase/migrations:/migrations:ro
+      # Fichiers du stockage (photos) : lus par les sauvegardes, remplacés par une restauration.
+      - storage-data:/var/lib/storage
     working_dir: /kit
 
   # Génère les secrets du fichier .env à l'installation.

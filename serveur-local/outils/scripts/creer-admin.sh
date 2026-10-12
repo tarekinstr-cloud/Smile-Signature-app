@@ -13,12 +13,31 @@ user="$(echo "$user" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 if ! [[ "$user" =~ ^[a-z0-9._-]{2,32}$ ]]; then
   echo "ERREUR : nom invalide (2 a 32 caracteres : lettres, chiffres, point, tiret)."; exit 1
 fi
+# Mot de passe : lettres SANS accent, chiffres et signes du clavier. Une lettre accentuée tapée dans la fenêtre
+# noire de Windows n'arrive pas toujours avec le même codage que dans le navigateur : le compte serait créé avec
+# un mot de passe impossible à retaper dans l'application. On la refuse donc ici, avec un message clair.
+probleme_mdp() {
+  if printf '%s' "$1" | LC_ALL=C grep -q '[^ -~]'; then
+    echo "ERREUR : le mot de passe contient une lettre accentuee ou un signe special (é è à ç ù € ...)."
+    echo "         Utilisez seulement des lettres sans accent (a-z, A-Z), des chiffres et les signes du clavier"
+    echo "         comme ! ? @ # - _ . (exemple : Cafe2026!)."
+    return 0
+  fi
+  if [ ${#1} -lt 4 ]; then echo "ERREUR : mot de passe trop court (4 caracteres minimum)."; return 0; fi
+  return 1
+}
 if [ -z "$pass" ]; then
-  read -r -s -p "Mot de passe (4 caracteres minimum) : " pass; echo
-  read -r -s -p "Retapez le mot de passe : " again; echo
-  [ "$pass" = "$again" ] || { echo "ERREUR : les deux mots de passe sont differents."; exit 1; }
+  for essai in 1 2 3; do
+    read -r -s -p "Mot de passe (4 caracteres minimum, sans accent) : " pass; echo
+    if probleme_mdp "$pass"; then pass=""; continue; fi
+    read -r -s -p "Retapez le mot de passe : " again; echo
+    [ "$pass" = "$again" ] && break
+    echo "ERREUR : les deux mots de passe sont differents."; pass=""
+  done
+  [ -n "$pass" ] || { echo "ERREUR : aucun mot de passe valide apres 3 essais. Relancez CREER-ADMIN.bat."; exit 1; }
+else
+  probleme_mdp "$pass" && exit 1
 fi
-[ ${#pass} -ge 4 ] || { echo "ERREUR : mot de passe trop court (4 caracteres minimum)."; exit 1; }
 [ -n "$display" ] || display="Administrateur"
 
 psql -v ON_ERROR_STOP=1 -q -v u="$user" -v p="$pass" -v d="$display" <<'SQL'
