@@ -94,6 +94,12 @@ Le démarrage de Docker avec Windows est réglé à l'étape 5.
    (un chemin simple, sans accent ni espace).
 3. Ouvrez `C:\SmileSignature\…\serveur-local` : c'est ce dossier qui contient les fichiers `.bat` ci-dessous.
 
+Ou, si **Git pour Windows** est installé (mises à jour plus simples par `git pull`), dans PowerShell :
+`cd C:\SmileSignature` puis
+`git clone -c core.autocrlf=false https://github.com/tarekinstr-cloud/Smile-Signature-app.git app` : le dossier
+est alors `C:\SmileSignature\app\serveur-local`. POS déjà installé par ZIP : voir
+[Passer d'une installation par ZIP à git](#passer-dune-installation-par-zip-à-git-sans-perdre-les-données).
+
 ## Étape 3 — Installer le serveur (une seule fois, internet nécessaire)
 
 1. Vérifiez que Docker Desktop est lancé (icône de baleine en bas à droite, près de l'horloge).
@@ -342,14 +348,159 @@ d'éteindre le PC, double-cliquez `ARRETER.bat`.
 
 ## Mettre à jour vers une nouvelle version
 
+Vos fichiers **`.env`** (mots de passe), **`config.ini`**, **`sauvegardes\`** et **`journaux\`** ne sont ni dans le
+ZIP ni dans git : une mise à jour ne les touche jamais.
+
+**Installation par ZIP :**
+
 1. Lancez **`SAUVEGARDER-MAINTENANT.bat`**.
 2. Téléchargez le nouveau ZIP (étape 2) et extrayez-le **par-dessus** l'ancien dossier, en acceptant de remplacer
-   les fichiers. Vos fichiers **`.env`** (mots de passe), **`config.ini`**, **`sauvegardes\`** et **`journaux\`** ne
-   sont pas dans le ZIP : ils sont conservés.
+   les fichiers.
 3. Double-cliquez **`METTRE-A-JOUR.bat`** : il reconstruit l'application, applique les nouvelles migrations de la
    base (seulement celles qui manquent) et vérifie tout. Internet est nécessaire pendant la mise à jour.
 4. Relancez **`5-ACTIVER-DEMARRAGE-AUTO.bat`** (met à jour les tâches et raccourcis si besoin).
 5. Rechargez l'application sur chaque appareil.
+
+**Installation par git** (voir la section suivante pour passer du ZIP à git), dans PowerShell :
+
+```powershell
+cd C:\SmileSignature\app
+git pull
+cd serveur-local
+.\SAUVEGARDER-MAINTENANT.bat
+.\METTRE-A-JOUR.bat
+.\5-ACTIVER-DEMARRAGE-AUTO.bat
+```
+
+Puis rechargez l'application sur chaque appareil.
+
+## Passer d'une installation par ZIP à git (sans perdre les données)
+
+Pour un POS déjà installé à partir d'un ZIP (avec `1-INSTALLER.bat`), sur lequel **Git pour Windows** vient d'être
+installé (<https://git-scm.com/download/win>). Ensuite, une mise à jour se fait par `git pull`.
+
+**Ce qu'il faut savoir** : la base (compte admin, comptes, carte, commandes) et les photos ne sont **pas** dans le
+dossier : elles sont dans des volumes Docker (`smile_db-data`, `smile_storage-data`…), dont le nom est fixé dans
+`docker-compose.yml` (`name: smile`). Le nouveau dossier les retrouve tout seul.
+
+| Élément | Où il est | À copier de l'ancien dossier ? |
+|---|---|---|
+| Base, compte admin, comptes, carte, commandes | volume Docker `smile_db-data` | non |
+| Photos des plats, fonds de salle | volume Docker `smile_storage-data` | non |
+| Secrets (mots de passe de la base, clés) | `serveur-local\.env` | **oui, obligatoire** |
+| `.env` à la racine du projet | seulement si vous en avez créé un | oui s'il existe |
+| `config.ini`, `sauvegardes\` | `serveur-local\` (si l'ancienne version les a) | oui s'ils existent |
+
+> Sans l'ancien `.env`, de nouveaux mots de passe seraient générés et les services ne pourraient plus se connecter à
+> la base existante.
+
+Ouvrez **PowerShell** normalement (pas en administrateur), Docker Desktop lancé, puis :
+
+**1. Repérer l'ancien dossier.** Cette commande liste les fichiers `.env` ; gardez celui qui finit par
+`\serveur-local\.env` :
+
+```powershell
+Get-ChildItem C:\SmileSignature -Recurse -Force -Filter .env | Select-Object FullName
+```
+
+Adaptez la première ligne ci-dessous avec ce chemin (sans le `\.env` final), puis exécutez les quatre lignes :
+
+```powershell
+$ancien  = "C:\SmileSignature\Smile-Signature-app-main\serveur-local"   # <- votre chemin
+$racine  = "C:\SmileSignature\app"
+$nouveau = "$racine\serveur-local"
+Test-Path "$ancien\.env"
+```
+
+Doit afficher `True`.
+
+**2. Vérifier que les données sont dans les volumes Docker :**
+
+```powershell
+docker volume ls --filter name=smile_
+```
+
+Doit lister `smile_db-data`, `smile_db-config`, `smile_storage-data` et `smile_deno-cache`. **Sinon, arrêtez-vous
+ici** et demandez de l'aide (envoyez le résultat de la commande).
+
+**3. Copie de sécurité des secrets** (hors des deux dossiers) :
+
+```powershell
+New-Item -ItemType Directory -Force C:\SmileSignature\securite | Out-Null
+Copy-Item "$ancien\.env" "C:\SmileSignature\securite\env-avant-git.txt"
+```
+
+**4. Cloner le projet :**
+
+```powershell
+cd C:\SmileSignature
+git clone -c core.autocrlf=false https://github.com/tarekinstr-cloud/Smile-Signature-app.git app
+Test-Path "$nouveau\5-ACTIVER-DEMARRAGE-AUTO.bat"
+```
+
+Doit afficher `True`. Si le dépôt est privé, Git ouvre une fenêtre de connexion GitHub.
+`core.autocrlf=false` garde les fichiers identiques à ceux du ZIP : sans lui, Git changerait les fins de ligne
+des migrations et `METTRE-A-JOUR.bat` afficherait des messages « a change depuis son application » (sans danger,
+mais inquiétants).
+
+**5. Copier les secrets (et le reste s'il existe) dans le nouveau dossier :**
+
+```powershell
+Copy-Item "$ancien\.env" "$nouveau\.env"
+if (Test-Path "$ancien\..\.env")     { Copy-Item "$ancien\..\.env" "$racine\.env" }
+if (Test-Path "$ancien\config.ini")  { Copy-Item "$ancien\config.ini" "$nouveau\config.ini" }
+if (Test-Path "$ancien\sauvegardes") { Copy-Item "$ancien\sauvegardes" "$nouveau\sauvegardes" -Recurse }
+Compare-Object (Get-Content "$ancien\.env") (Get-Content "$nouveau\.env")
+git -C $racine status --short
+```
+
+Les deux dernières commandes ne doivent **rien** afficher (les deux `.env` sont identiques, et git ignore bien ces
+fichiers).
+
+**6. Sauvegarde de sécurité, avant de toucher au serveur :**
+
+```powershell
+cd $nouveau
+.\SAUVEGARDER-MAINTENANT.bat
+```
+
+Elle ne modifie pas le serveur en place. Attendez **« OK : sauvegarde … »** avec la ligne
+`Fichiers : floor-backgrounds:… item-photos:…`. Elle vérifie aussi que le `.env` est le bon (sinon : erreur de
+connexion à la base). **En cas d'ERREUR, arrêtez-vous** : rien n'a été modifié. Copie sur clé USB (facultatif) :
+`Copy-Item "$nouveau\sauvegardes\*" "E:\SauvegardesSmile\" -Recurse`.
+
+**7. Basculer le serveur sur le nouveau dossier :**
+
+```powershell
+.\METTRE-A-JOUR.bat
+```
+
+Internet nécessaire. Les conteneurs sont recréés depuis le nouveau dossier, sur les mêmes volumes. Attendu :
+« Migrations : … appliquee(s) maintenant » puis **« RESULTAT : tout fonctionne »**. Vérifiez à la main : connexion
+sur <http://localhost> avec votre compte admin habituel, carte et photos présentes, une tablette sur
+`http://IP-du-POS`.
+
+**8. Mise en production :**
+
+```powershell
+.\5-ACTIVER-DEMARRAGE-AUTO.bat
+```
+
+Répondez *Oui* à l'autorisation administrateur. Les raccourcis et les tâches planifiées pointent désormais vers le
+nouveau dossier. Redémarrez le PC, puis `.\VERIFIER.bat` (dans `C:\SmileSignature\app\serveur-local`).
+
+**9. Mettre l'ancien dossier de côté** (une fois que tout fonctionne) :
+
+```powershell
+Rename-Item (Split-Path $ancien) "ANCIEN-ne-plus-utiliser"
+```
+
+Ne lancez plus aucun `.bat` de l'ancien dossier (il recréerait les conteneurs avec l'ancien code). Supprimez-le
+après une semaine.
+
+> **À ne jamais faire** : `docker compose down -v` ou supprimer des volumes dans Docker Desktop (cela efface la base
+> et les photos) ; relancer `1-INSTALLER.bat` sans le bon `.env`. En cas d'oubli du `.env` : remettez
+> `C:\SmileSignature\securite\env-avant-git.txt` sous le nom `serveur-local\.env`, puis `METTRE-A-JOUR.bat`.
 
 ## Basculer entre le serveur local et le Supabase en ligne
 
