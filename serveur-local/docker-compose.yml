@@ -286,6 +286,18 @@ services:
       - storage-data:/var/lib/storage
     working_dir: /kit
 
+  # Lit la configuration du Supabase en ligne et copie les photos (IMPORTER-DEPUIS-EN-LIGNE.bat).
+  # EN_LIGNE_URL et EN_LIGNE_CLE viennent de la fenêtre qui lance l'import : jamais écrites dans un fichier.
+  importer:
+    image: node:22-alpine
+    profiles: ["outils"]
+    environment:
+      - SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
+      - EN_LIGNE_URL
+      - EN_LIGNE_CLE
+    volumes:
+      - ./:/kit
+
   # Génère les secrets du fichier .env à l'installation.
   secrets:
     image: node:22-alpine

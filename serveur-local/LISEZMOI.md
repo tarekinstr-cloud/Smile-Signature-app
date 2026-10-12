@@ -15,7 +15,8 @@ Une fois installé, **tout fonctionne sans internet**.
 ```
 
 > **Important :** les données du serveur local et celles du Supabase en ligne sont **séparées** (elles ne se
-> synchronisent pas). Pour l'essai sur votre PC portable, vous partez d'une base vide.
+> synchronisent pas). Le serveur local part d'une base vide ; `IMPORTER-DEPUIS-EN-LIGNE.bat` y recopie la
+> configuration faite en ligne (salles, carte, employés, photos…), sans les données de test.
 
 ---
 
@@ -26,6 +27,7 @@ Une fois installé, **tout fonctionne sans internet**.
 | 1 | Installer Docker Desktop | (site de Docker) |
 | 2 | Copier ce dossier sur le PC | ZIP du projet |
 | 3 | Installer le serveur et créer le compte administrateur | `1-INSTALLER.bat` |
+| 3 bis | Récupérer la configuration du Supabase en ligne (salles, carte, employés, photos…) | `IMPORTER-DEPUIS-EN-LIGNE.bat` |
 | 4 | Réseau : pare-feu, IP du POS réservée, Wi-Fi, tablettes | `OUVRIR-PARE-FEU.bat` |
 | 5 | Mise en production : démarrage automatique, caisse plein écran, sauvegardes | `5-ACTIVER-DEMARRAGE-AUTO.bat` |
 | (6) | Facultatif : accès à distance pour le gérant (Tailscale) | — |
@@ -117,8 +119,76 @@ est alors `C:\SmileSignature\app\serveur-local`. POS déjà installé par ZIP : 
 Si une étape échoue (coupure internet…), relancez simplement `1-INSTALLER.bat` : ce qui est déjà fait n'est pas
 refait, et les mots de passe internes ne sont jamais régénérés.
 
-Sur le POS, ouvrez <http://localhost> et connectez-vous avec le compte administrateur, puis créez les salles, la
-carte et les comptes des employés comme d'habitude.
+Sur le POS, ouvrez <http://localhost> et connectez-vous avec le compte administrateur. La base est vide : soit
+vous créez les salles, la carte et les comptes des employés, soit vous les **récupérez du Supabase en ligne**
+(ci-dessous).
+
+### Récupérer la configuration du Supabase en ligne (`IMPORTER-DEPUIS-EN-LIGNE.bat`)
+
+Si la configuration réelle du restaurant a été faite dans la version en ligne, cet outil la copie sur le serveur
+local, **sans les données de test**. Internet est nécessaire pendant l'import. Il peut être relancé à tout moment
+(par exemple après avoir corrigé la carte en ligne) : rien n'est créé en double.
+
+| Copié | Jamais copié |
+|---|---|
+| Salles, tables et plan, fonds d'écran | Commandes, tickets de cuisine, paiements |
+| Catégories, articles, prix, options, photos des articles | Caisses et journées, clôtures |
+| Imprimantes et liaisons catégorie → imprimante | Mouvements de stock, inventaires |
+| Zones de livraison | Fournisseurs, factures et retours fournisseurs |
+| Paramètres : caisse et minuteurs, ticket, modes de paiement, catégories de dépenses, permissions des rôles | Réservations |
+| Employés, leurs permissions et codes PIN | Clients et crédits clients, dépenses, avances sur salaire |
+| Articles de stock (**sans les quantités**) et fiches techniques | Historique des prix |
+
+**Ce qu'il faut** : dans Supabase (<https://supabase.com/dashboard>) > votre projet > **Project Settings** >
+**API** (ou **API Keys**) :
+
+- **Project URL**, par exemple `https://abcdefghijkl.supabase.co` ;
+- la clé **`service_role`** (ou clé **secrète** `sb_secret_…`), bouton *Reveal* puis copier. **Pas** la clé
+  `anon` / *publishable* : l'outil la refuse. Si une clé `sb_secret_…` est refusée, prenez la clé `service_role`
+  de l'onglet *Legacy API Keys*.
+
+Le serveur local doit être **à la même version** que l'application en ligne : faites d'abord la mise à jour
+(`METTRE-A-JOUR.bat`, ou `git pull` puis `METTRE-A-JOUR.bat`). Une colonne qui n'existe que d'un côté est ignorée.
+
+La clé donne un accès complet au projet en ligne : elle est seulement tapée dans la fenêtre, **jamais enregistrée**
+(ni dans un fichier, ni dans le dépôt), et oubliée à la fin de l'import.
+
+**Déroulement** : double-cliquez **`IMPORTER-DEPUIS-EN-LIGNE.bat`**, collez l'adresse puis la clé (clic droit dans
+la fenêtre ; rien ne s'affiche pour la clé, c'est normal).
+
+1. L'outil **lit** la configuration en ligne et affiche le nombre de lignes de chaque table et de photos. Rien n'est
+   encore modifié sur le serveur local (une clé ou une adresse fausse s'arrête ici, avec un message clair).
+2. Tapez **`OUI`** pour continuer.
+3. **Sauvegarde locale** automatique (`sauvegardes\…-avant-import`) : `RESTAURER.bat` permet de revenir en arrière.
+4. Chargement de la configuration, **en une seule fois** : en cas d'erreur, rien n'est modifié dans la base.
+5. Copie des photos et fonds d'écran (les fichiers déjà présents ne sont pas recopiés).
+6. **Résumé** : pour chaque table, lignes en ligne, ajoutées, mises à jour, supprimées, et total sur le serveur
+   local.
+
+**Règles de la copie**
+
+- Les **identifiants** (UUID) d'en ligne sont conservés : tous les liens (article → catégorie, catégorie →
+  imprimante, table → salle, fiche technique → article de stock…) restent justes, et un nouvel import met à jour
+  les mêmes lignes au lieu d'en créer de nouvelles.
+- **Le Supabase en ligne fait référence** : un élément de configuration présent sur le serveur local mais absent en
+  ligne (exemples créés à l'installation, élément supprimé en ligne) est **supprimé**, sauf s'il est utilisé par
+  des données locales (une commande, un mouvement de stock…) : il est alors gardé et signalé dans le résumé.
+  Une imprimante ou une catégorie de dépense du même nom des deux côtés est fusionnée en une seule.
+- **Stock** : les articles de stock arrivent avec une **quantité de 0** (les quantités en ligne viennent des
+  essais) ; un nouvel import ne touche pas aux quantités locales. Faites un inventaire pour saisir le stock réel.
+  Toutes les tables arrivent **libres**.
+- **Employés** : leurs comptes sont créés avec le même identifiant, leurs permissions et leur **code PIN** sont
+  copiés. Les **mots de passe** ne peuvent pas être lus en ligne (c'est voulu) : les employés se connectent par
+  code PIN (si la connexion par PIN est activée dans les paramètres), ou l'administrateur leur donne un mot de passe
+  dans *Fichier* > *Utilisateurs*.
+- **Le compte administrateur local n'est jamais modifié**, ni aucun compte déjà présent sur le serveur local. Un
+  employé en ligne dont le nom (ou l'e-mail) est déjà pris par un compte local — souvent `admin` — n'est pas
+  importé : le résumé l'indique (`ATTENTION : employe "admin" non importe`).
+- Les adresses des photos sont converties pour le serveur local : elles s'affichent sur le POS comme sur les
+  tablettes, sans internet.
+
+Après l'import : rechargez l'application sur chaque appareil, vérifiez la carte, les salles et les imprimantes,
+puis donnez un mot de passe aux employés qui n'utilisent pas de code PIN.
 
 ## Étape 4 — Réseau et tablettes
 
@@ -337,6 +407,7 @@ Le pare-feu autorise les adresses Tailscale (`100.64.0.0/10`) : c'est fait par `
 | `DEMARRER.bat` | Lance Docker et le serveur, puis ouvre l'application dans le navigateur normal. |
 | `ARRETER.bat` | **Arrêt propre** du serveur (la base enregistre tout puis s'arrête). |
 | `CREER-ADMIN.bat` | Mot de passe administrateur oublié : le remet, ou crée un autre administrateur. |
+| `IMPORTER-DEPUIS-EN-LIGNE.bat` | Recopier la configuration du Supabase en ligne (carte, salles, employés, photos), sans les données de test. |
 | `OUVRIR-PARE-FEU.bat` | Si les tablettes ne joignent pas le POS. |
 | `5-ACTIVER-DEMARRAGE-AUTO.bat` | Après une modification de `config.ini` ou une mise à jour. |
 | `METTRE-A-JOUR.bat` | Après avoir copié une nouvelle version du projet (voir plus bas). |
@@ -548,6 +619,8 @@ dans `serveur-local\journaux\` (`demarrage.log`, `sauvegarde.log`).
 - Le serveur n'est joignable que depuis le réseau du restaurant, et par Tailscale pour les appareils de votre
   compte. **N'ouvrez jamais de port** vers internet sur le routeur.
 - Studio n'écoute que sur le POS lui-même (`localhost:3000`) et reste arrêté par défaut.
+- La clé `service_role` du Supabase en ligne (demandée par `IMPORTER-DEPUIS-EN-LIGNE.bat`) n'est jamais
+  enregistrée ; ne la collez nulle part ailleurs. Les fichiers lus en ligne sont effacés à la fin de l'import.
 
 ## Pour les curieux : ce qu'il y a dans ce dossier
 
@@ -555,7 +628,7 @@ dans `serveur-local\journaux\` (`demarrage.log`, `sauvegarde.log`).
 |---|---|
 | `docker-compose.yml` | Les services : Postgres, GoTrue (auth), PostgREST, Realtime, Storage, Edge Runtime (pin-login), nginx (web). Retirés pour la mémoire : analytics/logs (Logflare, Vector), pooler (Supavisor), imgproxy, Kong/Envoy. |
 | `web/` | Construction de l'application (`npm run build`) et configuration nginx : l'app et l'API sur la même adresse (`/auth/v1`, `/rest/v1`, `/realtime/v1`, `/storage/v1`, `/functions/v1`). |
-| `outils/` | Scripts lancés dans un conteneur par les `.bat` : secrets, attente des services, migrations (dans l'ordre, suivies dans `serveur_local.migrations`), compte admin, vérification, sauvegarde (`pg_dump`) et restauration. |
+| `outils/` | Scripts lancés dans un conteneur par les `.bat` : secrets, attente des services, migrations (dans l'ordre, suivies dans `serveur_local.migrations`), compte admin, vérification, sauvegarde (`pg_dump`) et restauration, import de la configuration en ligne (`importer-en-ligne.mjs` lit l'API en ligne, `importer.sql` charge en une transaction). |
 | `windows/` | Scripts PowerShell (fournis avec Windows, rien à installer) lancés par les `.bat` et les tâches planifiées : démarrage, mode caisse (Edge kiosque) et sa page d'attente, sauvegardes, restauration, état du POS, icône du raccourci. |
 | `fonctions/main/` | Routeur des fonctions Edge ; `pin-login` est pris directement dans `supabase/functions/pin-login`. |
 | `db/` | Réglages appliqués à la création de la base (rôles internes, Realtime, durée des sessions). |

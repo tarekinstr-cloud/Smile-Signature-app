@@ -3,15 +3,15 @@
 #   -Mode quotidienne  : tache planifiee chaque jour (HEURE_SAUVEGARDE de config.ini).
 #   -Mode cloture      : tache planifiee toutes les 10 minutes ; ne sauvegarde que si une cloture de caisse a eu
 #                        lieu depuis la derniere sauvegarde.
-#   -Mode avant-restauration : appele par restaurer.ps1.
+#   -Mode avant-restauration / avant-import : appele par restaurer.ps1 / importer-en-ligne.ps1.
 # Ensuite : copie vers COPIE_SAUVEGARDES (cle USB, disque D:) et effacement des sauvegardes de plus de
 # JOURS_A_GARDER jours.
-param([ValidateSet('manuelle', 'quotidienne', 'cloture', 'avant-restauration')][string]$Mode = 'manuelle')
+param([ValidateSet('manuelle', 'quotidienne', 'cloture', 'avant-restauration', 'avant-import')][string]$Mode = 'manuelle')
 
 . "$PSScriptRoot\commun.ps1"
 
 $journal = 'sauvegarde.log'
-$interactif = ($Mode -eq 'manuelle' -or $Mode -eq 'avant-restauration')
+$interactif = @('manuelle', 'avant-restauration', 'avant-import') -contains $Mode
 $fichierResultat = Join-Path $DossierJournaux 'derniere-sauvegarde.txt'
 
 function Write-Info([string]$Message) {

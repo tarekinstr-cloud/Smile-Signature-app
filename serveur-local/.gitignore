@@ -2,3 +2,4 @@
 config.ini
 journaux/
 windows/attente/etat.js
+import-en-ligne/

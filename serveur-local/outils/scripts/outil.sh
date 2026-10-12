@@ -11,8 +11,9 @@ case "$cmd" in
   verifier)     exec bash "$here/verifier.sh" "$@" ;;
   sauvegarder)  exec bash "$here/sauvegarder.sh" "$@" ;;
   restaurer)    exec bash "$here/restaurer.sh" "$@" ;;
+  importer)     exec bash "$here/importer.sh" "$@" ;;
   sql)          exec psql -v ON_ERROR_STOP=1 "$@" ;;
   *)
-    echo "Commandes : attendre | migrer | creer-admin | verifier | sauvegarder | restaurer | sql"
+    echo "Commandes : attendre | migrer | creer-admin | verifier | sauvegarder | restaurer | importer | sql"
     exit 1 ;;
 esac
